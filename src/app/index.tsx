@@ -17,6 +17,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { useTodayData, type ItemDraft } from '../hooks/use-today';
 import type { PlanningItem } from '../models/planning';
@@ -449,44 +450,31 @@ function InlineTimePicker({ value, colors, onChange }: {
   colors: AppColors;
   onChange: (value: string) => void;
 }) {
-  const match = value.match(/^(\d{1,2}):?(\d{2})?\s*(AM|PM)?$/i);
-  const [hour, setHour] = useState(Number(match?.[1] ?? 9));
-  const [minute, setMinute] = useState(Number(match?.[2] ?? 0));
-  const [period, setPeriod] = useState<'AM' | 'PM'>((match?.[3]?.toUpperCase() as 'AM' | 'PM') ?? 'AM');
-
-  function choose(nextHour = hour, nextMinute = minute, nextPeriod = period) {
-    setHour(nextHour);
-    setMinute(nextMinute);
-    setPeriod(nextPeriod);
-    onChange(`${nextHour}:${String(nextMinute).padStart(2, '0')} ${nextPeriod}`);
-  }
+  const [selectedTime, setSelectedTime] = useState(() => {
+    const date = new Date();
+    const match = value.match(/^(\d{1,2}):?(\d{2})?\s*(AM|PM)?$/i);
+    let hour = Number(match?.[1] ?? 9);
+    const minute = Number(match?.[2] ?? 0);
+    const period = match?.[3]?.toUpperCase();
+    if (period === 'AM' && hour === 12) hour = 0;
+    if (period === 'PM' && hour < 12) hour += 12;
+    date.setHours(hour, minute, 0, 0);
+    return date;
+  });
 
   return (
-    <View style={styles.timePicker}>
-      <Text style={[styles.timePickerCaption, { color: colors.secondary }]}>HOUR</Text>
-      <ScrollView horizontal contentContainerStyle={styles.timeOptions} keyboardShouldPersistTaps="always" showsHorizontalScrollIndicator={false}>
-        {Array.from({ length: 12 }, (_, index) => index + 1).map((option) => (
-          <Pressable key={option} onPress={() => choose(option)} style={[styles.timeChip, { backgroundColor: hour === option ? colors.blue : colors.background }]}>
-            <Text style={[styles.timeChipText, { color: hour === option ? '#FFFFFF' : colors.text }]}>{option}</Text>
-          </Pressable>
-        ))}
-      </ScrollView>
-      <View style={styles.minutePeriodRow}>
-        <ScrollView horizontal contentContainerStyle={styles.timeOptions} keyboardShouldPersistTaps="always" showsHorizontalScrollIndicator={false} style={styles.minuteScroller}>
-          {[0, 5, 10, 15, 20, 30, 45].map((option) => (
-            <Pressable key={option} onPress={() => choose(hour, option)} style={[styles.minuteChip, { backgroundColor: minute === option ? colors.blue : colors.background }]}>
-              <Text style={[styles.timeChipText, { color: minute === option ? '#FFFFFF' : colors.text }]}>:{String(option).padStart(2, '0')}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-        <View style={[styles.periodPicker, { backgroundColor: colors.background }]}>
-          {(['AM', 'PM'] as const).map((option) => (
-            <Pressable key={option} onPress={() => choose(hour, minute, option)} style={[styles.periodOption, period === option && { backgroundColor: colors.blue }]}>
-              <Text style={[styles.periodText, { color: period === option ? '#FFFFFF' : colors.secondary }]}>{option}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
+    <View style={styles.wheelPickerWrap}>
+      <DateTimePicker
+        accentColor={colors.blue}
+        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+        mode="time"
+        onValueChange={(_, nextTime) => {
+          setSelectedTime(nextTime);
+          onChange(new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(nextTime));
+        }}
+        textColor={colors.text}
+        value={selectedTime}
+      />
     </View>
   );
 }
@@ -589,6 +577,7 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
   const [notes, setNotes] = useState(item?.notes ?? '');
   const [location, setLocation] = useState(item?.location ?? '');
   const [dateOpen, setDateOpen] = useState(false);
+  const [timeOpen, setTimeOpen] = useState(false);
   const initialMonth = dateFromISO(item?.anchorStart ?? today);
   const [visibleMonth, setVisibleMonth] = useState(new Date(initialMonth.getFullYear(), initialMonth.getMonth(), 1));
   const [saving, setSaving] = useState(false);
@@ -665,7 +654,17 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
               </View>
             )}
             {kind === 'event' && (
-              <LabeledInput colors={colors} label="TIME" onChangeText={setTime} placeholder="9:00 AM or All day" value={time} />
+              <>
+                <Pressable onPress={() => {
+                  Keyboard.dismiss();
+                  setTimeOpen((open) => !open);
+                }} style={[styles.inputRow, { borderColor: colors.separator }]}>
+                  <Text style={[styles.inputLabel, { color: colors.secondary }]}>TIME</Text>
+                  <Text style={[styles.dateValue, { color: time ? colors.text : colors.tertiary }]}>{time || 'Choose a time'}</Text>
+                  <Text style={[styles.dateChevron, { color: colors.blue }]}>{timeOpen ? '⌃' : '⌄'}</Text>
+                </Pressable>
+                {timeOpen && <View style={styles.editorWheel}><InlineTimePicker colors={colors} onChange={setTime} value={time} /></View>}
+              </>
             )}
             <LabeledInput colors={colors} label="NOTES" multiline onChangeText={setNotes} placeholder="Optional details" value={notes} />
             {kind === 'event' && <LabeledInput colors={colors} label="PLACE" onChangeText={setLocation} placeholder="Optional location" value={location} />}
@@ -934,17 +933,7 @@ const styles = StyleSheet.create({
   inlineTimeButton: { height: 44, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
   inlineTimeLabel: { width: 48, fontSize: 10, fontWeight: '700', letterSpacing: 0.6 },
   inlineTimeValue: { flex: 1, fontSize: 15, fontWeight: '500' },
-  timePicker: { paddingVertical: 10, gap: 7 },
-  timePickerCaption: { fontSize: 9, fontWeight: '700', letterSpacing: 0.7 },
-  timeOptions: { gap: 6, paddingRight: 8 },
-  timeChip: { width: 36, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  minuteChip: { minWidth: 43, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 },
-  timeChipText: { fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  minutePeriodRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  minuteScroller: { flex: 1 },
-  periodPicker: { flexDirection: 'row', borderRadius: 9, padding: 2 },
-  periodOption: { height: 28, minWidth: 35, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
-  periodText: { fontSize: 11, fontWeight: '700' },
+  wheelPickerWrap: { height: 168, overflow: 'hidden', justifyContent: 'center' },
   inlineActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 16, marginTop: 10 },
   inlineAction: { fontSize: 14, fontWeight: '600' },
   inlineSave: { height: 34, borderRadius: 10, paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
@@ -960,6 +949,7 @@ const styles = StyleSheet.create({
   dateValue: { flex: 1, fontSize: 15, fontWeight: '500' },
   dateChevron: { fontSize: 18, marginLeft: 6 },
   editorCalendar: { paddingHorizontal: 10, paddingBottom: 10 },
+  editorWheel: { paddingHorizontal: 10 },
   fieldInput: { flex: 1, fontSize: 16, paddingVertical: 10 },
   notesField: { minHeight: 72, textAlignVertical: 'top', paddingTop: 0 },
   deleteButton: { height: 50, marginHorizontal: 18, marginTop: 18, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
