@@ -27,6 +27,7 @@ export function useTodayData(date: string) {
           altitude: draft.kind === 'event' ? 1 : 0,
           startTime: draft.time,
           notes: draft.notes,
+          location: draft.location,
         };
         return draft.id
           ? current.map((existing) => existing.id === draft.id ? { ...existing, ...item } : existing)
@@ -44,5 +45,11 @@ export function useTodayData(date: string) {
     saveJournal: async (value: string) => setJournal(value),
     moveOverdueTask: async () => undefined,
     dismissOverdueTask: async () => undefined,
+    reorderTasks: async (orderedIds: string[]) => {
+      setItems((current) => {
+        const positions = new Map(orderedIds.map((id, index) => [id, index]));
+        return [...current].sort((a, b) => (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0));
+      });
+    },
   }), [items, journal]);
 }

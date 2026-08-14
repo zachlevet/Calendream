@@ -50,4 +50,9 @@ export async function migrateDatabase(db: SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS items_anchor_start_idx ON items(anchor_start);
     CREATE INDEX IF NOT EXISTS items_updated_at_idx ON items(updated_at);
   `);
+
+  const itemColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(items)');
+  if (!itemColumns.some((column) => column.name === 'sort_order')) {
+    await db.execAsync('ALTER TABLE items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+  }
 }

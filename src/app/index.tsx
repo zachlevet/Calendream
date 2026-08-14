@@ -66,6 +66,11 @@ function formatDestination(isoDate: string) {
     .format(dateFromISO(isoDate));
 }
 
+function formatLongDate(isoDate: string) {
+  return new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+    .format(dateFromISO(isoDate));
+}
+
 function countLabel(count: number, singular: string) {
   return `${count} ${singular}${count === 1 ? '' : 's'}`;
 }
@@ -91,6 +96,8 @@ export default function HomeScreen() {
   const [editor, setEditor] = useState<EditorState>(null);
   const [journal, setJournal] = useState('');
   const [briefingDeferred, setBriefingDeferred] = useState(false);
+  const [inlineKind, setInlineKind] = useState<'task' | 'event' | null>(null);
+  const [reorderingTask, setReorderingTask] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setJournal(data.journal), 0);
@@ -122,6 +129,20 @@ export default function HomeScreen() {
   async function removeItem(id: string) {
     await data.deleteItem(id);
     setEditor(null);
+  }
+
+  async function saveInline(draft: ItemDraft) {
+    await data.saveItem(draft);
+    setInlineKind(null);
+  }
+
+  function moveTask(taskId: string, direction: -1 | 1) {
+    const index = tasks.findIndex((task) => task.id === taskId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= tasks.length) return;
+    const ordered = [...tasks];
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+    void data.reorderTasks(ordered.map((task) => task.id));
   }
 
   return (
@@ -206,7 +227,7 @@ export default function HomeScreen() {
               <SectionHeader
                 action="Add event"
                 colors={colors}
-                onAction={() => setEditor({ kind: 'event' })}
+                onAction={() => setInlineKind(inlineKind === 'event' ? null : 'event')}
                 title="Events"
               />
               {events.length === 0 ? (
@@ -227,19 +248,22 @@ export default function HomeScreen() {
                   <View style={[styles.eventRule, { backgroundColor: colors.blue }]} />
                   <View style={styles.rowCopy}>
                     <Text style={[styles.rowTitle, { color: colors.text }]}>{event.title}</Text>
-                    {event.notes && (
+                    {(event.notes || event.location) && (
                       <Text style={[styles.rowNote, { color: colors.secondary }]} numberOfLines={1}>
-                        {event.notes}
+                        {[event.location, event.notes].filter(Boolean).join(' · ')}
                       </Text>
                     )}
                   </View>
                 </Pressable>
               ))}
+              {inlineKind === 'event' && (
+                <InlineComposer colors={colors} kind="event" onCancel={() => setInlineKind(null)} onSave={saveInline} today={today} />
+              )}
 
               <SectionHeader
                 action="Add task"
                 colors={colors}
-                onAction={() => setEditor({ kind: 'task' })}
+                onAction={() => setInlineKind(inlineKind === 'task' ? null : 'task')}
                 title="Tasks"
               />
               {tasks.length === 0 ? (
@@ -260,6 +284,7 @@ export default function HomeScreen() {
                   </Pressable>
                   <Pressable
                     onPress={() => setEditor({ kind: 'task', item: task })}
+                    onLongPress={() => setReorderingTask(task.id)}
                     style={styles.taskCopy}
                   >
                     <Text
@@ -277,8 +302,22 @@ export default function HomeScreen() {
                       </Text>
                     )}
                   </Pressable>
+                  {reorderingTask === task.id ? (
+                    <View style={styles.reorderControls}>
+                      <Pressable disabled={tasks[0]?.id === task.id} hitSlop={8} onPress={() => moveTask(task.id, -1)}><Text style={[styles.reorderArrow, { color: colors.blue }]}>↑</Text></Pressable>
+                      <Pressable disabled={tasks[tasks.length - 1]?.id === task.id} hitSlop={8} onPress={() => moveTask(task.id, 1)}><Text style={[styles.reorderArrow, { color: colors.blue }]}>↓</Text></Pressable>
+                      <Pressable hitSlop={8} onPress={() => setReorderingTask(null)}><Text style={[styles.reorderDone, { color: colors.secondary }]}>Done</Text></Pressable>
+                    </View>
+                  ) : (
+                    <Pressable accessibilityLabel={`Reorder ${task.title}`} hitSlop={8} onLongPress={() => setReorderingTask(task.id)} style={styles.dragHandle}>
+                      <Text style={[styles.dragHandleText, { color: colors.tertiary }]}>≡</Text>
+                    </Pressable>
+                  )}
                 </View>
               ))}
+              {inlineKind === 'task' && (
+                <InlineComposer colors={colors} kind="task" onCancel={() => setInlineKind(null)} onSave={saveInline} today={today} />
+              )}
 
               <SectionHeader colors={colors} title="Notes" />
               <TextInput
@@ -367,6 +406,72 @@ function TabButton({ active, label, onPress, colors }: {
   );
 }
 
+function InlineComposer({ kind, today, colors, onCancel, onSave }: {
+  kind: 'task' | 'event';
+  today: string;
+  colors: AppColors;
+  onCancel: () => void;
+  onSave: (draft: ItemDraft) => Promise<void>;
+}) {
+  const [title, setTitle] = useState('');
+  const [time, setTime] = useState('');
+  const [notes, setNotes] = useState('');
+  const [location, setLocation] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (!title.trim() || saving) return;
+    setSaving(true);
+    await onSave({ kind, title, date: today, time, notes, location });
+  }
+
+  return (
+    <View style={[styles.inlineComposer, { backgroundColor: colors.card }]}>
+      <TextInput
+        autoFocus
+        onChangeText={setTitle}
+        onSubmitEditing={() => kind === 'task' && void submit()}
+        placeholder={kind === 'event' ? 'Event' : 'Task'}
+        placeholderTextColor={colors.tertiary}
+        returnKeyType={kind === 'task' ? 'done' : 'next'}
+        style={[styles.inlineTitle, { color: colors.text, borderColor: colors.separator }]}
+        value={title}
+      />
+      {kind === 'event' && (
+        <TextInput
+          onChangeText={setTime}
+          placeholder="Time"
+          placeholderTextColor={colors.tertiary}
+          style={[styles.inlineField, { color: colors.text, borderColor: colors.separator }]}
+          value={time}
+        />
+      )}
+      <TextInput
+        onChangeText={setNotes}
+        placeholder={kind === 'task' ? 'Subtext (optional)' : 'Notes (optional)'}
+        placeholderTextColor={colors.tertiary}
+        style={[styles.inlineField, { color: colors.text, borderColor: colors.separator }]}
+        value={notes}
+      />
+      {kind === 'event' && (
+        <TextInput
+          onChangeText={setLocation}
+          placeholder="Location (optional)"
+          placeholderTextColor={colors.tertiary}
+          style={[styles.inlineField, { color: colors.text, borderColor: colors.separator }]}
+          value={location}
+        />
+      )}
+      <View style={styles.inlineActions}>
+        <Pressable onPress={onCancel} hitSlop={8}><Text style={[styles.inlineAction, { color: colors.secondary }]}>Cancel</Text></Pressable>
+        <Pressable disabled={!title.trim() || saving} onPress={() => void submit()} style={[styles.inlineSave, { backgroundColor: title.trim() ? colors.blue : colors.tertiary }]}>
+          <Text style={styles.inlineSaveText}>{saving ? 'Adding…' : `Add ${kind}`}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
   initial: EditorState;
   today: string;
@@ -381,13 +486,17 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
   const [date, setDate] = useState(item?.anchorStart ?? today);
   const [time, setTime] = useState(item?.startTime ?? '');
   const [notes, setNotes] = useState(item?.notes ?? '');
+  const [location, setLocation] = useState(item?.location ?? '');
+  const [dateOpen, setDateOpen] = useState(false);
+  const initialMonth = dateFromISO(item?.anchorStart ?? today);
+  const [visibleMonth, setVisibleMonth] = useState(new Date(initialMonth.getFullYear(), initialMonth.getMonth(), 1));
   const [saving, setSaving] = useState(false);
   const valid = title.trim().length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(date);
 
   async function submit() {
     if (!valid || saving) return;
     setSaving(true);
-    await onSave({ id: item?.id, kind, title, date, time, notes });
+    await onSave({ id: item?.id, kind, title, date, time, notes, location });
   }
 
   function confirmDelete() {
@@ -410,6 +519,7 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
             </Pressable>
           </View>
 
+          <ScrollView keyboardDismissMode="interactive" showsVerticalScrollIndicator={false}>
           <View style={[styles.kindPicker, { backgroundColor: colors.card }]}>
             {(['task', 'event'] as const).map((option) => (
               <Pressable
@@ -428,16 +538,36 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
             <TextInput
               autoFocus
               onChangeText={setTitle}
-              placeholder={kind === 'task' ? 'What needs doing?' : 'What is happening?'}
+              placeholder={kind === 'task' ? 'Task' : 'Event'}
               placeholderTextColor={colors.tertiary}
               style={[styles.titleInput, { color: colors.text, borderColor: colors.separator }]}
               value={title}
             />
-            <LabeledInput colors={colors} label="DATE" onChangeText={setDate} placeholder="YYYY-MM-DD" value={date} />
+            <Pressable onPress={() => setDateOpen((open) => !open)} style={[styles.inputRow, { borderColor: colors.separator }]}>
+              <Text style={[styles.inputLabel, { color: colors.secondary }]}>DATE</Text>
+              <Text style={[styles.dateValue, { color: colors.text }]} numberOfLines={1}>{formatLongDate(date)}</Text>
+              <Text style={[styles.dateChevron, { color: colors.blue }]}>{dateOpen ? '⌃' : '⌄'}</Text>
+            </Pressable>
+            {dateOpen && (
+              <View style={styles.editorCalendar}>
+                <MiniCalendar
+                  colors={colors}
+                  selected={date}
+                  today={today}
+                  visibleMonth={visibleMonth}
+                  onChangeMonth={setVisibleMonth}
+                  onSelect={(nextDate) => {
+                    setDate(nextDate);
+                    setDateOpen(false);
+                  }}
+                />
+              </View>
+            )}
             {kind === 'event' && (
               <LabeledInput colors={colors} label="TIME" onChangeText={setTime} placeholder="9:00 AM or All day" value={time} />
             )}
             <LabeledInput colors={colors} label="NOTES" multiline onChangeText={setNotes} placeholder="Optional details" value={notes} />
+            {kind === 'event' && <LabeledInput colors={colors} label="PLACE" onChangeText={setLocation} placeholder="Optional location" value={location} />}
           </View>
 
           {item && (
@@ -445,6 +575,7 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
               <Text style={[styles.deleteText, { color: colors.red }]}>Delete {item.kind}</Text>
             </Pressable>
           )}
+          </ScrollView>
         </SafeAreaView>
       </KeyboardAvoidingView>
     </Modal>
@@ -680,6 +811,11 @@ const styles = StyleSheet.create({
   checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 },
   checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   taskCopy: { flex: 1, paddingVertical: 8 },
+  dragHandle: { width: 30, height: 38, alignItems: 'center', justifyContent: 'center' },
+  dragHandleText: { fontSize: 21, fontWeight: '700' },
+  reorderControls: { flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 104, justifyContent: 'flex-end' },
+  reorderArrow: { fontSize: 20, fontWeight: '700' },
+  reorderDone: { fontSize: 12, fontWeight: '600' },
   completed: { textDecorationLine: 'line-through' },
   emptyRow: { height: 42, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 14, paddingTop: 10 },
   journal: { minHeight: 96, borderRadius: 14, padding: 13, fontSize: 16, lineHeight: 22, textAlignVertical: 'top' },
@@ -696,6 +832,13 @@ const styles = StyleSheet.create({
   editorBar: { height: 48, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   editorHeading: { fontSize: 16, fontWeight: '700' },
   editorButton: { fontSize: 16 },
+  inlineComposer: { borderRadius: 14, paddingHorizontal: 13, paddingBottom: 11, marginTop: 8 },
+  inlineTitle: { height: 48, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 17, fontWeight: '600' },
+  inlineField: { height: 42, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 15 },
+  inlineActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 16, marginTop: 10 },
+  inlineAction: { fontSize: 14, fontWeight: '600' },
+  inlineSave: { height: 34, borderRadius: 10, paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
+  inlineSaveText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
   kindPicker: { flexDirection: 'row', marginHorizontal: 18, marginTop: 12, padding: 3, borderRadius: 10 },
   kindOption: { flex: 1, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
   kindText: { fontSize: 14, fontWeight: '600' },
@@ -704,6 +847,9 @@ const styles = StyleSheet.create({
   inputRow: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' },
   notesInputRow: { minHeight: 94, alignItems: 'flex-start', paddingTop: 14 },
   inputLabel: { width: 58, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  dateValue: { flex: 1, fontSize: 15, fontWeight: '500' },
+  dateChevron: { fontSize: 18, marginLeft: 6 },
+  editorCalendar: { paddingHorizontal: 10, paddingBottom: 10 },
   fieldInput: { flex: 1, fontSize: 16, paddingVertical: 10 },
   notesField: { minHeight: 72, textAlignVertical: 'top', paddingTop: 0 },
   deleteButton: { height: 50, marginHorizontal: 18, marginTop: 18, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },

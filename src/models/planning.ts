@@ -8,6 +8,7 @@ export interface ItemDraft {
   date: string;
   time?: string;
   notes?: string;
+  location?: string;
 }
 
 export interface PlanningItem {
@@ -22,4 +23,6 @@ export interface PlanningItem {
   completed?: boolean;
   habitName?: string;
   notes?: string;
+  location?: string;
+  sortOrder?: number;
 }

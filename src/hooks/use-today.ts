@@ -16,6 +16,8 @@ interface ItemRow {
   start_time: string | null;
   completed_at: string | null;
   notes: string | null;
+  location: string | null;
+  sort_order: number;
 }
 
 function toItem(row: ItemRow): PlanningItem {
@@ -30,6 +32,8 @@ function toItem(row: ItemRow): PlanningItem {
     startTime: row.start_time ?? undefined,
     completed: Boolean(row.completed_at),
     notes: row.notes ?? undefined,
+    location: row.location ?? undefined,
+    sortOrder: row.sort_order,
   };
 }
 
@@ -56,16 +60,18 @@ export function useTodayData(date: string) {
     const [todayRows, upcomingRows, overdueRows, page, morningReview] = await Promise.all([
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
-                start_time, completed_at, notes
+                start_time, completed_at, notes, location, sort_order
          FROM items
          WHERE deleted_at IS NULL AND anchor_start = ?
          ORDER BY CASE kind WHEN 'event' THEN 0 ELSE 1 END,
-                  start_time IS NULL, start_time, created_at`,
+                  CASE WHEN kind = 'event' THEN start_time IS NULL END,
+                  CASE WHEN kind = 'event' THEN start_time END,
+                  CASE WHEN kind = 'task' THEN sort_order END, created_at`,
         date,
       ),
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
-                start_time, completed_at, notes
+                start_time, completed_at, notes, location, sort_order
          FROM items
          WHERE deleted_at IS NULL AND kind = 'event'
            AND anchor_start > ? AND anchor_start <= ?
@@ -76,7 +82,7 @@ export function useTodayData(date: string) {
       ),
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
-                start_time, completed_at, notes
+                start_time, completed_at, notes, location, sort_order
          FROM items
          WHERE deleted_at IS NULL AND kind = 'task'
            AND completed_at IS NULL AND anchor_start < ?
@@ -111,7 +117,7 @@ export function useTodayData(date: string) {
       await db.runAsync(
         `UPDATE items
          SET kind = ?, title = ?, anchor_start = ?, anchor_end = ?,
-             precision = ?, altitude = ?, start_time = ?, notes = ?, updated_at = ?
+             precision = ?, altitude = ?, start_time = ?, notes = ?, location = ?, updated_at = ?
          WHERE id = ?`,
         draft.kind,
         draft.title.trim(),
@@ -121,6 +127,7 @@ export function useTodayData(date: string) {
         draft.kind === 'event' ? 1 : 0,
         draft.kind === 'event' ? draft.time?.trim() || null : null,
         draft.notes?.trim() || null,
+        draft.location?.trim() || null,
         now,
         draft.id,
       );
@@ -128,8 +135,9 @@ export function useTodayData(date: string) {
       await db.runAsync(
         `INSERT INTO items
           (id, kind, title, anchor_start, anchor_end, precision, altitude,
-           start_time, notes, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           start_time, notes, location, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+           COALESCE((SELECT MAX(sort_order) + 1 FROM items WHERE kind = ? AND anchor_start = ?), 0), ?, ?)`,
         makeId(),
         draft.kind,
         draft.title.trim(),
@@ -139,10 +147,23 @@ export function useTodayData(date: string) {
         draft.kind === 'event' ? 1 : 0,
         draft.kind === 'event' ? draft.time?.trim() || null : null,
         draft.notes?.trim() || null,
+        draft.location?.trim() || null,
+        draft.kind,
+        draft.date,
         now,
         now,
       );
     }
+    await refresh();
+  }, [db, refresh]);
+
+  const reorderTasks = useCallback(async (orderedIds: string[]) => {
+    const now = new Date().toISOString();
+    await db.withTransactionAsync(async () => {
+      for (const [index, id] of orderedIds.entries()) {
+        await db.runAsync('UPDATE items SET sort_order = ?, updated_at = ? WHERE id = ?', index, now, id);
+      }
+    });
     await refresh();
   }, [db, refresh]);
 
@@ -242,5 +263,6 @@ export function useTodayData(date: string) {
     saveJournal,
     moveOverdueTask,
     dismissOverdueTask,
+    reorderTasks,
   };
 }
