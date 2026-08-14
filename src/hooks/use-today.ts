@@ -204,24 +204,16 @@ export function useTodayData(date: string) {
     setJournal(reflection);
   }, [date, db]);
 
-  const markMorningReviewedIfFinished = useCallback(async () => {
-    const remaining = await db.getFirstAsync<{ count: number }>(
-      `SELECT COUNT(*) AS count FROM items
-       WHERE deleted_at IS NULL AND kind = 'task'
-         AND completed_at IS NULL AND anchor_start < ?`,
+  const markMorningReviewed = useCallback(async () => {
+    const now = new Date().toISOString();
+    await db.runAsync(
+      `INSERT INTO app_meta (key, value, updated_at)
+       VALUES ('last_morning_review', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                                      updated_at = excluded.updated_at`,
       date,
+      now,
     );
-    if ((remaining?.count ?? 0) === 0) {
-      const now = new Date().toISOString();
-      await db.runAsync(
-        `INSERT INTO app_meta (key, value, updated_at)
-         VALUES ('last_morning_review', ?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value,
-                                        updated_at = excluded.updated_at`,
-        date,
-        now,
-      );
-    }
   }, [date, db]);
 
   const moveOverdueTask = useCallback(async (id: string, targetDate: string) => {
@@ -234,9 +226,9 @@ export function useTodayData(date: string) {
       now,
       id,
     );
-    await markMorningReviewedIfFinished();
+    await markMorningReviewed();
     await refresh();
-  }, [db, markMorningReviewedIfFinished, refresh]);
+  }, [db, markMorningReviewed, refresh]);
 
   const dismissOverdueTask = useCallback(async (id: string) => {
     const now = new Date().toISOString();
@@ -246,9 +238,14 @@ export function useTodayData(date: string) {
       now,
       id,
     );
-    await markMorningReviewedIfFinished();
+    await markMorningReviewed();
     await refresh();
-  }, [db, markMorningReviewedIfFinished, refresh]);
+  }, [db, markMorningReviewed, refresh]);
+
+  const skipMorningReview = useCallback(async () => {
+    await markMorningReviewed();
+    await refresh();
+  }, [markMorningReviewed, refresh]);
 
   return {
     items,
@@ -263,6 +260,7 @@ export function useTodayData(date: string) {
     saveJournal,
     moveOverdueTask,
     dismissOverdueTask,
+    skipMorningReview,
     reorderTasks,
   };
 }

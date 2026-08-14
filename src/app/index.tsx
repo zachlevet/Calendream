@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
@@ -31,6 +32,30 @@ function localISO(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function useLocalToday() {
+  const [today, setToday] = useState(localISO);
+
+  useEffect(() => {
+    function updateDate() {
+      setToday(localISO());
+    }
+
+    const now = new Date();
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const midnightTimer = setTimeout(updateDate, nextMidnight.getTime() - now.getTime() + 250);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') updateDate();
+    });
+
+    return () => {
+      clearTimeout(midnightTimer);
+      subscription.remove();
+    };
+  }, [today]);
+
+  return today;
 }
 
 function formatToday() {
@@ -95,12 +120,12 @@ function timeMinutes(value?: string) {
 export default function HomeScreen() {
   const dark = useColorScheme() === 'dark';
   const colors = dark ? palette.dark : palette.light;
-  const today = localISO();
+  const today = useLocalToday();
   const data = useTodayData(today);
   const [destination, setDestination] = useState<Destination>('today');
   const [editor, setEditor] = useState<EditorState>(null);
   const [journal, setJournal] = useState('');
-  const [briefingDeferred, setBriefingDeferred] = useState(false);
+  const [briefingSessionActive, setBriefingSessionActive] = useState(false);
   const [inlineEditor, setInlineEditor] = useState<EditorState>(null);
   const todayScroll = useRef<ScrollView>(null);
 
@@ -330,12 +355,21 @@ export default function HomeScreen() {
       />
       <MorningBriefing
         colors={colors}
-        onDismissTask={data.dismissOverdueTask}
-        onLater={() => setBriefingDeferred(true)}
-        onMoveTask={data.moveOverdueTask}
+        onDismissTask={async (id) => {
+          setBriefingSessionActive(true);
+          await data.dismissOverdueTask(id);
+        }}
+        onMoveTask={async (id, date) => {
+          setBriefingSessionActive(true);
+          await data.moveOverdueTask(id, date);
+        }}
+        onSkip={async () => {
+          setBriefingSessionActive(false);
+          await data.skipMorningReview();
+        }}
         tasks={data.overdueTasks}
         today={today}
-        visible={data.morningReviewDue && !briefingDeferred}
+        visible={(data.morningReviewDue || briefingSessionActive) && data.overdueTasks.length > 0}
       />
     </SafeAreaView>
   );
@@ -703,14 +737,14 @@ function LabeledInput({ label, colors, multiline, ...props }: {
   );
 }
 
-function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissTask, onLater }: {
+function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissTask, onSkip }: {
   visible: boolean;
   tasks: PlanningItem[];
   today: string;
   colors: AppColors;
   onMoveTask: (id: string, date: string) => Promise<void>;
   onDismissTask: (id: string) => Promise<void>;
-  onLater: () => void;
+  onSkip: () => Promise<void>;
 }) {
   const task = tasks[0];
   const [choosingDate, setChoosingDate] = useState(false);
@@ -737,7 +771,7 @@ function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissT
   }
 
   return (
-    <Modal animationType="slide" onRequestClose={onLater} presentationStyle="pageSheet" visible={visible}>
+    <Modal animationType="slide" onRequestClose={() => void onSkip()} presentationStyle="pageSheet" visible={visible}>
       <SafeAreaView style={[styles.briefing, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
         <View style={styles.briefingHeader}>
           <View style={styles.briefingTitleRow}>
@@ -745,8 +779,8 @@ function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissT
               <Text style={[styles.briefingEyebrow, { color: colors.red }]}>GOOD MORNING</Text>
               <Text style={[styles.briefingTitle, { color: colors.text }]}>Let’s reset your day.</Text>
             </View>
-            <Pressable onPress={onLater} hitSlop={10}>
-              <Text style={[styles.laterButton, { color: colors.blue }]}>Later</Text>
+            <Pressable accessibilityLabel="Skip unfinished task review for today" onPress={() => void onSkip()} hitSlop={12} style={[styles.reviewClose, { backgroundColor: colors.card }]}>
+              <Text style={[styles.reviewCloseText, { color: colors.secondary }]}>×</Text>
             </Pressable>
           </View>
           <Text style={[styles.briefingBody, { color: colors.secondary }]}>A quick check-in before you begin. Give each unfinished task a home.</Text>
@@ -800,6 +834,10 @@ function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissT
                 </Pressable>
               </View>
             )}
+            <Pressable onPress={() => void onSkip()} style={styles.skipTodayButton}>
+              <Text style={[styles.skipTodayText, { color: colors.secondary }]}>Skip for today</Text>
+              <Text style={[styles.skipTodaySubtext, { color: colors.tertiary }]}>Leave the remaining tasks in the past</Text>
+            </Pressable>
           </ScrollView>
         )}
       </SafeAreaView>
@@ -959,7 +997,8 @@ const styles = StyleSheet.create({
   briefingEyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   briefingTitle: { fontSize: 32, fontWeight: '700', letterSpacing: -0.9, marginTop: 4 },
   briefingBody: { fontSize: 16, lineHeight: 22, marginTop: 9, maxWidth: 360 },
-  laterButton: { fontSize: 16, fontWeight: '600', marginTop: 4 },
+  reviewClose: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  reviewCloseText: { fontSize: 25, lineHeight: 27, fontWeight: '400' },
   briefingContent: { paddingHorizontal: 18, paddingBottom: 30 },
   reviewProgress: { marginBottom: 12 },
   reviewCount: { fontSize: 13, fontWeight: '600', marginBottom: 7 },
@@ -994,4 +1033,7 @@ const styles = StyleSheet.create({
   calendarFooter: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
   calendarCancel: { height: 46, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
   calendarConfirm: { flex: 1, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  skipTodayButton: { alignItems: 'center', justifyContent: 'center', paddingVertical: 15, marginTop: 4 },
+  skipTodayText: { fontSize: 14, fontWeight: '600' },
+  skipTodaySubtext: { fontSize: 11, marginTop: 3 },
 });

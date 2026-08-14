@@ -43,8 +43,9 @@ export function useTodayData(date: string) {
       setItems((current) => current.filter((item) => item.id !== id));
     },
     saveJournal: async (value: string) => setJournal(value),
-    moveOverdueTask: async () => undefined,
-    dismissOverdueTask: async () => undefined,
+    moveOverdueTask: async (_id: string, _targetDate: string) => undefined,
+    dismissOverdueTask: async (_id: string) => undefined,
+    skipMorningReview: async () => undefined,
     reorderTasks: async (orderedIds: string[]) => {
       setItems((current) => {
         const positions = new Map(orderedIds.map((id, index) => [id, index]));
