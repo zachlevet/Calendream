@@ -11,6 +11,8 @@ export function useTodayData(date: string) {
   return useMemo(() => ({
     items,
     upcoming: [] as PlanningItem[],
+    overdueTasks: [] as PlanningItem[],
+    morningReviewDue: false,
     journal,
     loading: false,
     saveItem: async (draft: ItemDraft) => {
@@ -40,5 +42,7 @@ export function useTodayData(date: string) {
       setItems((current) => current.filter((item) => item.id !== id));
     },
     saveJournal: async (value: string) => setJournal(value),
+    moveOverdueTask: async () => undefined,
+    dismissOverdueTask: async () => undefined,
   }), [items, journal]);
 }

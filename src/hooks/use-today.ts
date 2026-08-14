@@ -47,11 +47,13 @@ export function useTodayData(date: string) {
   const db = useSQLiteContext();
   const [items, setItems] = useState<PlanningItem[]>([]);
   const [upcoming, setUpcoming] = useState<PlanningItem[]>([]);
+  const [overdueTasks, setOverdueTasks] = useState<PlanningItem[]>([]);
+  const [morningReviewed, setMorningReviewed] = useState(false);
   const [journal, setJournal] = useState('');
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const [todayRows, upcomingRows, page] = await Promise.all([
+    const [todayRows, upcomingRows, overdueRows, page, morningReview] = await Promise.all([
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
                 start_time, completed_at, notes
@@ -72,14 +74,28 @@ export function useTodayData(date: string) {
         date,
         addDays(date, 120),
       ),
+      db.getAllAsync<ItemRow>(
+        `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
+                start_time, completed_at, notes
+         FROM items
+         WHERE deleted_at IS NULL AND kind = 'task'
+           AND completed_at IS NULL AND anchor_start < ?
+         ORDER BY anchor_start, created_at`,
+        date,
+      ),
       db.getFirstAsync<{ reflection: string }>(
         'SELECT reflection FROM daily_pages WHERE date = ?',
         date,
+      ),
+      db.getFirstAsync<{ value: string }>(
+        "SELECT value FROM app_meta WHERE key = 'last_morning_review'",
       ),
     ]);
 
     setItems(todayRows.map(toItem));
     setUpcoming(upcomingRows.map(toItem));
+    setOverdueTasks(overdueRows.map(toItem));
+    setMorningReviewed(morningReview?.value === date);
     setJournal(page?.reflection ?? '');
     setLoading(false);
   }, [date, db]);
@@ -167,14 +183,64 @@ export function useTodayData(date: string) {
     setJournal(reflection);
   }, [date, db]);
 
+  const markMorningReviewedIfFinished = useCallback(async () => {
+    const remaining = await db.getFirstAsync<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM items
+       WHERE deleted_at IS NULL AND kind = 'task'
+         AND completed_at IS NULL AND anchor_start < ?`,
+      date,
+    );
+    if ((remaining?.count ?? 0) === 0) {
+      const now = new Date().toISOString();
+      await db.runAsync(
+        `INSERT INTO app_meta (key, value, updated_at)
+         VALUES ('last_morning_review', ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                                        updated_at = excluded.updated_at`,
+        date,
+        now,
+      );
+    }
+  }, [date, db]);
+
+  const moveOverdueTask = useCallback(async (id: string, targetDate: string) => {
+    const now = new Date().toISOString();
+    await db.runAsync(
+      `UPDATE items SET anchor_start = ?, anchor_end = ?, updated_at = ?
+       WHERE id = ?`,
+      targetDate,
+      targetDate,
+      now,
+      id,
+    );
+    await markMorningReviewedIfFinished();
+    await refresh();
+  }, [db, markMorningReviewedIfFinished, refresh]);
+
+  const dismissOverdueTask = useCallback(async (id: string) => {
+    const now = new Date().toISOString();
+    await db.runAsync(
+      'UPDATE items SET deleted_at = ?, updated_at = ? WHERE id = ?',
+      now,
+      now,
+      id,
+    );
+    await markMorningReviewedIfFinished();
+    await refresh();
+  }, [db, markMorningReviewedIfFinished, refresh]);
+
   return {
     items,
     upcoming,
+    overdueTasks,
+    morningReviewDue: overdueTasks.length > 0 && !morningReviewed,
     journal,
     loading,
     saveItem,
     toggleTask,
     deleteItem,
     saveJournal,
+    moveOverdueTask,
+    dismissOverdueTask,
   };
 }

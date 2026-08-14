@@ -29,4 +29,6 @@ Personal Alpha 0.1 currently supports:
 - Persistent daily notes
 - Dynamic Up Next state
 - Upcoming-event countdown pills for the next 120 days
+- A first-open morning review for unfinished past tasks
+- Rollover actions to move a task to Today, choose another date, or dismiss it
 - A compact native Today home in light and dark appearance

@@ -41,6 +41,12 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS items_anchor_start_idx ON items(anchor_start);
     CREATE INDEX IF NOT EXISTS items_updated_at_idx ON items(updated_at);
   `);

@@ -24,6 +24,7 @@ Today is a calm home for planning and completing the current day. It is not mere
 - Add, edit, delete, and complete tasks *(built)*
 - Add, edit, and delete events *(built)*
 - Daily notes *(built)*
+- Morning rollover review *(built)*
 - Previous/next day navigation
 - Timeline destination ready for month/quarter/year work
 - Light and dark appearance *(built)*
