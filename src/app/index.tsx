@@ -56,6 +56,16 @@ function formatShortDate(isoDate: string | null) {
     .format(new Date(year, month - 1, day));
 }
 
+function dateFromISO(isoDate: string) {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDestination(isoDate: string) {
+  return new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    .format(dateFromISO(isoDate));
+}
+
 function countLabel(count: number, singular: string) {
   return `${count} ${singular}${count === 1 ? '' : 's'}`;
 }
@@ -471,14 +481,27 @@ function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissT
   onDismissTask: (id: string) => Promise<void>;
   onLater: () => void;
 }) {
-  const [choosingDateFor, setChoosingDateFor] = useState<string | null>(null);
+  const task = tasks[0];
+  const [choosingDate, setChoosingDate] = useState(false);
   const [targetDate, setTargetDate] = useState(addLocalDays(today, 1));
-  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(targetDate);
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const date = dateFromISO(today);
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+  });
+
+  function moveTask(id: string, date: string) {
+    setChoosingDate(false);
+    setTargetDate(addLocalDays(today, 1));
+    void onMoveTask(id, date);
+  }
 
   function dismissTask(task: PlanningItem) {
     Alert.alert('Dismiss task?', `“${task.title}” will be removed entirely.`, [
       { text: 'Keep it', style: 'cancel' },
-      { text: 'Dismiss', style: 'destructive', onPress: () => void onDismissTask(task.id) },
+      { text: 'Dismiss', style: 'destructive', onPress: () => {
+        setChoosingDate(false);
+        void onDismissTask(task.id);
+      } },
     ]);
   }
 
@@ -489,70 +512,124 @@ function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissT
           <View style={styles.briefingTitleRow}>
             <View>
               <Text style={[styles.briefingEyebrow, { color: colors.red }]}>GOOD MORNING</Text>
-              <Text style={[styles.briefingTitle, { color: colors.text }]}>A fresh start.</Text>
+              <Text style={[styles.briefingTitle, { color: colors.text }]}>Let’s reset your day.</Text>
             </View>
             <Pressable onPress={onLater} hitSlop={10}>
               <Text style={[styles.laterButton, { color: colors.blue }]}>Later</Text>
             </Pressable>
           </View>
-          <Text style={[styles.briefingBody, { color: colors.secondary }]}>You left {countLabel(tasks.length, 'task')} unfinished. Decide what should come forward before you begin today.</Text>
+          <Text style={[styles.briefingBody, { color: colors.secondary }]}>A quick check-in before you begin. Give each unfinished task a home.</Text>
         </View>
 
-        <ScrollView contentContainerStyle={styles.briefingList} showsVerticalScrollIndicator={false}>
-          {tasks.map((task) => {
-            const choosing = choosingDateFor === task.id;
-            return (
-              <View key={task.id} style={[styles.rolloverCard, { backgroundColor: colors.card }]}>
-                <Text style={[styles.rolloverDate, { color: colors.secondary }]}>FROM {formatShortDate(task.anchorStart).toUpperCase()}</Text>
-                <Text style={[styles.rolloverTitle, { color: colors.text }]}>{task.title}</Text>
-                {task.notes && <Text style={[styles.rolloverNotes, { color: colors.secondary }]}>{task.notes}</Text>}
-
-                {choosing ? (
-                  <View style={styles.chooseDateRow}>
-                    <TextInput
-                      autoFocus
-                      onChangeText={setTargetDate}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor={colors.tertiary}
-                      style={[styles.chooseDateInput, { color: colors.text, backgroundColor: colors.background }]}
-                      value={targetDate}
-                    />
-                    <Pressable
-                      disabled={!validDate}
-                      onPress={() => void onMoveTask(task.id, targetDate)}
-                      style={[styles.moveButton, { backgroundColor: validDate ? colors.blue : colors.tertiary }]}
-                    >
-                      <Text style={styles.moveButtonText}>Move</Text>
-                    </Pressable>
-                  </View>
-                ) : (
-                  <View style={styles.rolloverActions}>
-                    <Pressable
-                      onPress={() => void onMoveTask(task.id, today)}
-                      style={[styles.rolloverPrimary, { backgroundColor: colors.blue }]}
-                    >
-                      <Text style={styles.rolloverPrimaryText}>Today</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => {
-                        setTargetDate(addLocalDays(today, 1));
-                        setChoosingDateFor(task.id);
-                      }}
-                      style={[styles.rolloverSecondary, { backgroundColor: colors.background }]}
-                    >
-                      <Text style={[styles.rolloverSecondaryText, { color: colors.blue }]}>Choose day</Text>
-                    </Pressable>
-                    <Pressable onPress={() => dismissTask(task)} hitSlop={8} style={styles.dismissAction}>
-                      <Text style={[styles.dismissActionText, { color: colors.red }]}>Dismiss</Text>
-                    </Pressable>
-                  </View>
-                )}
+        {task && (
+          <ScrollView contentContainerStyle={styles.briefingContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.reviewProgress}>
+              <Text style={[styles.reviewCount, { color: colors.secondary }]}>{countLabel(tasks.length, 'task')} to sort</Text>
+              <View style={[styles.progressTrack, { backgroundColor: colors.separator }]}>
+                <View style={[styles.progressFill, { backgroundColor: colors.red }]} />
               </View>
-            );
-          })}
-        </ScrollView>
+            </View>
+
+            <View style={[styles.rolloverCard, { backgroundColor: colors.card }]}>
+              <Text style={[styles.rolloverDate, { color: colors.secondary }]}>LEFT FROM {formatShortDate(task.anchorStart).toUpperCase()}</Text>
+              <Text style={[styles.rolloverTitle, { color: colors.text }]}>{task.title}</Text>
+              {task.notes && <Text style={[styles.rolloverNotes, { color: colors.secondary }]}>{task.notes}</Text>}
+            </View>
+
+            {choosingDate ? (
+              <MiniCalendar
+                colors={colors}
+                selected={targetDate}
+                today={today}
+                visibleMonth={visibleMonth}
+                onChangeMonth={setVisibleMonth}
+                onSelect={setTargetDate}
+              />
+            ) : (
+              <View style={styles.reviewActions}>
+                <Pressable onPress={() => moveTask(task.id, today)} style={[styles.reviewPrimary, { backgroundColor: colors.blue }]}>
+                  <Text style={styles.reviewPrimaryText}>Move to Today</Text>
+                </Pressable>
+                <Pressable onPress={() => setChoosingDate(true)} style={[styles.reviewSecondary, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.reviewSecondaryText, { color: colors.blue }]}>Choose another day</Text>
+                </Pressable>
+                <Pressable onPress={() => dismissTask(task)} style={styles.reviewDismiss}>
+                  <Text style={[styles.dismissActionText, { color: colors.red }]}>Dismiss task</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {choosingDate && (
+              <View style={styles.calendarFooter}>
+                <Pressable onPress={() => setChoosingDate(false)} style={styles.calendarCancel}>
+                  <Text style={[styles.reviewSecondaryText, { color: colors.secondary }]}>Cancel</Text>
+                </Pressable>
+                <Pressable onPress={() => moveTask(task.id, targetDate)} style={[styles.calendarConfirm, { backgroundColor: colors.blue }]}>
+                  <Text style={styles.reviewPrimaryText}>Move to {formatDestination(targetDate)}</Text>
+                </Pressable>
+              </View>
+            )}
+          </ScrollView>
+        )}
       </SafeAreaView>
     </Modal>
+  );
+}
+
+function MiniCalendar({ colors, selected, today, visibleMonth, onChangeMonth, onSelect }: {
+  colors: AppColors;
+  selected: string;
+  today: string;
+  visibleMonth: Date;
+  onChangeMonth: (date: Date) => void;
+  onSelect: (date: string) => void;
+}) {
+  const quickDates = Array.from({ length: 5 }, (_, index) => addLocalDays(today, index + 1));
+  const firstWeekday = visibleMonth.getDay();
+  const daysInMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0).getDate();
+  const monthTitle = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(visibleMonth);
+  const cells = Array.from({ length: firstWeekday + daysInMonth }, (_, index) => index < firstWeekday ? null : index - firstWeekday + 1);
+
+  return (
+    <View style={[styles.calendarCard, { backgroundColor: colors.card }]}>
+      <Text style={[styles.quickLabel, { color: colors.secondary }]}>QUICK PICK</Text>
+      <View style={styles.quickDays}>
+        {quickDates.map((isoDate) => {
+          const date = dateFromISO(isoDate);
+          const active = isoDate === selected;
+          return (
+            <Pressable key={isoDate} onPress={() => onSelect(isoDate)} style={[styles.quickDay, { backgroundColor: active ? colors.blue : colors.background }]}>
+              <Text style={[styles.quickWeekday, { color: active ? '#FFFFFF' : colors.secondary }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(date)}</Text>
+              <Text style={[styles.quickNumber, { color: active ? '#FFFFFF' : colors.text }]}>{date.getDate()}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={styles.monthHeader}>
+        <Text style={[styles.monthTitle, { color: colors.text }]}>{monthTitle}</Text>
+        <View style={styles.monthControls}>
+          <Pressable hitSlop={8} onPress={() => onChangeMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))}><Text style={[styles.monthArrow, { color: colors.blue }]}>‹</Text></Pressable>
+          <Pressable hitSlop={8} onPress={() => onChangeMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))}><Text style={[styles.monthArrow, { color: colors.blue }]}>›</Text></Pressable>
+        </View>
+      </View>
+      <View style={styles.calendarGrid}>
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, index) => <Text key={`${label}-${index}`} style={[styles.weekdayLabel, { color: colors.tertiary }]}>{label}</Text>)}
+        {cells.map((day, index) => {
+          if (!day) return <View key={`blank-${index}`} style={styles.calendarCell} />;
+          const isoDate = localISO(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), day));
+          const disabled = isoDate < today;
+          const active = isoDate === selected;
+          const isToday = isoDate === today;
+          return (
+            <Pressable key={isoDate} disabled={disabled} onPress={() => onSelect(isoDate)} style={styles.calendarCell}>
+              <View style={[styles.calendarDay, isToday && { borderColor: colors.red, borderWidth: 1.5 }, active && { backgroundColor: colors.blue, borderWidth: 0 }]}>
+                <Text style={[styles.calendarNumber, { color: disabled ? colors.tertiary : active ? '#FFFFFF' : colors.text }]}>{day}</Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -638,20 +715,38 @@ const styles = StyleSheet.create({
   briefingTitle: { fontSize: 32, fontWeight: '700', letterSpacing: -0.9, marginTop: 4 },
   briefingBody: { fontSize: 16, lineHeight: 22, marginTop: 9, maxWidth: 360 },
   laterButton: { fontSize: 16, fontWeight: '600', marginTop: 4 },
-  briefingList: { paddingHorizontal: 16, paddingBottom: 30, gap: 10 },
-  rolloverCard: { borderRadius: 18, padding: 15 },
+  briefingContent: { paddingHorizontal: 18, paddingBottom: 30 },
+  reviewProgress: { marginBottom: 12 },
+  reviewCount: { fontSize: 13, fontWeight: '600', marginBottom: 7 },
+  progressTrack: { height: 3, borderRadius: 2, overflow: 'hidden' },
+  progressFill: { width: '28%', height: 3, borderRadius: 2 },
+  rolloverCard: { borderRadius: 18, padding: 17 },
   rolloverDate: { fontSize: 10, fontWeight: '700', letterSpacing: 0.7 },
   rolloverTitle: { fontSize: 19, fontWeight: '700', letterSpacing: -0.3, marginTop: 4 },
   rolloverNotes: { fontSize: 13, lineHeight: 18, marginTop: 3 },
-  rolloverActions: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 14 },
-  rolloverPrimary: { height: 36, borderRadius: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
-  rolloverPrimaryText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  rolloverSecondary: { height: 36, borderRadius: 10, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
-  rolloverSecondaryText: { fontSize: 14, fontWeight: '600' },
-  dismissAction: { marginLeft: 'auto', paddingHorizontal: 3, paddingVertical: 8 },
+  reviewActions: { gap: 9, marginTop: 14 },
+  reviewPrimary: { height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  reviewPrimaryText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  reviewSecondary: { height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  reviewSecondaryText: { fontSize: 15, fontWeight: '600' },
+  reviewDismiss: { height: 40, alignItems: 'center', justifyContent: 'center' },
   dismissActionText: { fontSize: 13, fontWeight: '600' },
-  chooseDateRow: { flexDirection: 'row', gap: 8, marginTop: 13 },
-  chooseDateInput: { flex: 1, height: 40, borderRadius: 10, paddingHorizontal: 12, fontSize: 16, fontVariant: ['tabular-nums'] },
-  moveButton: { height: 40, borderRadius: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
-  moveButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  calendarCard: { borderRadius: 18, padding: 14, marginTop: 12 },
+  quickLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.7, marginBottom: 8 },
+  quickDays: { flexDirection: 'row', gap: 7 },
+  quickDay: { flex: 1, height: 54, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  quickWeekday: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
+  quickNumber: { fontSize: 17, fontWeight: '700', marginTop: 2 },
+  monthHeader: { height: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+  monthTitle: { fontSize: 16, fontWeight: '700' },
+  monthControls: { flexDirection: 'row', gap: 22, paddingRight: 5 },
+  monthArrow: { fontSize: 28, lineHeight: 30, fontWeight: '400' },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  weekdayLabel: { width: '14.285%', textAlign: 'center', fontSize: 10, fontWeight: '700', height: 25 },
+  calendarCell: { width: '14.285%', height: 36, alignItems: 'center', justifyContent: 'center' },
+  calendarDay: { width: 31, height: 31, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderColor: 'transparent' },
+  calendarNumber: { fontSize: 14, fontWeight: '500', fontVariant: ['tabular-nums'] },
+  calendarFooter: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  calendarCancel: { height: 46, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  calendarConfirm: { flex: 1, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
 });
