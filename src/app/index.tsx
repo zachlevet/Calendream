@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -96,8 +99,8 @@ export default function HomeScreen() {
   const [editor, setEditor] = useState<EditorState>(null);
   const [journal, setJournal] = useState('');
   const [briefingDeferred, setBriefingDeferred] = useState(false);
-  const [inlineKind, setInlineKind] = useState<'task' | 'event' | null>(null);
-  const [reorderingTask, setReorderingTask] = useState<string | null>(null);
+  const [inlineEditor, setInlineEditor] = useState<EditorState>(null);
+  const todayScroll = useRef<ScrollView>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => setJournal(data.journal), 0);
@@ -133,16 +136,21 @@ export default function HomeScreen() {
 
   async function saveInline(draft: ItemDraft) {
     await data.saveItem(draft);
-    setInlineKind(null);
+    setInlineEditor(null);
   }
 
-  function moveTask(taskId: string, direction: -1 | 1) {
+  function moveTask(taskId: string, targetIndex: number) {
     const index = tasks.findIndex((task) => task.id === taskId);
-    const target = index + direction;
-    if (index < 0 || target < 0 || target >= tasks.length) return;
+    const target = Math.max(0, Math.min(tasks.length - 1, targetIndex));
+    if (index < 0 || target === index) return;
     const ordered = [...tasks];
-    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+    const [moved] = ordered.splice(index, 1);
+    ordered.splice(target, 0, moved);
     void data.reorderTasks(ordered.map((task) => task.id));
+  }
+
+  function revealInline(y: number) {
+    setTimeout(() => todayScroll.current?.scrollTo({ y: Math.max(0, y - 150), animated: true }), 80);
   }
 
   return (
@@ -160,8 +168,11 @@ export default function HomeScreen() {
 
       {destination === 'today' ? (
         <ScrollView
+          ref={todayScroll}
+          automaticallyAdjustKeyboardInsets
           contentContainerStyle={styles.scrollContent}
           keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.hero}>
@@ -201,19 +212,19 @@ export default function HomeScreen() {
           <View style={[styles.upNextCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.cardEyebrow, { color: colors.secondary }]}>UP NEXT</Text>
             {nextEvent ? (
-              <Pressable onPress={() => setEditor({ kind: 'event', item: nextEvent })}>
+              <Pressable onPress={() => setInlineEditor({ kind: 'event', item: nextEvent })}>
                 <Text style={[styles.upNextTitle, { color: colors.text }]}>{nextEvent.title}</Text>
                 <Text style={[styles.upNextMeta, { color: colors.blue }]}>
                   {nextEvent.startTime || 'All day'}
                 </Text>
               </Pressable>
             ) : events.length > 0 ? (
-              <Pressable onPress={() => setEditor({ kind: 'event' })}>
+              <Pressable onPress={() => setInlineEditor({ kind: 'event' })}>
                 <Text style={[styles.upNextTitle, { color: colors.text }]}>Events complete</Text>
                 <Text style={[styles.upNextMeta, { color: colors.blue }]}>Plan what comes next</Text>
               </Pressable>
             ) : (
-              <Pressable onPress={() => setEditor({ kind: 'event' })}>
+              <Pressable onPress={() => setInlineEditor({ kind: 'event' })}>
                 <Text style={[styles.upNextTitle, { color: colors.text }]}>Your day is open</Text>
                 <Text style={[styles.upNextMeta, { color: colors.blue }]}>Add an event</Text>
               </Pressable>
@@ -227,15 +238,15 @@ export default function HomeScreen() {
               <SectionHeader
                 action="Add event"
                 colors={colors}
-                onAction={() => setInlineKind(inlineKind === 'event' ? null : 'event')}
+                onAction={() => setInlineEditor(inlineEditor?.kind === 'event' && !inlineEditor.item ? null : { kind: 'event' })}
                 title="Events"
               />
               {events.length === 0 ? (
                 <EmptyRow colors={colors} label="No events planned" />
               ) : events.map((event) => (
+                <Fragment key={event.id}>
                 <Pressable
-                  key={event.id}
-                  onPress={() => setEditor({ kind: 'event', item: event })}
+                  onPress={() => setInlineEditor({ kind: 'event', item: event })}
                   style={({ pressed }) => [
                     styles.eventRow,
                     { borderColor: colors.separator },
@@ -255,68 +266,28 @@ export default function HomeScreen() {
                     )}
                   </View>
                 </Pressable>
+                {inlineEditor?.item?.id === event.id && (
+                  <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={today} />
+                )}
+                </Fragment>
               ))}
-              {inlineKind === 'event' && (
-                <InlineComposer colors={colors} kind="event" onCancel={() => setInlineKind(null)} onSave={saveInline} today={today} />
+              {inlineEditor?.kind === 'event' && !inlineEditor.item && (
+                <InlineComposer colors={colors} key="new-event" kind="event" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={today} />
               )}
 
               <SectionHeader
                 action="Add task"
                 colors={colors}
-                onAction={() => setInlineKind(inlineKind === 'task' ? null : 'task')}
+                onAction={() => setInlineEditor(inlineEditor?.kind === 'task' && !inlineEditor.item ? null : { kind: 'task' })}
                 title="Tasks"
               />
               {tasks.length === 0 ? (
                 <EmptyRow colors={colors} label="No tasks yet" />
-              ) : tasks.map((task) => (
-                <View key={task.id} style={[styles.taskRow, { borderColor: colors.separator }]}>
-                  <Pressable
-                    accessibilityLabel={task.completed ? `Mark ${task.title} incomplete` : `Complete ${task.title}`}
-                    onPress={() => void data.toggleTask(task)}
-                    hitSlop={8}
-                    style={[
-                      styles.checkbox,
-                      { borderColor: task.completed ? colors.blue : colors.tertiary },
-                      task.completed && { backgroundColor: colors.blue },
-                    ]}
-                  >
-                    {task.completed && <Text style={styles.checkmark}>✓</Text>}
-                  </Pressable>
-                  <Pressable
-                    onPress={() => setEditor({ kind: 'task', item: task })}
-                    onLongPress={() => setReorderingTask(task.id)}
-                    style={styles.taskCopy}
-                  >
-                    <Text
-                      style={[
-                        styles.rowTitle,
-                        { color: task.completed ? colors.secondary : colors.text },
-                        task.completed && styles.completed,
-                      ]}
-                    >
-                      {task.title}
-                    </Text>
-                    {task.notes && (
-                      <Text style={[styles.rowNote, { color: colors.secondary }]} numberOfLines={1}>
-                        {task.notes}
-                      </Text>
-                    )}
-                  </Pressable>
-                  {reorderingTask === task.id ? (
-                    <View style={styles.reorderControls}>
-                      <Pressable disabled={tasks[0]?.id === task.id} hitSlop={8} onPress={() => moveTask(task.id, -1)}><Text style={[styles.reorderArrow, { color: colors.blue }]}>↑</Text></Pressable>
-                      <Pressable disabled={tasks[tasks.length - 1]?.id === task.id} hitSlop={8} onPress={() => moveTask(task.id, 1)}><Text style={[styles.reorderArrow, { color: colors.blue }]}>↓</Text></Pressable>
-                      <Pressable hitSlop={8} onPress={() => setReorderingTask(null)}><Text style={[styles.reorderDone, { color: colors.secondary }]}>Done</Text></Pressable>
-                    </View>
-                  ) : (
-                    <Pressable accessibilityLabel={`Reorder ${task.title}`} hitSlop={8} onLongPress={() => setReorderingTask(task.id)} style={styles.dragHandle}>
-                      <Text style={[styles.dragHandleText, { color: colors.tertiary }]}>≡</Text>
-                    </Pressable>
-                  )}
-                </View>
+              ) : tasks.map((task, index) => (
+                <DraggableTaskRow colors={colors} index={index} key={task.id} onEdit={() => setEditor({ kind: 'task', item: task })} onMove={moveTask} onToggle={() => void data.toggleTask(task)} task={task} />
               ))}
-              {inlineKind === 'task' && (
-                <InlineComposer colors={colors} kind="task" onCancel={() => setInlineKind(null)} onSave={saveInline} today={today} />
+              {inlineEditor?.kind === 'task' && !inlineEditor.item && (
+                <InlineComposer colors={colors} key="new-task" kind="task" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={today} />
               )}
 
               <SectionHeader colors={colors} title="Notes" />
@@ -406,30 +377,153 @@ function TabButton({ active, label, onPress, colors }: {
   );
 }
 
-function InlineComposer({ kind, today, colors, onCancel, onSave }: {
+function DraggableTaskRow({ task, index, colors, onToggle, onEdit, onMove }: {
+  task: PlanningItem;
+  index: number;
+  colors: AppColors;
+  onToggle: () => void;
+  onEdit: () => void;
+  onMove: (id: string, targetIndex: number) => void;
+}) {
+  const [translateY] = useState(() => new Animated.Value(0));
+  const [dragging, setDragging] = useState(false);
+  const [suppressPress, setSuppressPress] = useState(false);
+
+  const responder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_, gesture) => dragging && Math.abs(gesture.dy) > 2,
+    onPanResponderMove: (_, gesture) => translateY.setValue(gesture.dy),
+    onPanResponderRelease: (_, gesture) => {
+      const target = index + Math.round(gesture.dy / 48);
+      setDragging(false);
+      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, speed: 24 }).start();
+      onMove(task.id, target);
+    },
+    onPanResponderTerminate: () => {
+      setDragging(false);
+      Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+    },
+  }), [dragging, index, onMove, task.id, translateY]);
+
+  return (
+    <Animated.View
+      {...responder.panHandlers}
+      style={[styles.taskRow, { borderColor: colors.separator, transform: [{ translateY }] }]}
+    >
+      <Pressable
+        accessibilityLabel={task.completed ? `Mark ${task.title} incomplete` : `Complete ${task.title}`}
+        hitSlop={8}
+        onPress={onToggle}
+        style={[
+          styles.checkbox,
+          { borderColor: task.completed ? colors.blue : colors.tertiary },
+          task.completed && { backgroundColor: colors.blue },
+        ]}
+      >
+        {task.completed && <Text style={styles.checkmark}>✓</Text>}
+      </Pressable>
+      <Pressable
+        delayLongPress={280}
+        onLongPress={() => {
+          setDragging(true);
+          setSuppressPress(true);
+          Animated.spring(translateY, { toValue: -2, useNativeDriver: true, speed: 30 }).start();
+        }}
+        onPress={() => {
+          if (suppressPress) {
+            setSuppressPress(false);
+            return;
+          }
+          onEdit();
+        }}
+        style={styles.taskCopy}
+      >
+        <Text style={[styles.rowTitle, { color: task.completed ? colors.secondary : colors.text }, task.completed && styles.completed]}>{task.title}</Text>
+        {task.notes && <Text style={[styles.rowNote, { color: colors.secondary }]} numberOfLines={1}>{task.notes}</Text>}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+function InlineTimePicker({ value, colors, onChange }: {
+  value: string;
+  colors: AppColors;
+  onChange: (value: string) => void;
+}) {
+  const match = value.match(/^(\d{1,2}):?(\d{2})?\s*(AM|PM)?$/i);
+  const [hour, setHour] = useState(Number(match?.[1] ?? 9));
+  const [minute, setMinute] = useState(Number(match?.[2] ?? 0));
+  const [period, setPeriod] = useState<'AM' | 'PM'>((match?.[3]?.toUpperCase() as 'AM' | 'PM') ?? 'AM');
+
+  function choose(nextHour = hour, nextMinute = minute, nextPeriod = period) {
+    setHour(nextHour);
+    setMinute(nextMinute);
+    setPeriod(nextPeriod);
+    onChange(`${nextHour}:${String(nextMinute).padStart(2, '0')} ${nextPeriod}`);
+  }
+
+  return (
+    <View style={styles.timePicker}>
+      <Text style={[styles.timePickerCaption, { color: colors.secondary }]}>HOUR</Text>
+      <ScrollView horizontal contentContainerStyle={styles.timeOptions} keyboardShouldPersistTaps="always" showsHorizontalScrollIndicator={false}>
+        {Array.from({ length: 12 }, (_, index) => index + 1).map((option) => (
+          <Pressable key={option} onPress={() => choose(option)} style={[styles.timeChip, { backgroundColor: hour === option ? colors.blue : colors.background }]}>
+            <Text style={[styles.timeChipText, { color: hour === option ? '#FFFFFF' : colors.text }]}>{option}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <View style={styles.minutePeriodRow}>
+        <ScrollView horizontal contentContainerStyle={styles.timeOptions} keyboardShouldPersistTaps="always" showsHorizontalScrollIndicator={false} style={styles.minuteScroller}>
+          {[0, 5, 10, 15, 20, 30, 45].map((option) => (
+            <Pressable key={option} onPress={() => choose(hour, option)} style={[styles.minuteChip, { backgroundColor: minute === option ? colors.blue : colors.background }]}>
+              <Text style={[styles.timeChipText, { color: minute === option ? '#FFFFFF' : colors.text }]}>:{String(option).padStart(2, '0')}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <View style={[styles.periodPicker, { backgroundColor: colors.background }]}>
+          {(['AM', 'PM'] as const).map((option) => (
+            <Pressable key={option} onPress={() => choose(hour, minute, option)} style={[styles.periodOption, period === option && { backgroundColor: colors.blue }]}>
+              <Text style={[styles.periodText, { color: period === option ? '#FFFFFF' : colors.secondary }]}>{option}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function InlineComposer({ kind, today, colors, initial, onCancel, onReveal, onSave }: {
   kind: 'task' | 'event';
   today: string;
   colors: AppColors;
+  initial?: PlanningItem;
   onCancel: () => void;
+  onReveal: (y: number) => void;
   onSave: (draft: ItemDraft) => Promise<void>;
 }) {
-  const [title, setTitle] = useState('');
-  const [time, setTime] = useState('');
-  const [notes, setNotes] = useState('');
-  const [location, setLocation] = useState('');
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [time, setTime] = useState(initial?.startTime ?? '');
+  const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [location, setLocation] = useState(initial?.location ?? '');
+  const [timeOpen, setTimeOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const layoutY = useRef(0);
 
   async function submit() {
     if (!title.trim() || saving) return;
     setSaving(true);
-    await onSave({ kind, title, date: today, time, notes, location });
+    await onSave({ id: initial?.id, kind, title, date: today, time, notes, location });
+  }
+
+  function focusComposer() {
+    onReveal(layoutY.current);
   }
 
   return (
-    <View style={[styles.inlineComposer, { backgroundColor: colors.card }]}>
+    <View onLayout={(event) => { layoutY.current = event.nativeEvent.layout.y; }} style={[styles.inlineComposer, { backgroundColor: colors.card }]}>
       <TextInput
         autoFocus
         onChangeText={setTitle}
+        onFocus={focusComposer}
         onSubmitEditing={() => kind === 'task' && void submit()}
         placeholder={kind === 'event' ? 'Event' : 'Task'}
         placeholderTextColor={colors.tertiary}
@@ -438,16 +532,22 @@ function InlineComposer({ kind, today, colors, onCancel, onSave }: {
         value={title}
       />
       {kind === 'event' && (
-        <TextInput
-          onChangeText={setTime}
-          placeholder="Time"
-          placeholderTextColor={colors.tertiary}
-          style={[styles.inlineField, { color: colors.text, borderColor: colors.separator }]}
-          value={time}
-        />
+        <>
+          <Pressable onPress={() => {
+            Keyboard.dismiss();
+            setTimeOpen((open) => !open);
+            focusComposer();
+          }} style={[styles.inlineTimeButton, { borderColor: colors.separator }]}>
+            <Text style={[styles.inlineTimeLabel, { color: colors.secondary }]}>TIME</Text>
+            <Text style={[styles.inlineTimeValue, { color: time ? colors.text : colors.tertiary }]}>{time || 'Choose a time'}</Text>
+            <Text style={[styles.dateChevron, { color: colors.blue }]}>{timeOpen ? '⌃' : '⌄'}</Text>
+          </Pressable>
+          {timeOpen && <InlineTimePicker colors={colors} onChange={setTime} value={time} />}
+        </>
       )}
       <TextInput
         onChangeText={setNotes}
+        onFocus={focusComposer}
         placeholder={kind === 'task' ? 'Subtext (optional)' : 'Notes (optional)'}
         placeholderTextColor={colors.tertiary}
         style={[styles.inlineField, { color: colors.text, borderColor: colors.separator }]}
@@ -456,6 +556,7 @@ function InlineComposer({ kind, today, colors, onCancel, onSave }: {
       {kind === 'event' && (
         <TextInput
           onChangeText={setLocation}
+          onFocus={focusComposer}
           placeholder="Location (optional)"
           placeholderTextColor={colors.tertiary}
           style={[styles.inlineField, { color: colors.text, borderColor: colors.separator }]}
@@ -465,7 +566,7 @@ function InlineComposer({ kind, today, colors, onCancel, onSave }: {
       <View style={styles.inlineActions}>
         <Pressable onPress={onCancel} hitSlop={8}><Text style={[styles.inlineAction, { color: colors.secondary }]}>Cancel</Text></Pressable>
         <Pressable disabled={!title.trim() || saving} onPress={() => void submit()} style={[styles.inlineSave, { backgroundColor: title.trim() ? colors.blue : colors.tertiary }]}>
-          <Text style={styles.inlineSaveText}>{saving ? 'Adding…' : `Add ${kind}`}</Text>
+          <Text style={styles.inlineSaveText}>{saving ? 'Saving…' : initial ? `Save ${kind}` : `Add ${kind}`}</Text>
         </Pressable>
       </View>
     </View>
@@ -811,11 +912,6 @@ const styles = StyleSheet.create({
   checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 },
   checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   taskCopy: { flex: 1, paddingVertical: 8 },
-  dragHandle: { width: 30, height: 38, alignItems: 'center', justifyContent: 'center' },
-  dragHandleText: { fontSize: 21, fontWeight: '700' },
-  reorderControls: { flexDirection: 'row', alignItems: 'center', gap: 12, minWidth: 104, justifyContent: 'flex-end' },
-  reorderArrow: { fontSize: 20, fontWeight: '700' },
-  reorderDone: { fontSize: 12, fontWeight: '600' },
   completed: { textDecorationLine: 'line-through' },
   emptyRow: { height: 42, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 14, paddingTop: 10 },
   journal: { minHeight: 96, borderRadius: 14, padding: 13, fontSize: 16, lineHeight: 22, textAlignVertical: 'top' },
@@ -835,6 +931,20 @@ const styles = StyleSheet.create({
   inlineComposer: { borderRadius: 14, paddingHorizontal: 13, paddingBottom: 11, marginTop: 8 },
   inlineTitle: { height: 48, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 17, fontWeight: '600' },
   inlineField: { height: 42, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 15 },
+  inlineTimeButton: { height: 44, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
+  inlineTimeLabel: { width: 48, fontSize: 10, fontWeight: '700', letterSpacing: 0.6 },
+  inlineTimeValue: { flex: 1, fontSize: 15, fontWeight: '500' },
+  timePicker: { paddingVertical: 10, gap: 7 },
+  timePickerCaption: { fontSize: 9, fontWeight: '700', letterSpacing: 0.7 },
+  timeOptions: { gap: 6, paddingRight: 8 },
+  timeChip: { width: 36, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  minuteChip: { minWidth: 43, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 },
+  timeChipText: { fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  minutePeriodRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  minuteScroller: { flex: 1 },
+  periodPicker: { flexDirection: 'row', borderRadius: 9, padding: 2 },
+  periodOption: { height: 28, minWidth: 35, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+  periodText: { fontSize: 11, fontWeight: '700' },
   inlineActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 16, marginTop: 10 },
   inlineAction: { fontSize: 14, fontWeight: '600' },
   inlineSave: { height: 34, borderRadius: 10, paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
