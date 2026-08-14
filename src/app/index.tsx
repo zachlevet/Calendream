@@ -7,6 +7,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
+  Linking,
   Modal,
   Platform,
   PanResponder,
@@ -22,7 +23,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { useTodayData, type ItemDraft } from '../hooks/use-today';
-import type { PlanningItem } from '../models/planning';
+import type { LocationPlace, PlanningItem } from '../models/planning';
+import CalendreamMapKit from '../../modules/calendream-mapkit/src/CalendreamMapKitModule';
+import type { MapSuggestion } from '../../modules/calendream-mapkit/src/CalendreamMapKit.types';
 
 type Destination = 'today' | 'timeline';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
@@ -115,6 +118,17 @@ function timeMinutes(value?: string) {
   if (period === 'am' && hour === 12) hour = 0;
   if (period === 'pm' && hour < 12) hour += 12;
   return hour * 60 + minute;
+}
+
+async function openItemInMaps(item: PlanningItem) {
+  if (!item.location) return;
+  if (CalendreamMapKit && item.locationPlace) {
+    const place = item.locationPlace;
+    await CalendreamMapKit.openInMapsAsync(place.name, place.address, place.latitude, place.longitude);
+    return;
+  }
+  const query = encodeURIComponent(item.location);
+  await Linking.openURL(`http://maps.apple.com/?q=${query}`);
 }
 
 export default function HomeScreen() {
@@ -292,6 +306,19 @@ export default function HomeScreen() {
                       </Text>
                     )}
                   </View>
+                  {event.location && (
+                    <Pressable
+                      accessibilityLabel={`Open ${event.location} in Maps`}
+                      hitSlop={8}
+                      onPress={(pressEvent) => {
+                        pressEvent.stopPropagation();
+                        void openItemInMaps(event);
+                      }}
+                      style={[styles.mapsButton, { backgroundColor: colors.blueSoft }]}
+                    >
+                      <Text style={[styles.mapsButtonText, { color: colors.blue }]}>Maps</Text>
+                    </Pressable>
+                  )}
                 </Pressable>
                 {inlineEditor?.item?.id === event.id && (
                   <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={today} />
@@ -527,6 +554,7 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onReveal, onSa
   const [time, setTime] = useState(initial?.startTime ?? '');
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [location, setLocation] = useState(initial?.location ?? '');
+  const [locationPlace, setLocationPlace] = useState<LocationPlace | undefined>(initial?.locationPlace);
   const [timeOpen, setTimeOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const layoutY = useRef(0);
@@ -534,7 +562,7 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onReveal, onSa
   async function submit() {
     if (!title.trim() || saving) return;
     setSaving(true);
-    await onSave({ id: initial?.id, kind, title, date: today, time, notes, location });
+    await onSave({ id: initial?.id, kind, title, date: today, time, notes, location, locationPlace });
   }
 
   function focusComposer() {
@@ -576,12 +604,17 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onReveal, onSa
         value={notes}
       />
       {kind === 'event' && (
-        <TextInput
-          onChangeText={setLocation}
+        <LocationInput
+          colors={colors}
           onFocus={focusComposer}
-          placeholder="Location (optional)"
-          placeholderTextColor={colors.tertiary}
-          style={[styles.inlineField, { color: colors.text, borderColor: colors.separator }]}
+          onPlaceChange={(place) => {
+            setLocationPlace(place);
+            setLocation(place.address);
+          }}
+          onTextChange={(text) => {
+            setLocation(text);
+            setLocationPlace(undefined);
+          }}
           value={location}
         />
       )}
@@ -610,6 +643,7 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
   const [time, setTime] = useState(item?.startTime ?? '');
   const [notes, setNotes] = useState(item?.notes ?? '');
   const [location, setLocation] = useState(item?.location ?? '');
+  const [locationPlace, setLocationPlace] = useState<LocationPlace | undefined>(item?.locationPlace);
   const [dateOpen, setDateOpen] = useState(false);
   const [timeOpen, setTimeOpen] = useState(false);
   const initialMonth = dateFromISO(item?.anchorStart ?? today);
@@ -620,7 +654,7 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
   async function submit() {
     if (!valid || saving) return;
     setSaving(true);
-    await onSave({ id: item?.id, kind, title, date, time, notes, location });
+    await onSave({ id: item?.id, kind, title, date, time, notes, location, locationPlace });
   }
 
   function confirmDelete() {
@@ -701,7 +735,21 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
               </>
             )}
             <LabeledInput colors={colors} label="NOTES" multiline onChangeText={setNotes} placeholder="Optional details" value={notes} />
-            {kind === 'event' && <LabeledInput colors={colors} label="PLACE" onChangeText={setLocation} placeholder="Optional location" value={location} />}
+            {kind === 'event' && (
+              <LocationInput
+                colors={colors}
+                labeled
+                onPlaceChange={(place) => {
+                  setLocationPlace(place);
+                  setLocation(place.address);
+                }}
+                onTextChange={(text) => {
+                  setLocation(text);
+                  setLocationPlace(undefined);
+                }}
+                value={location}
+              />
+            )}
           </View>
 
           {item && (
@@ -713,6 +761,85 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
         </SafeAreaView>
       </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+function LocationInput({ value, colors, labeled, onFocus, onTextChange, onPlaceChange }: {
+  value: string;
+  colors: AppColors;
+  labeled?: boolean;
+  onFocus?: () => void;
+  onTextChange: (value: string) => void;
+  onPlaceChange: (place: LocationPlace) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<MapSuggestion[]>([]);
+  const [resolving, setResolving] = useState(false);
+  const [selectionCommitted, setSelectionCommitted] = useState(false);
+
+  useEffect(() => {
+    const query = value.trim();
+    if (!CalendreamMapKit || query.length < 2 || resolving || selectionCommitted) return;
+    let current = true;
+    const timer = setTimeout(() => {
+      void CalendreamMapKit.suggestAsync(query)
+        .then((results) => { if (current) setSuggestions(results); })
+        .catch(() => { if (current) setSuggestions([]); });
+    }, 220);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [resolving, selectionCommitted, value]);
+
+  async function selectSuggestion(suggestion: MapSuggestion) {
+    if (!CalendreamMapKit) return;
+    setResolving(true);
+    setSuggestions([]);
+    try {
+      const query = [suggestion.title, suggestion.subtitle].filter(Boolean).join(', ');
+      const place = await CalendreamMapKit.resolveAsync(query);
+      setSelectionCommitted(true);
+      onPlaceChange(place);
+    } catch {
+      Alert.alert('Location unavailable', 'Calendream could not resolve that place. Try another result.');
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  return (
+    <View>
+      <View style={[labeled ? styles.inputRow : styles.locationInputRow, { borderColor: colors.separator }]}>
+        {labeled && <Text style={[styles.inputLabel, { color: colors.secondary }]}>PLACE</Text>}
+        <TextInput
+          autoCorrect={false}
+          onChangeText={(text) => {
+            setSelectionCommitted(false);
+            onTextChange(text);
+            setSuggestions([]);
+          }}
+          onFocus={onFocus}
+          placeholder={resolving ? 'Finding place…' : 'Location (optional)'}
+          placeholderTextColor={colors.tertiary}
+          style={[labeled ? styles.fieldInput : styles.locationInput, { color: colors.text }]}
+          value={value}
+        />
+      </View>
+      {suggestions.length > 0 && (
+        <View style={[styles.locationSuggestions, { backgroundColor: colors.background, borderColor: colors.separator }]}>
+          {suggestions.map((suggestion, index) => (
+            <Pressable
+              key={`${suggestion.title}-${suggestion.subtitle}-${index}`}
+              onPress={() => void selectSuggestion(suggestion)}
+              style={[styles.locationSuggestion, index > 0 && { borderColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }]}
+            >
+              <Text style={[styles.locationSuggestionTitle, { color: colors.text }]} numberOfLines={1}>{suggestion.title}</Text>
+              {!!suggestion.subtitle && <Text style={[styles.locationSuggestionSubtitle, { color: colors.secondary }]} numberOfLines={1}>{suggestion.subtitle}</Text>}
+            </Pressable>
+          ))}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -942,6 +1069,8 @@ const styles = StyleSheet.create({
   eventRow: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
   eventTime: { width: 68, fontSize: 13, fontVariant: ['tabular-nums'] },
   eventRule: { width: 3, height: 27, borderRadius: 2, marginRight: 11 },
+  mapsButton: { height: 28, borderRadius: 14, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
+  mapsButtonText: { fontSize: 12, fontWeight: '700' },
   rowCopy: { flex: 1, paddingVertical: 6 },
   rowTitle: { fontSize: 16, fontWeight: '500', letterSpacing: -0.15 },
   rowNote: { fontSize: 12, marginTop: 2 },
@@ -968,6 +1097,12 @@ const styles = StyleSheet.create({
   inlineComposer: { borderRadius: 14, paddingHorizontal: 13, paddingBottom: 11, marginTop: 8 },
   inlineTitle: { height: 48, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 17, fontWeight: '600' },
   inlineField: { height: 42, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 15 },
+  locationInputRow: { minHeight: 42, borderBottomWidth: StyleSheet.hairlineWidth, justifyContent: 'center' },
+  locationInput: { minHeight: 42, fontSize: 15 },
+  locationSuggestions: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, overflow: 'hidden', marginTop: 6 },
+  locationSuggestion: { minHeight: 48, paddingHorizontal: 11, paddingVertical: 7, justifyContent: 'center' },
+  locationSuggestionTitle: { fontSize: 14, fontWeight: '600' },
+  locationSuggestionSubtitle: { fontSize: 11, marginTop: 2 },
   inlineTimeButton: { height: 44, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
   inlineTimeValue: { flex: 1, fontSize: 15, fontWeight: '500' },
   wheelPickerWrap: { height: 168, overflow: 'hidden', justifyContent: 'center' },

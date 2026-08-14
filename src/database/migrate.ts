@@ -55,4 +55,13 @@ export async function migrateDatabase(db: SQLiteDatabase) {
   if (!itemColumns.some((column) => column.name === 'sort_order')) {
     await db.execAsync('ALTER TABLE items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
   }
+  if (!itemColumns.some((column) => column.name === 'location_name')) {
+    await db.execAsync('ALTER TABLE items ADD COLUMN location_name TEXT');
+  }
+  if (!itemColumns.some((column) => column.name === 'location_latitude')) {
+    await db.execAsync('ALTER TABLE items ADD COLUMN location_latitude REAL');
+  }
+  if (!itemColumns.some((column) => column.name === 'location_longitude')) {
+    await db.execAsync('ALTER TABLE items ADD COLUMN location_longitude REAL');
+  }
 }

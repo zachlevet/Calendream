@@ -28,6 +28,7 @@ export function useTodayData(date: string) {
           startTime: draft.time,
           notes: draft.notes,
           location: draft.location,
+          locationPlace: draft.locationPlace,
         };
         return draft.id
           ? current.map((existing) => existing.id === draft.id ? { ...existing, ...item } : existing)

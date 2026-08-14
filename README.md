@@ -9,6 +9,14 @@ npm install
 npm run ios
 ```
 
+Calendream includes a local Swift MapKit module for Apple place autocomplete. Expo Go can still run the app with plain-text locations, but MapKit suggestions require Calendream's development build:
+
+```bash
+npx expo run:ios
+```
+
+After the first native build, TypeScript and styling changes continue to use fast refresh. Rebuild only after changing native Swift code or native dependencies.
+
 For the web build:
 
 ```bash
@@ -31,4 +39,5 @@ Personal Alpha 0.1 currently supports:
 - Upcoming-event countdown pills for the next 120 days
 - A first-open morning review for unfinished past tasks
 - Rollover actions to move a task to Today, choose another date, or dismiss it
+- Apple MapKit place suggestions, structured locations, and Open in Maps actions
 - A compact native Today home in light and dark appearance

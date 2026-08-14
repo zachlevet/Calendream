@@ -1,6 +1,13 @@
 export type ItemKind = 'task' | 'event';
 export type TimePrecision = 'time' | 'day' | 'month' | 'quarter' | 'year' | 'someday';
 
+export interface LocationPlace {
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+}
+
 export interface ItemDraft {
   id?: string;
   kind: ItemKind;
@@ -9,6 +16,7 @@ export interface ItemDraft {
   time?: string;
   notes?: string;
   location?: string;
+  locationPlace?: LocationPlace;
 }
 
 export interface PlanningItem {
@@ -24,5 +32,6 @@ export interface PlanningItem {
   habitName?: string;
   notes?: string;
   location?: string;
+  locationPlace?: LocationPlace;
   sortOrder?: number;
 }

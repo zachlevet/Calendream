@@ -18,6 +18,9 @@ interface ItemRow {
   notes: string | null;
   location: string | null;
   sort_order: number;
+  location_name: string | null;
+  location_latitude: number | null;
+  location_longitude: number | null;
 }
 
 function toItem(row: ItemRow): PlanningItem {
@@ -34,6 +37,12 @@ function toItem(row: ItemRow): PlanningItem {
     notes: row.notes ?? undefined,
     location: row.location ?? undefined,
     sortOrder: row.sort_order,
+    locationPlace: row.location_latitude != null && row.location_longitude != null ? {
+      name: row.location_name ?? row.location ?? '',
+      address: row.location ?? '',
+      latitude: row.location_latitude,
+      longitude: row.location_longitude,
+    } : undefined,
   };
 }
 
@@ -60,7 +69,8 @@ export function useTodayData(date: string) {
     const [todayRows, upcomingRows, overdueRows, page, morningReview] = await Promise.all([
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
-                start_time, completed_at, notes, location, sort_order
+                start_time, completed_at, notes, location, sort_order,
+                location_name, location_latitude, location_longitude
          FROM items
          WHERE deleted_at IS NULL AND anchor_start = ?
          ORDER BY CASE kind WHEN 'event' THEN 0 ELSE 1 END,
@@ -71,7 +81,8 @@ export function useTodayData(date: string) {
       ),
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
-                start_time, completed_at, notes, location, sort_order
+                start_time, completed_at, notes, location, sort_order,
+                location_name, location_latitude, location_longitude
          FROM items
          WHERE deleted_at IS NULL AND kind = 'event'
            AND anchor_start > ? AND anchor_start <= ?
@@ -82,7 +93,8 @@ export function useTodayData(date: string) {
       ),
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
-                start_time, completed_at, notes, location, sort_order
+                start_time, completed_at, notes, location, sort_order,
+                location_name, location_latitude, location_longitude
          FROM items
          WHERE deleted_at IS NULL AND kind = 'task'
            AND completed_at IS NULL AND anchor_start < ?
@@ -117,7 +129,8 @@ export function useTodayData(date: string) {
       await db.runAsync(
         `UPDATE items
          SET kind = ?, title = ?, anchor_start = ?, anchor_end = ?,
-             precision = ?, altitude = ?, start_time = ?, notes = ?, location = ?, updated_at = ?
+             precision = ?, altitude = ?, start_time = ?, notes = ?, location = ?,
+             location_name = ?, location_latitude = ?, location_longitude = ?, updated_at = ?
          WHERE id = ?`,
         draft.kind,
         draft.title.trim(),
@@ -128,6 +141,9 @@ export function useTodayData(date: string) {
         draft.kind === 'event' ? draft.time?.trim() || null : null,
         draft.notes?.trim() || null,
         draft.location?.trim() || null,
+        draft.locationPlace?.name ?? null,
+        draft.locationPlace?.latitude ?? null,
+        draft.locationPlace?.longitude ?? null,
         now,
         draft.id,
       );
@@ -135,8 +151,9 @@ export function useTodayData(date: string) {
       await db.runAsync(
         `INSERT INTO items
           (id, kind, title, anchor_start, anchor_end, precision, altitude,
-           start_time, notes, location, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+           start_time, notes, location, location_name, location_latitude,
+           location_longitude, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
            COALESCE((SELECT MAX(sort_order) + 1 FROM items WHERE kind = ? AND anchor_start = ?), 0), ?, ?)`,
         makeId(),
         draft.kind,
@@ -148,6 +165,9 @@ export function useTodayData(date: string) {
         draft.kind === 'event' ? draft.time?.trim() || null : null,
         draft.notes?.trim() || null,
         draft.location?.trim() || null,
+        draft.locationPlace?.name ?? null,
+        draft.locationPlace?.latitude ?? null,
+        draft.locationPlace?.longitude ?? null,
         draft.kind,
         draft.date,
         now,
