@@ -19,14 +19,14 @@ Today is a calm home for planning and completing the current day. It is not mere
 
 ## Personal Alpha 0.1
 
-- Native Today home
-- Durable local SQLite database
-- Add, edit, delete, and complete tasks
-- Add, edit, and delete events
-- Daily reflection
+- Native Today home *(built)*
+- Durable local SQLite database *(built)*
+- Add, edit, delete, and complete tasks *(built)*
+- Add, edit, and delete events *(built)*
+- Daily notes *(built)*
 - Previous/next day navigation
 - Timeline destination ready for month/quarter/year work
-- Light and dark appearance
+- Light and dark appearance *(built)*
 
 ## Deliberately deferred
 

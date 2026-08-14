@@ -20,3 +20,13 @@ The product direction and first milestone are documented in [PRODUCT.md](./PRODU
 ## Project status
 
 This repository is the production application foundation. The separate `horizon-share` repository remains the disposable HTML interaction prototype.
+
+Personal Alpha 0.1 currently supports:
+
+- SQLite-backed tasks and events
+- Create, edit, and soft-delete item sheets
+- Persistent task completion
+- Persistent daily notes
+- Dynamic Up Next state
+- Upcoming-event countdown pills for the next 120 days
+- A compact native Today home in light and dark appearance
