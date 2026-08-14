@@ -5,6 +5,7 @@ import {
   Animated,
   Keyboard,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
   Platform,
   PanResponder,
@@ -523,12 +524,11 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onReveal, onSa
         <>
           <Pressable onPress={() => {
             Keyboard.dismiss();
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             setTimeOpen((open) => !open);
             focusComposer();
           }} style={[styles.inlineTimeButton, { borderColor: colors.separator }]}>
-            <Text style={[styles.inlineTimeLabel, { color: colors.secondary }]}>TIME</Text>
-            <Text style={[styles.inlineTimeValue, { color: time ? colors.text : colors.tertiary }]}>{time || 'Choose a time'}</Text>
-            <Text style={[styles.dateChevron, { color: colors.blue }]}>{timeOpen ? '⌃' : '⌄'}</Text>
+            <Text style={[styles.inlineTimeValue, { color: time ? colors.text : colors.tertiary }]}>{time || 'Time'}</Text>
           </Pressable>
           {timeOpen && <InlineTimePicker colors={colors} onChange={setTime} value={time} />}
         </>
@@ -657,11 +657,11 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
               <>
                 <Pressable onPress={() => {
                   Keyboard.dismiss();
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                   setTimeOpen((open) => !open);
                 }} style={[styles.inputRow, { borderColor: colors.separator }]}>
                   <Text style={[styles.inputLabel, { color: colors.secondary }]}>TIME</Text>
                   <Text style={[styles.dateValue, { color: time ? colors.text : colors.tertiary }]}>{time || 'Choose a time'}</Text>
-                  <Text style={[styles.dateChevron, { color: colors.blue }]}>{timeOpen ? '⌃' : '⌄'}</Text>
                 </Pressable>
                 {timeOpen && <View style={styles.editorWheel}><InlineTimePicker colors={colors} onChange={setTime} value={time} /></View>}
               </>
@@ -931,7 +931,6 @@ const styles = StyleSheet.create({
   inlineTitle: { height: 48, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 17, fontWeight: '600' },
   inlineField: { height: 42, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 15 },
   inlineTimeButton: { height: 44, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
-  inlineTimeLabel: { width: 48, fontSize: 10, fontWeight: '700', letterSpacing: 0.6 },
   inlineTimeValue: { flex: 1, fontSize: 15, fontWeight: '500' },
   wheelPickerWrap: { height: 168, overflow: 'hidden', justifyContent: 'center' },
   inlineActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 16, marginTop: 10 },
