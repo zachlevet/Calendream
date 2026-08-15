@@ -142,6 +142,7 @@ export default function HomeScreen() {
   const [journal, setJournal] = useState('');
   const [briefingSessionActive, setBriefingSessionActive] = useState(false);
   const [inlineEditor, setInlineEditor] = useState<EditorState>(null);
+  const [inlineDraft, setInlineDraft] = useState<ItemDraft | null>(null);
   const todayScroll = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -190,7 +191,32 @@ export default function HomeScreen() {
 
   async function saveInline(draft: ItemDraft) {
     await data.saveItem(draft);
+    setInlineDraft(null);
     setInlineEditor(null);
+  }
+
+  async function toggleEventEditor(event: PlanningItem) {
+    const editingEvent = inlineEditor?.kind === 'event' ? inlineEditor.item : undefined;
+    if (editingEvent && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
+
+    if (editingEvent?.id === event.id) {
+      setInlineDraft(null);
+      setInlineEditor(null);
+      Keyboard.dismiss();
+      return;
+    }
+
+    setInlineDraft({
+      id: event.id,
+      kind: 'event',
+      title: event.title,
+      date: event.anchorStart ?? selectedDate,
+      time: event.startTime,
+      notes: event.notes,
+      location: event.location,
+      locationPlace: event.locationPlace,
+    });
+    setInlineEditor({ kind: 'event', item: event });
   }
 
   function moveTask(taskId: string, targetIndex: number) {
@@ -300,7 +326,7 @@ export default function HomeScreen() {
               ) : events.map((event) => (
                 <Fragment key={event.id}>
                 <Pressable
-                  onPress={() => setInlineEditor({ kind: 'event', item: event })}
+                  onPress={() => void toggleEventEditor(event)}
                   style={({ pressed }) => [
                     styles.eventRow,
                     { borderColor: colors.separator },
@@ -334,7 +360,7 @@ export default function HomeScreen() {
                   )}
                 </Pressable>
                 {inlineEditor?.item?.id === event.id && (
-                <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={() => setInlineEditor(null)} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
                 )}
                 </Fragment>
               ))}
@@ -755,12 +781,13 @@ function InlineTimePicker({ value, colors, onChange }: {
   );
 }
 
-function InlineComposer({ kind, today, colors, initial, onCancel, onReveal, onSave }: {
+function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange, onReveal, onSave }: {
   kind: 'task' | 'event';
   today: string;
   colors: AppColors;
   initial?: PlanningItem;
   onCancel: () => void;
+  onDraftChange?: (draft: ItemDraft) => void;
   onReveal: (y: number) => void;
   onSave: (draft: ItemDraft) => Promise<void>;
 }) {
@@ -772,6 +799,11 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onReveal, onSa
   const [timeOpen, setTimeOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const layoutY = useRef(0);
+
+  useEffect(() => {
+    if (!onDraftChange) return;
+    onDraftChange({ id: initial?.id, kind, title, date: today, time, notes, location, locationPlace });
+  }, [initial?.id, kind, location, locationPlace, notes, onDraftChange, time, title, today]);
 
   async function submit() {
     if (!title.trim() || saving) return;
@@ -832,12 +864,14 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onReveal, onSa
           value={location}
         />
       )}
-      <View style={styles.inlineActions}>
-        <Pressable onPress={onCancel} hitSlop={8}><Text style={[styles.inlineAction, { color: colors.secondary }]}>Cancel</Text></Pressable>
-        <Pressable disabled={!title.trim() || saving} onPress={() => void submit()} style={[styles.inlineSave, { backgroundColor: title.trim() ? colors.blue : colors.tertiary }]}>
-          <Text style={styles.inlineSaveText}>{saving ? 'Saving…' : initial ? `Save ${kind}` : `Add ${kind}`}</Text>
-        </Pressable>
-      </View>
+      {!(kind === 'event' && initial) && (
+        <View style={styles.inlineActions}>
+          <Pressable onPress={onCancel} hitSlop={8}><Text style={[styles.inlineAction, { color: colors.secondary }]}>Cancel</Text></Pressable>
+          <Pressable disabled={!title.trim() || saving} onPress={() => void submit()} style={[styles.inlineSave, { backgroundColor: title.trim() ? colors.blue : colors.tertiary }]}>
+            <Text style={styles.inlineSaveText}>{saving ? 'Saving…' : initial ? `Save ${kind}` : `Add ${kind}`}</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
