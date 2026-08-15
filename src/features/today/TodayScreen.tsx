@@ -41,6 +41,7 @@ import { palette, type AppColors } from '@/theme/colors';
 import CalendreamMapKit from '../../../modules/calendream-mapkit/src/CalendreamMapKitModule';
 import type { MapSuggestion } from '../../../modules/calendream-mapkit/src/CalendreamMapKit.types';
 import { DailyReflection } from './components/DailyReflection';
+import { QuickCaptureSheet } from '@/features/quick-capture/QuickCaptureSheet';
 
 type Destination = 'today' | 'timeline';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
@@ -70,6 +71,7 @@ export function TodayScreen() {
   const data = useTodayData(selectedDate, today);
   const [destination, setDestination] = useState<Destination>('today');
   const [editor, setEditor] = useState<EditorState>(null);
+  const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
   const [journal, setJournal] = useState('');
   const [briefingSessionActive, setBriefingSessionActive] = useState(false);
   const [inlineEditor, setInlineEditor] = useState<EditorState>(null);
@@ -312,7 +314,7 @@ export function TodayScreen() {
         <Text style={[styles.wordmark, { color: colors.text }]}>Calendream</Text>
         <Pressable
           accessibilityLabel="Add an item"
-          onPress={() => setEditor({ kind: 'task' })}
+          onPress={() => setQuickCaptureOpen(true)}
           style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
         >
           <Text style={styles.addSymbol}>+</Text>
@@ -506,6 +508,13 @@ export function TodayScreen() {
         onDelete={removeItem}
         onSave={saveDraft}
         today={selectedDate}
+      />
+      <QuickCaptureSheet
+        colors={colors}
+        date={selectedDate}
+        onClose={() => setQuickCaptureOpen(false)}
+        onSave={data.saveItem}
+        visible={quickCaptureOpen}
       />
       <MorningBriefing
         colors={colors}

@@ -53,7 +53,7 @@ export function useTodayData(date: string, _reviewDate = date) {
           anchorStart: draft.date,
           anchorEnd: draft.date,
           precision: draft.kind === 'event' && draft.time ? 'time' : 'day',
-          altitude: draft.kind === 'event' ? 1 : 0,
+          altitude: draft.altitude ?? (draft.kind === 'event' ? 1 : 0),
           startTime: draft.time,
           notes: draft.notes,
           location: draft.location,

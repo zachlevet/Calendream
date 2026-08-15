@@ -17,6 +17,7 @@ export interface ItemDraft {
   notes?: string;
   location?: string;
   locationPlace?: LocationPlace;
+  altitude?: PlanningItem['altitude'];
 }
 
 export interface PlanningItem {
