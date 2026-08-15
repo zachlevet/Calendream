@@ -598,13 +598,20 @@ function DailyReflection({ date, today, value, colors, onChange, onSave }: {
   ];
   const activeMode = modes.find((item) => item.id === mode) ?? modes[0];
 
-  function chooseMode(nextMode: ReflectionMode) {
-    setMode(nextMode);
+  function beginWriting() {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded(true);
+  }
+
+  function chooseMode(nextMode: ReflectionMode) {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setMode(nextMode);
   }
 
   function finish() {
     void onSave(value);
+    Keyboard.dismiss();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded(false);
   }
 
@@ -615,29 +622,31 @@ function DailyReflection({ date, today, value, colors, onChange, onSave }: {
         <Text style={[styles.reflectionContext, { color: colors.tertiary }]}>{context}</Text>
       </View>
 
-      <View style={styles.reflectionModes}>
-        {modes.map((item) => {
-          const active = item.id === mode;
-          return (
-            <Pressable
-              key={item.id}
-              onPress={() => chooseMode(item.id)}
-              style={[
-                styles.reflectionMode,
-                { backgroundColor: item.soft },
-                active && { borderColor: item.accent },
-              ]}
-            >
-              <Text style={[styles.reflectionModeText, { color: item.accent }]}>{item.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      {expanded && (
+        <View style={styles.reflectionModes}>
+          {modes.map((item) => {
+            const active = item.id === mode;
+            return (
+              <Pressable
+                key={item.id}
+                onPress={() => chooseMode(item.id)}
+                style={[
+                  styles.reflectionMode,
+                  { backgroundColor: active ? item.soft : colors.card },
+                  active && { borderColor: item.accent },
+                ]}
+              >
+                <Text style={[styles.reflectionModeText, { color: active ? item.accent : colors.secondary }]}>{item.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
 
-      {activeMode.prompt && (
-        <Pressable disabled={expanded} onPress={() => setExpanded(true)} style={[styles.reflectionPrompt, { backgroundColor: activeMode.soft }]}>
+      {expanded && activeMode.prompt && (
+        <View style={[styles.reflectionPrompt, { backgroundColor: activeMode.soft }]}>
           <Text style={[styles.reflectionPromptText, { color: colors.text }]}>{activeMode.prompt}</Text>
-        </Pressable>
+        </View>
       )}
 
       {expanded ? (
@@ -658,13 +667,12 @@ function DailyReflection({ date, today, value, colors, onChange, onSave }: {
           </View>
         </>
       ) : (
-        <Pressable onPress={() => setExpanded(true)} style={[styles.reflectionPreview, { borderColor: colors.separator }]}>
+        <Pressable onPress={beginWriting} style={[styles.reflectionPreview, { borderColor: colors.separator }]}>
           {value ? (
             <Text numberOfLines={3} style={[styles.reflectionPreviewText, { color: colors.text }]}>{value}</Text>
           ) : (
-            <Text style={[styles.reflectionOpen, { color: colors.blue }]}>Start writing</Text>
+            <Text style={[styles.reflectionPreviewText, { color: colors.tertiary }]}>Write something…</Text>
           )}
-          {value && <Text style={[styles.reflectionOpen, { color: colors.blue }]}>Continue writing</Text>}
         </Pressable>
       )}
     </View>
@@ -1357,7 +1365,6 @@ const styles = StyleSheet.create({
   reflectionPromptText: { fontSize: 14, lineHeight: 19, fontWeight: '600' },
   reflectionPreview: { minHeight: 54, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 3, paddingVertical: 11, justifyContent: 'center' },
   reflectionPreviewText: { fontSize: 15, lineHeight: 21 },
-  reflectionOpen: { fontSize: 12, fontWeight: '700', marginTop: 5 },
   reflectionInput: { minHeight: 112, borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingHorizontal: 3, paddingTop: 12, fontSize: 16, lineHeight: 23, textAlignVertical: 'top' },
   reflectionFooter: { minHeight: 28, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   reflectionSaved: { fontSize: 10 },
