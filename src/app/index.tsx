@@ -145,6 +145,13 @@ export default function HomeScreen() {
   const todayScroll = useRef<ScrollView>(null);
 
   useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setSelectedDate(today);
+    });
+    return () => subscription.remove();
+  }, [today]);
+
+  useEffect(() => {
     const timer = setTimeout(() => setSelectedDate(today), 0);
     return () => clearTimeout(timer);
   }, [today]);
@@ -424,6 +431,17 @@ function CompactDateRail({ today, selectedDate, colors, onSelect }: {
   const [todayExpanded, setTodayExpanded] = useState(true);
   const pastDays = Array.from({ length: pastDayCount }, (_, index) => addLocalDays(today, index - pastDayCount));
   const futureDays = Array.from({ length: 45 }, (_, index) => addLocalDays(today, index + 1));
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' || selectedDate !== today) return;
+      setTodayExpanded(true);
+      todayExpansion.stopAnimation();
+      todayExpansion.setValue(1);
+      setTimeout(() => strip.current?.scrollTo({ x: homeOffset, animated: false }), 0);
+    });
+    return () => subscription.remove();
+  }, [homeOffset, selectedDate, strip, today, todayExpansion]);
 
   function collapseToday() {
     if (!todayExpanded) return;
@@ -1154,7 +1172,7 @@ const styles = StyleSheet.create({
   todayMorph: { height: 75, overflow: 'hidden' },
   todayMorphButton: { flex: 1 },
   expandedToday: { position: 'absolute', left: 0, top: 0, width: 210, height: 75, paddingLeft: 18, justifyContent: 'center' },
-  collapsedToday: { position: 'absolute', left: 0, top: 9, width: 48, alignItems: 'center', gap: 3 },
+  collapsedToday: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 48, alignItems: 'center', justifyContent: 'center', gap: 3 },
   compactEyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 0.9, marginBottom: 3 },
   compactDateTitle: { fontSize: 19, lineHeight: 22, fontWeight: '700', letterSpacing: -0.45 },
   dayRailItem: { width: 48, alignItems: 'center', gap: 3 },
