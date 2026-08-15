@@ -195,11 +195,11 @@ export default function HomeScreen() {
     setInlineEditor(null);
   }
 
-  async function toggleEventEditor(event: PlanningItem) {
-    const editingEvent = inlineEditor?.kind === 'event' ? inlineEditor.item : undefined;
-    if (editingEvent && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
+  async function toggleInlineEditor(item: PlanningItem) {
+    const editingItem = inlineEditor?.item;
+    if (editingItem && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
 
-    if (editingEvent?.id === event.id) {
+    if (editingItem?.id === item.id) {
       setInlineDraft(null);
       setInlineEditor(null);
       Keyboard.dismiss();
@@ -207,16 +207,16 @@ export default function HomeScreen() {
     }
 
     setInlineDraft({
-      id: event.id,
-      kind: 'event',
-      title: event.title,
-      date: event.anchorStart ?? selectedDate,
-      time: event.startTime,
-      notes: event.notes,
-      location: event.location,
-      locationPlace: event.locationPlace,
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      date: item.anchorStart ?? selectedDate,
+      time: item.startTime,
+      notes: item.notes,
+      location: item.location,
+      locationPlace: item.locationPlace,
     });
-    setInlineEditor({ kind: 'event', item: event });
+    setInlineEditor({ kind: item.kind, item });
   }
 
   function moveTask(taskId: string, targetIndex: number) {
@@ -326,7 +326,7 @@ export default function HomeScreen() {
               ) : events.map((event) => (
                 <Fragment key={event.id}>
                 <Pressable
-                  onPress={() => void toggleEventEditor(event)}
+                  onPress={() => void toggleInlineEditor(event)}
                   style={({ pressed }) => [
                     styles.eventRow,
                     { borderColor: colors.separator },
@@ -377,7 +377,12 @@ export default function HomeScreen() {
               {tasks.length === 0 ? (
                 <EmptyRow colors={colors} label="No tasks yet" />
               ) : tasks.map((task, index) => (
-                <DraggableTaskRow colors={colors} index={index} key={task.id} onEdit={() => setEditor({ kind: 'task', item: task })} onMove={moveTask} onToggle={() => void data.toggleTask(task)} task={task} />
+                <Fragment key={task.id}>
+                  <DraggableTaskRow colors={colors} index={index} onEdit={() => void toggleInlineEditor(task)} onMove={moveTask} onToggle={() => void data.toggleTask(task)} task={task} />
+                  {inlineEditor?.item?.id === task.id && (
+                    <InlineComposer colors={colors} initial={task} key={task.id} kind="task" onCancel={() => setInlineEditor(null)} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                  )}
+                </Fragment>
               ))}
               {inlineEditor?.kind === 'task' && !inlineEditor.item && (
                 <InlineComposer colors={colors} key="new-task" kind="task" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
@@ -864,7 +869,7 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange,
           value={location}
         />
       )}
-      {!(kind === 'event' && initial) && (
+      {!initial && (
         <View style={styles.inlineActions}>
           <Pressable onPress={onCancel} hitSlop={8}><Text style={[styles.inlineAction, { color: colors.secondary }]}>Cancel</Text></Pressable>
           <Pressable disabled={!title.trim() || saving} onPress={() => void submit()} style={[styles.inlineSave, { backgroundColor: title.trim() ? colors.blue : colors.tertiary }]}>
