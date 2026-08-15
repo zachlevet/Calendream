@@ -61,12 +61,24 @@ function useLocalToday() {
   return today;
 }
 
-function formatToday() {
+function formatDay(date: string) {
   return new Intl.DateTimeFormat('en-US', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
-  }).format(new Date());
+  }).format(dateFromISO(date));
+}
+
+function dayEyebrow(date: string, today: string) {
+  const difference = daysFromISO(today, date);
+  if (difference === 0) return 'TODAY';
+  if (difference === 1) return 'TOMORROW';
+  if (difference === -1) return 'YESTERDAY';
+  return new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(dateFromISO(date)).toUpperCase();
+}
+
+function daysFromISO(start: string, end: string) {
+  return Math.round((dateFromISO(end).getTime() - dateFromISO(start).getTime()) / 86_400_000);
 }
 
 function daysFromToday(isoDate: string) {
@@ -135,13 +147,19 @@ export default function HomeScreen() {
   const dark = useColorScheme() === 'dark';
   const colors = dark ? palette.dark : palette.light;
   const today = useLocalToday();
-  const data = useTodayData(today);
+  const [selectedDate, setSelectedDate] = useState(today);
+  const data = useTodayData(selectedDate, today);
   const [destination, setDestination] = useState<Destination>('today');
   const [editor, setEditor] = useState<EditorState>(null);
   const [journal, setJournal] = useState('');
   const [briefingSessionActive, setBriefingSessionActive] = useState(false);
   const [inlineEditor, setInlineEditor] = useState<EditorState>(null);
   const todayScroll = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setSelectedDate(today), 0);
+    return () => clearTimeout(timer);
+  }, [today]);
 
   useEffect(() => {
     const timer = setTimeout(() => setJournal(data.journal), 0);
@@ -159,7 +177,7 @@ export default function HomeScreen() {
     [data.items],
   );
   const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const currentMinutes = selectedDate === today ? now.getHours() * 60 + now.getMinutes() : selectedDate > today ? -1 : Number.MAX_SAFE_INTEGER;
   const nextEvent = events.find((event) => {
     const minutes = timeMinutes(event.startTime);
     return minutes === -1 || minutes >= currentMinutes;
@@ -194,6 +212,22 @@ export default function HomeScreen() {
     setTimeout(() => todayScroll.current?.scrollTo({ y: Math.max(0, y - 150), animated: true }), 80);
   }
 
+  const daySwipe = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_, gesture) => Math.abs(gesture.dx) > 45 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4,
+    onPanResponderRelease: (_, gesture) => {
+      if (gesture.dx < -55) {
+        setSelectedDate((current) => addLocalDays(current, 1));
+        setInlineEditor(null);
+        setEditor(null);
+      }
+      if (gesture.dx > 55) {
+        setSelectedDate((current) => addLocalDays(current, -1));
+        setInlineEditor(null);
+        setEditor(null);
+      }
+    },
+  }), []);
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.topBar}>
@@ -207,8 +241,17 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
+      {destination === 'today' && (
+        <DayRail colors={colors} onSelect={(date) => {
+          setSelectedDate(date);
+          setInlineEditor(null);
+        }} selectedDate={selectedDate} today={today} />
+      )}
+
       {destination === 'today' ? (
+        <View {...daySwipe.panHandlers} style={styles.dayPage}>
         <ScrollView
+          key={selectedDate}
           ref={todayScroll}
           automaticallyAdjustKeyboardInsets
           contentContainerStyle={styles.scrollContent}
@@ -217,9 +260,18 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.hero}>
-            <Text style={[styles.eyebrow, { color: colors.red }]}>TODAY</Text>
+            <View style={styles.dayEyebrowRow}>
+              <Text style={[styles.eyebrow, { color: selectedDate === today ? colors.red : colors.blue }]}>{dayEyebrow(selectedDate, today)}</Text>
+              {selectedDate !== today && (
+                <Pressable hitSlop={8} onPress={() => {
+                  setSelectedDate(today);
+                  setInlineEditor(null);
+                  setEditor(null);
+                }}><Text style={[styles.returnToday, { color: colors.blue }]}>Return to Today</Text></Pressable>
+              )}
+            </View>
             <Text style={[styles.date, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit>
-              {formatToday()}
+              {formatDay(selectedDate)}
             </Text>
             <Text style={[styles.daySummary, { color: colors.secondary }]}>
               {countLabel(events.length, 'event')} · {countLabel(tasks.length, 'task')}
@@ -234,7 +286,7 @@ export default function HomeScreen() {
               style={styles.upcomingScroller}
             >
               {data.upcoming.map((item) => {
-                const days = daysFromToday(item.anchorStart ?? today);
+                const days = daysFromToday(item.anchorStart ?? selectedDate);
                 return (
                   <Pressable
                     key={item.id}
@@ -321,12 +373,12 @@ export default function HomeScreen() {
                   )}
                 </Pressable>
                 {inlineEditor?.item?.id === event.id && (
-                  <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={today} />
+                <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
                 )}
                 </Fragment>
               ))}
               {inlineEditor?.kind === 'event' && !inlineEditor.item && (
-                <InlineComposer colors={colors} key="new-event" kind="event" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={today} />
+                <InlineComposer colors={colors} key="new-event" kind="event" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
               )}
 
               <SectionHeader
@@ -341,7 +393,7 @@ export default function HomeScreen() {
                 <DraggableTaskRow colors={colors} index={index} key={task.id} onEdit={() => setEditor({ kind: 'task', item: task })} onMove={moveTask} onToggle={() => void data.toggleTask(task)} task={task} />
               ))}
               {inlineEditor?.kind === 'task' && !inlineEditor.item && (
-                <InlineComposer colors={colors} key="new-task" kind="task" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={today} />
+                <InlineComposer colors={colors} key="new-task" kind="task" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
               )}
 
               <SectionHeader colors={colors} title="Notes" />
@@ -349,7 +401,7 @@ export default function HomeScreen() {
                 multiline
                 onBlur={() => void data.saveJournal(journal)}
                 onChangeText={setJournal}
-                placeholder="Journal about today…"
+                placeholder={selectedDate < today ? 'What happened this day?' : selectedDate > today ? 'Plan or leave a note for this day…' : 'Journal about today…'}
                 placeholderTextColor={colors.tertiary}
                 style={[styles.journal, { color: colors.text, backgroundColor: colors.card }]}
                 value={journal}
@@ -358,6 +410,7 @@ export default function HomeScreen() {
             </>
           )}
         </ScrollView>
+        </View>
       ) : (
         <View style={styles.timelinePlaceholder}>
           <Text style={[styles.eyebrow, { color: colors.red }]}>YOUR LIFE, IN TIME</Text>
@@ -378,7 +431,7 @@ export default function HomeScreen() {
         onClose={() => setEditor(null)}
         onDelete={removeItem}
         onSave={saveDraft}
-        today={today}
+        today={selectedDate}
       />
       <MorningBriefing
         colors={colors}
@@ -396,13 +449,44 @@ export default function HomeScreen() {
         }}
         tasks={data.overdueTasks}
         today={today}
-        visible={(data.morningReviewDue || briefingSessionActive) && data.overdueTasks.length > 0}
+        visible={selectedDate === today && (data.morningReviewDue || briefingSessionActive) && data.overdueTasks.length > 0}
       />
     </SafeAreaView>
   );
 }
 
 type AppColors = typeof palette.light;
+
+function DayRail({ today, selectedDate, colors, onSelect }: {
+  today: string;
+  selectedDate: string;
+  colors: AppColors;
+  onSelect: (date: string) => void;
+}) {
+  const days = Array.from({ length: 7 }, (_, index) => addLocalDays(today, index));
+
+  return (
+    <View style={[styles.dayRail, { borderColor: colors.separator }]}>
+      {days.map((date, index) => {
+        const selected = date === selectedDate;
+        const actualToday = date === today;
+        const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'narrow' }).format(dateFromISO(date));
+        return (
+          <Pressable key={date} onPress={() => onSelect(date)} style={styles.dayRailItem}>
+            <Text style={[styles.dayRailLabel, { color: actualToday ? colors.red : colors.secondary }]}>{index === 0 ? 'TODAY' : weekday}</Text>
+            <View style={[
+              styles.dayRailOrb,
+              actualToday && !selected && { borderColor: colors.red, borderWidth: 1.5 },
+              selected && { backgroundColor: colors.blue },
+            ]}>
+              <Text style={[styles.dayRailNumber, { color: selected ? '#FFFFFF' : colors.text }]}>{dateFromISO(date).getDate()}</Text>
+            </View>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
 function SectionHeader({ title, action, onAction, colors }: {
   title: string;
@@ -1046,11 +1130,19 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   pressed: { opacity: 0.6 },
   topBar: { height: 44, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  dayRail: { height: 64, paddingHorizontal: 10, paddingBottom: 7, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'flex-end' },
+  dayRailItem: { flex: 1, alignItems: 'center', gap: 3 },
+  dayRailLabel: { fontSize: 8, fontWeight: '700', letterSpacing: 0.35 },
+  dayRailOrb: { width: 34, height: 34, borderRadius: 17, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
+  dayRailNumber: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  dayPage: { flex: 1 },
   wordmark: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3 },
   addButton: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#FF3B30', alignItems: 'center', justifyContent: 'center' },
   addSymbol: { color: '#FFFFFF', fontSize: 24, lineHeight: 25, fontWeight: '400' },
   scrollContent: { paddingHorizontal: 18, paddingBottom: 104 },
   hero: { paddingTop: 7, paddingBottom: 12 },
+  dayEyebrowRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  returnToday: { fontSize: 12, fontWeight: '600' },
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
   date: { fontSize: 31, fontWeight: '700', letterSpacing: -1, marginTop: 3 },
   daySummary: { fontSize: 14, marginTop: 3 },

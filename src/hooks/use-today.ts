@@ -56,7 +56,7 @@ function addDays(isoDate: string, amount: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-export function useTodayData(date: string) {
+export function useTodayData(date: string, reviewDate = date) {
   const db = useSQLiteContext();
   const [items, setItems] = useState<PlanningItem[]>([]);
   const [upcoming, setUpcoming] = useState<PlanningItem[]>([]);
@@ -99,7 +99,7 @@ export function useTodayData(date: string) {
          WHERE deleted_at IS NULL AND kind = 'task'
            AND completed_at IS NULL AND anchor_start < ?
          ORDER BY anchor_start, created_at`,
-        date,
+        reviewDate,
       ),
       db.getFirstAsync<{ reflection: string }>(
         'SELECT reflection FROM daily_pages WHERE date = ?',
@@ -113,10 +113,10 @@ export function useTodayData(date: string) {
     setItems(todayRows.map(toItem));
     setUpcoming(upcomingRows.map(toItem));
     setOverdueTasks(overdueRows.map(toItem));
-    setMorningReviewed(morningReview?.value === date);
+    setMorningReviewed(morningReview?.value === reviewDate);
     setJournal(page?.reflection ?? '');
     setLoading(false);
-  }, [date, db]);
+  }, [date, db, reviewDate]);
 
   useEffect(() => {
     const timer = setTimeout(() => void refresh(), 0);
@@ -231,10 +231,10 @@ export function useTodayData(date: string) {
        VALUES ('last_morning_review', ?, ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value,
                                       updated_at = excluded.updated_at`,
-      date,
+      reviewDate,
       now,
     );
-  }, [date, db]);
+  }, [db, reviewDate]);
 
   const moveOverdueTask = useCallback(async (id: string, targetDate: string) => {
     const now = new Date().toISOString();
