@@ -42,7 +42,10 @@
     "android": "expo start --android",
     "ios": "NODE_OPTIONS=--dns-result-order=ipv4first expo start --localhost --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/*.test.ts",
+    "check": "npm run lint && npm run typecheck && npm run test"
   },
   "private": true
 }

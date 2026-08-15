@@ -24,6 +24,13 @@ npm run web
 ```
 
 The product direction and first milestone are documented in [PRODUCT.md](./PRODUCT.md).
+The codebase boundaries and development workflow are documented in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), with sequencing in [docs/ROADMAP.md](./docs/ROADMAP.md).
+
+Before committing a change, run:
+
+```bash
+npm run check
+```
 
 ## Project status
 
