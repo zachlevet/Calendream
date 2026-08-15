@@ -545,7 +545,7 @@ function EmptyRow({ label, colors }: { label: string; colors: AppColors }) {
   return <Text style={[styles.emptyRow, { color: colors.tertiary, borderColor: colors.separator }]}>{label}</Text>;
 }
 
-type ReflectionMode = 'write' | 'gratitude' | 'reflect' | 'dream';
+type ReflectionMode = 'notes' | 'gratitude' | 'reflect' | 'dream';
 
 function DailyReflection({ date, today, value, colors, onChange, onSave }: {
   date: string;
@@ -556,21 +556,11 @@ function DailyReflection({ date, today, value, colors, onChange, onSave }: {
   onSave: (value: string) => void | Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [mode, setMode] = useState<ReflectionMode>('write');
-  const dark = colors.background === '#000000';
+  const [mode, setMode] = useState<ReflectionMode>('notes');
   const hour = new Date().getHours();
   const context = date < today ? 'Looking back' : date > today ? 'Planning ahead' : hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
-  const writePrompt = date < today
-    ? 'What do you want to remember about this day?'
-    : date > today
-      ? 'What would make this day meaningful?'
-      : hour < 12
-        ? 'What would make today meaningful?'
-        : hour < 17
-          ? 'What is on your mind right now?'
-          : 'What do you want to remember about today?';
-  const modes: { id: ReflectionMode; label: string; prompt: string; soft: string; accent: string }[] = [
-    { id: 'write', label: 'Write', prompt: writePrompt, soft: colors.card, accent: colors.secondary },
+  const modes: { id: ReflectionMode; label: string; prompt?: string; soft: string; accent: string }[] = [
+    { id: 'notes', label: 'Notes', soft: colors.card, accent: colors.text },
     { id: 'gratitude', label: 'Gratitude', prompt: 'What felt unexpectedly good today?', soft: colors.purpleSoft, accent: colors.purple },
     { id: 'reflect', label: 'Reflect', prompt: 'What gave you energy? What took it away?', soft: colors.blueSoft, accent: colors.blue },
     { id: 'dream', label: 'Dream', prompt: 'What are you excited to move toward?', soft: colors.amberSoft, accent: colors.amber },
@@ -594,53 +584,58 @@ function DailyReflection({ date, today, value, colors, onChange, onSave }: {
         <Text style={[styles.reflectionContext, { color: colors.tertiary }]}>{context}</Text>
       </View>
 
-      <View style={[styles.reflectionCard, { backgroundColor: dark ? colors.card : colors.background, borderColor: colors.separator }]}>
-        <View style={styles.reflectionModes}>
-          {modes.map((item) => {
-            const active = item.id === mode;
-            return (
-              <Pressable
-                key={item.id}
-                onPress={() => chooseMode(item.id)}
-                style={[styles.reflectionMode, { backgroundColor: active ? item.soft : 'transparent' }]}
-              >
-                <Text style={[styles.reflectionModeText, { color: active ? item.accent : colors.secondary }]}>{item.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+      <View style={styles.reflectionModes}>
+        {modes.map((item) => {
+          const active = item.id === mode;
+          return (
+            <Pressable
+              key={item.id}
+              onPress={() => chooseMode(item.id)}
+              style={[
+                styles.reflectionMode,
+                { backgroundColor: item.soft },
+                active && { borderColor: item.accent },
+              ]}
+            >
+              <Text style={[styles.reflectionModeText, { color: item.accent }]}>{item.label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
 
+      {activeMode.prompt && (
         <Pressable disabled={expanded} onPress={() => setExpanded(true)} style={[styles.reflectionPrompt, { backgroundColor: activeMode.soft }]}>
-          <Text style={[styles.reflectionPromptLabel, { color: activeMode.accent }]}>{activeMode.label.toUpperCase()}</Text>
           <Text style={[styles.reflectionPromptText, { color: colors.text }]}>{activeMode.prompt}</Text>
         </Pressable>
+      )}
 
-        {expanded ? (
-          <>
-            <TextInput
-              autoFocus
-              multiline
-              onBlur={() => void onSave(value)}
-              onChangeText={onChange}
-              placeholder="Start writing…"
-              placeholderTextColor={colors.tertiary}
-              style={[styles.reflectionInput, { color: colors.text, borderColor: colors.separator }]}
-              value={value}
-            />
-            <View style={styles.reflectionFooter}>
-              <Text style={[styles.reflectionSaved, { color: colors.tertiary }]}>Saved with this day</Text>
-              <Pressable hitSlop={8} onPress={finish}><Text style={[styles.reflectionDone, { color: colors.blue }]}>Done</Text></Pressable>
-            </View>
-          </>
-        ) : (
-          <Pressable onPress={() => setExpanded(true)} style={styles.reflectionPreview}>
-            <Text numberOfLines={3} style={[value ? styles.reflectionPreviewText : styles.reflectionEmpty, { color: value ? colors.text : colors.secondary }]}>
-              {value || 'Capture what mattered today'}
-            </Text>
-            <Text style={[styles.reflectionOpen, { color: colors.blue }]}>{value ? 'Continue writing' : 'Start writing'}</Text>
-          </Pressable>
-        )}
-      </View>
+      {expanded ? (
+        <>
+          <TextInput
+            autoFocus
+            multiline
+            onBlur={() => void onSave(value)}
+            onChangeText={onChange}
+            placeholder={mode === 'notes' ? '' : 'Start writing…'}
+            placeholderTextColor={colors.tertiary}
+            style={[styles.reflectionInput, { color: colors.text, borderColor: colors.separator }]}
+            value={value}
+          />
+          <View style={styles.reflectionFooter}>
+            <Text style={[styles.reflectionSaved, { color: colors.tertiary }]}>Saved with this day</Text>
+            <Pressable hitSlop={8} onPress={finish}><Text style={[styles.reflectionDone, { color: colors.blue }]}>Done</Text></Pressable>
+          </View>
+        </>
+      ) : (
+        <Pressable onPress={() => setExpanded(true)} style={[styles.reflectionPreview, { borderColor: colors.separator }]}>
+          {value ? (
+            <Text numberOfLines={3} style={[styles.reflectionPreviewText, { color: colors.text }]}>{value}</Text>
+          ) : (
+            <Text style={[styles.reflectionOpen, { color: colors.blue }]}>Start writing</Text>
+          )}
+          {value && <Text style={[styles.reflectionOpen, { color: colors.blue }]}>Continue writing</Text>}
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -1313,20 +1308,17 @@ const styles = StyleSheet.create({
   taskCopy: { flex: 1, paddingVertical: 8 },
   completed: { textDecorationLine: 'line-through' },
   emptyRow: { height: 42, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 14, paddingTop: 10 },
-  reflectionSection: { marginTop: 10 },
+  reflectionSection: { marginTop: 10, paddingBottom: 18 },
   reflectionHeading: { height: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   reflectionContext: { fontSize: 12, fontWeight: '600' },
-  reflectionCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 18, padding: 12 },
-  reflectionModes: { flexDirection: 'row', gap: 5, marginBottom: 10 },
-  reflectionMode: { flex: 1, minHeight: 29, paddingHorizontal: 5, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  reflectionModes: { flexDirection: 'row', gap: 7, marginTop: 2, marginBottom: 10 },
+  reflectionMode: { minHeight: 30, paddingHorizontal: 12, borderRadius: 15, borderWidth: 1, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
   reflectionModeText: { fontSize: 11, fontWeight: '700' },
-  reflectionPrompt: { borderRadius: 13, paddingHorizontal: 12, paddingVertical: 10 },
-  reflectionPromptLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 0.8, marginBottom: 3 },
+  reflectionPrompt: { borderRadius: 13, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 2 },
   reflectionPromptText: { fontSize: 14, lineHeight: 19, fontWeight: '600' },
-  reflectionPreview: { paddingHorizontal: 3, paddingTop: 12, paddingBottom: 2 },
+  reflectionPreview: { minHeight: 54, borderBottomWidth: StyleSheet.hairlineWidth, paddingHorizontal: 3, paddingVertical: 11, justifyContent: 'center' },
   reflectionPreviewText: { fontSize: 15, lineHeight: 21 },
-  reflectionEmpty: { fontSize: 15, lineHeight: 21 },
-  reflectionOpen: { fontSize: 12, fontWeight: '700', marginTop: 7 },
+  reflectionOpen: { fontSize: 12, fontWeight: '700', marginTop: 5 },
   reflectionInput: { minHeight: 112, borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingHorizontal: 3, paddingTop: 12, fontSize: 16, lineHeight: 23, textAlignVertical: 'top' },
   reflectionFooter: { minHeight: 28, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   reflectionSaved: { fontSize: 10 },
