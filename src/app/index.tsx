@@ -440,8 +440,11 @@ function CompactDateRail({ today, selectedDate, colors, onSelect }: {
 
     onSelect(today);
     setTodayExpanded(true);
+    todayExpansion.stopAnimation();
     strip.current?.scrollTo({ x: homeOffset, animated: true });
-    Animated.timing(todayExpansion, { toValue: 1, duration: 260, useNativeDriver: false }).start();
+    Animated.timing(todayExpansion, { toValue: 1, duration: 260, useNativeDriver: false }).start(({ finished }) => {
+      if (finished) strip.current?.scrollTo({ x: homeOffset, animated: false });
+    });
   }
 
   return (
