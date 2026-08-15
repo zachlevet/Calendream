@@ -10,7 +10,6 @@ import {
   LayoutAnimation,
   Modal,
   Platform,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +18,7 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
@@ -48,14 +48,8 @@ type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
 
 function configureEditorLayout() {
   LayoutAnimation.configureNext({
-    duration: 380,
-    update: {
-      type: LayoutAnimation.Types.spring,
-      springDamping: 0.9,
-      initialVelocity: 0.15,
-    },
-    create: { type: LayoutAnimation.Types.easeOut, property: LayoutAnimation.Properties.opacity },
-    delete: { type: LayoutAnimation.Types.easeIn, property: LayoutAnimation.Properties.opacity },
+    duration: 250,
+    update: { type: LayoutAnimation.Types.easeInEaseOut },
   });
 }
 
@@ -588,26 +582,28 @@ function DraggableTaskRow({ task, index, colors, onToggle, onEdit, onMove }: {
   const [dragging, setDragging] = useState(false);
   const [suppressPress, setSuppressPress] = useState(false);
 
-  const responder = useMemo(() => PanResponder.create({
-    onMoveShouldSetPanResponderCapture: (_, gesture) => dragging && Math.abs(gesture.dy) > 2,
-    onPanResponderMove: (_, gesture) => translateY.setValue(gesture.dy),
-    onPanResponderRelease: (_, gesture) => {
-      const target = index + Math.round(gesture.dy / 48);
-      setDragging(false);
-      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, speed: 24 }).start();
+  const dragGesture = useMemo(() => Gesture.Pan()
+    .activateAfterLongPress(280)
+    .runOnJS(true)
+    .onStart(() => {
+      setDragging(true);
+      setSuppressPress(true);
+    })
+    .onUpdate((event) => translateY.setValue(event.translationY))
+    .onEnd((event) => {
+      const target = index + Math.round(event.translationY / 48);
       onMove(task.id, target);
-    },
-    onPanResponderTerminate: () => {
+    })
+    .onFinalize(() => {
       setDragging(false);
-      Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
-    },
-  }), [dragging, index, onMove, task.id, translateY]);
+      Animated.timing(translateY, { toValue: 0, duration: 160, useNativeDriver: true }).start();
+    }), [index, onMove, task.id, translateY]);
 
   return (
-    <Animated.View
-      {...responder.panHandlers}
-      style={[styles.taskRow, { borderColor: colors.separator, transform: [{ translateY }] }]}
-    >
+    <GestureDetector gesture={dragGesture}>
+      <Animated.View
+        style={[styles.taskRow, { borderColor: colors.separator, opacity: dragging ? 0.82 : 1, transform: [{ translateY }] }]}
+      >
       <Pressable
         accessibilityLabel={task.completed ? `Mark ${task.title} incomplete` : `Complete ${task.title}`}
         hitSlop={8}
@@ -621,12 +617,6 @@ function DraggableTaskRow({ task, index, colors, onToggle, onEdit, onMove }: {
         {task.completed && <Text style={styles.checkmark}>✓</Text>}
       </Pressable>
       <Pressable
-        delayLongPress={280}
-        onLongPress={() => {
-          setDragging(true);
-          setSuppressPress(true);
-          Animated.spring(translateY, { toValue: -2, useNativeDriver: true, speed: 30 }).start();
-        }}
         onPress={() => {
           if (suppressPress) {
             setSuppressPress(false);
@@ -639,7 +629,8 @@ function DraggableTaskRow({ task, index, colors, onToggle, onEdit, onMove }: {
         <Text style={[styles.rowTitle, { color: task.completed ? colors.secondary : colors.text }, task.completed && styles.completed]}>{task.title}</Text>
         {task.notes && <Text style={[styles.rowNote, { color: colors.secondary }]} numberOfLines={1}>{task.notes}</Text>}
       </Pressable>
-    </Animated.View>
+      </Animated.View>
+    </GestureDetector>
   );
 }
 
