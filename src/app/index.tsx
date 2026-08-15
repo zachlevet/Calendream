@@ -4,6 +4,7 @@ import {
   Alert,
   Animated,
   AppState,
+  Dimensions,
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
@@ -144,6 +145,8 @@ export default function HomeScreen() {
   const [inlineEditor, setInlineEditor] = useState<EditorState>(null);
   const [inlineDraft, setInlineDraft] = useState<ItemDraft | null>(null);
   const todayScroll = useRef<ScrollView>(null);
+  const dayPage = useRef<View>(null);
+  const keyboardTop = useRef(Dimensions.get('window').height);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -161,6 +164,21 @@ export default function HomeScreen() {
     const timer = setTimeout(() => setJournal(data.journal), 0);
     return () => clearTimeout(timer);
   }, [data.journal]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, (event) => {
+      keyboardTop.current = event.endCoordinates.screenY;
+    });
+    const hide = Keyboard.addListener(hideEvent, () => {
+      keyboardTop.current = Dimensions.get('window').height;
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const events = useMemo(
     () => data.items
@@ -191,6 +209,7 @@ export default function HomeScreen() {
 
   async function saveInline(draft: ItemDraft) {
     await data.saveItem(draft);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setInlineDraft(null);
     setInlineEditor(null);
   }
@@ -200,6 +219,7 @@ export default function HomeScreen() {
     if (editingItem && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
 
     if (editingItem?.id === item.id) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setInlineDraft(null);
       setInlineEditor(null);
       Keyboard.dismiss();
@@ -216,7 +236,22 @@ export default function HomeScreen() {
       location: item.location,
       locationPlace: item.locationPlace,
     });
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setInlineEditor({ kind: item.kind, item });
+  }
+
+  function closeInlineEditor() {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setInlineDraft(null);
+    setInlineEditor(null);
+    Keyboard.dismiss();
+  }
+
+  async function toggleNewInlineEditor(kind: 'task' | 'event') {
+    if (inlineEditor?.item && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setInlineDraft(null);
+    setInlineEditor(inlineEditor?.kind === kind && !inlineEditor.item ? null : { kind });
   }
 
   function moveTask(taskId: string, targetIndex: number) {
@@ -229,8 +264,14 @@ export default function HomeScreen() {
     void data.reorderTasks(ordered.map((task) => task.id));
   }
 
-  function revealInline(y: number) {
-    setTimeout(() => todayScroll.current?.scrollTo({ y: Math.max(0, y - 150), animated: true }), 80);
+  function revealInline(y: number, height: number) {
+    setTimeout(() => {
+      dayPage.current?.measureInWindow((_x, pageY, _width, pageHeight) => {
+        const visibleHeight = Math.max(180, Math.min(keyboardTop.current, pageY + pageHeight) - pageY - 12);
+        const breathingRoom = Math.max(8, (visibleHeight - height) / 2);
+        todayScroll.current?.scrollTo({ y: Math.max(0, y - breathingRoom), animated: true });
+      });
+    }, Platform.OS === 'ios' ? 90 : 140);
   }
 
   return (
@@ -255,7 +296,7 @@ export default function HomeScreen() {
       )}
 
       {destination === 'today' ? (
-        <View style={styles.dayPage}>
+        <View ref={dayPage} style={styles.dayPage}>
         <ScrollView
           key={selectedDate}
           ref={todayScroll}
@@ -292,19 +333,19 @@ export default function HomeScreen() {
           <View style={[styles.upNextCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.cardEyebrow, { color: colors.secondary }]}>UP NEXT</Text>
             {nextEvent ? (
-              <Pressable onPress={() => setInlineEditor({ kind: 'event', item: nextEvent })}>
+              <Pressable onPress={() => void toggleInlineEditor(nextEvent)}>
                 <Text style={[styles.upNextTitle, { color: colors.text }]}>{nextEvent.title}</Text>
                 <Text style={[styles.upNextMeta, { color: colors.blue }]}>
                   {nextEvent.startTime || 'All day'}
                 </Text>
               </Pressable>
             ) : events.length > 0 ? (
-              <Pressable onPress={() => setInlineEditor({ kind: 'event' })}>
+              <Pressable onPress={() => void toggleNewInlineEditor('event')}>
                 <Text style={[styles.upNextTitle, { color: colors.text }]}>Events complete</Text>
                 <Text style={[styles.upNextMeta, { color: colors.blue }]}>Plan what comes next</Text>
               </Pressable>
             ) : (
-              <Pressable onPress={() => setInlineEditor({ kind: 'event' })}>
+              <Pressable onPress={() => void toggleNewInlineEditor('event')}>
                 <Text style={[styles.upNextTitle, { color: colors.text }]}>Your day is open</Text>
                 <Text style={[styles.upNextMeta, { color: colors.blue }]}>Add an event</Text>
               </Pressable>
@@ -318,7 +359,7 @@ export default function HomeScreen() {
               <SectionHeader
                 action="Add event"
                 colors={colors}
-                onAction={() => setInlineEditor(inlineEditor?.kind === 'event' && !inlineEditor.item ? null : { kind: 'event' })}
+                onAction={() => void toggleNewInlineEditor('event')}
                 title="Events"
               />
               {events.length === 0 ? (
@@ -360,18 +401,18 @@ export default function HomeScreen() {
                   )}
                 </Pressable>
                 {inlineEditor?.item?.id === event.id && (
-                <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={() => setInlineEditor(null)} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
                 )}
                 </Fragment>
               ))}
               {inlineEditor?.kind === 'event' && !inlineEditor.item && (
-                <InlineComposer colors={colors} key="new-event" kind="event" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                <InlineComposer colors={colors} key="new-event" kind="event" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
               )}
 
               <SectionHeader
                 action="Add task"
                 colors={colors}
-                onAction={() => setInlineEditor(inlineEditor?.kind === 'task' && !inlineEditor.item ? null : { kind: 'task' })}
+                onAction={() => void toggleNewInlineEditor('task')}
                 title="Tasks"
               />
               {tasks.length === 0 ? (
@@ -380,12 +421,12 @@ export default function HomeScreen() {
                 <Fragment key={task.id}>
                   <DraggableTaskRow colors={colors} index={index} onEdit={() => void toggleInlineEditor(task)} onMove={moveTask} onToggle={() => void data.toggleTask(task)} task={task} />
                   {inlineEditor?.item?.id === task.id && (
-                    <InlineComposer colors={colors} initial={task} key={task.id} kind="task" onCancel={() => setInlineEditor(null)} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                    <InlineComposer colors={colors} initial={task} key={task.id} kind="task" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
                   )}
                 </Fragment>
               ))}
               {inlineEditor?.kind === 'task' && !inlineEditor.item && (
-                <InlineComposer colors={colors} key="new-task" kind="task" onCancel={() => setInlineEditor(null)} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                <InlineComposer colors={colors} key="new-task" kind="task" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
               )}
 
               <DailyReflection
@@ -393,6 +434,7 @@ export default function HomeScreen() {
                 date={selectedDate}
                 key={selectedDate}
                 onChange={setJournal}
+                onReveal={revealInline}
                 onSave={(value) => data.saveJournal(value)}
                 onSaveToLibrary={(value) => data.saveJournalToLibrary(value)}
                 savedToLibrary={data.journalInLibrary}
@@ -580,18 +622,20 @@ function EmptyRow({ label, colors }: { label: string; colors: AppColors }) {
 
 type ReflectionMode = 'notes' | 'gratitude' | 'reflect' | 'dream';
 
-function DailyReflection({ date, today, value, colors, savedToLibrary, onChange, onSave, onSaveToLibrary }: {
+function DailyReflection({ date, today, value, colors, savedToLibrary, onChange, onReveal, onSave, onSaveToLibrary }: {
   date: string;
   today: string;
   value: string;
   colors: AppColors;
   savedToLibrary: boolean;
   onChange: (value: string) => void;
+  onReveal: (y: number, height: number) => void;
   onSave: (value: string) => void | Promise<void>;
   onSaveToLibrary: (value: string) => void | Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [mode, setMode] = useState<ReflectionMode | null>(null);
+  const reflectionLayout = useRef({ y: 0, height: 0 });
   const hour = new Date().getHours();
   const context = date < today ? 'Looking back' : date > today ? 'Planning ahead' : hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
   const modes: { id: ReflectionMode; label: string; prompt?: string; soft: string; accent: string }[] = [
@@ -605,6 +649,7 @@ function DailyReflection({ date, today, value, colors, savedToLibrary, onChange,
   function beginWriting() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded(true);
+    setTimeout(() => onReveal(reflectionLayout.current.y, reflectionLayout.current.height), 40);
   }
 
   function chooseMode(nextMode: ReflectionMode) {
@@ -621,7 +666,16 @@ function DailyReflection({ date, today, value, colors, savedToLibrary, onChange,
   }
 
   return (
-    <View style={styles.reflectionSection}>
+    <View
+      onLayout={(event) => {
+        reflectionLayout.current = {
+          y: event.nativeEvent.layout.y,
+          height: event.nativeEvent.layout.height,
+        };
+        if (expanded) setTimeout(() => onReveal(reflectionLayout.current.y, reflectionLayout.current.height), 30);
+      }}
+      style={styles.reflectionSection}
+    >
       <View style={styles.reflectionHeading}>
         <Text style={[styles.sectionTitle, { color: colors.text }]}>Daily Reflection</Text>
         <Text style={[styles.reflectionContext, { color: colors.tertiary }]}>{context}</Text>
@@ -659,6 +713,7 @@ function DailyReflection({ date, today, value, colors, savedToLibrary, onChange,
             multiline
             onBlur={finish}
             onChangeText={onChange}
+            onFocus={() => onReveal(reflectionLayout.current.y, reflectionLayout.current.height)}
             placeholder={!mode || mode === 'notes' ? '' : 'Start writing…'}
             placeholderTextColor={colors.tertiary}
             style={[styles.reflectionInput, { color: colors.text, borderColor: colors.separator }]}
@@ -808,7 +863,7 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange,
   initial?: PlanningItem;
   onCancel: () => void;
   onDraftChange?: (draft: ItemDraft) => void;
-  onReveal: (y: number) => void;
+  onReveal: (y: number, height: number) => void;
   onSave: (draft: ItemDraft) => Promise<void>;
 }) {
   const [title, setTitle] = useState(initial?.title ?? '');
@@ -818,7 +873,8 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange,
   const [locationPlace, setLocationPlace] = useState<LocationPlace | undefined>(initial?.locationPlace);
   const [timeOpen, setTimeOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const layoutY = useRef(0);
+  const composerLayout = useRef({ y: 0, height: 0 });
+  const composerFocused = useRef(false);
 
   useEffect(() => {
     if (!onDraftChange) return;
@@ -832,11 +888,21 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange,
   }
 
   function focusComposer() {
-    onReveal(layoutY.current);
+    composerFocused.current = true;
+    setTimeout(() => onReveal(composerLayout.current.y, composerLayout.current.height), 20);
   }
 
   return (
-    <View onLayout={(event) => { layoutY.current = event.nativeEvent.layout.y; }} style={[styles.inlineComposer, { backgroundColor: colors.card }]}>
+    <View
+      onLayout={(event) => {
+        composerLayout.current = {
+          y: event.nativeEvent.layout.y,
+          height: event.nativeEvent.layout.height,
+        };
+        if (composerFocused.current) setTimeout(() => onReveal(composerLayout.current.y, composerLayout.current.height), 20);
+      }}
+      style={[styles.inlineComposer, { backgroundColor: colors.card }]}
+    >
       <TextInput
         autoFocus
         onChangeText={setTitle}
