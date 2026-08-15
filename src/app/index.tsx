@@ -69,18 +69,6 @@ function formatDay(date: string) {
   }).format(dateFromISO(date));
 }
 
-function dayEyebrow(date: string, today: string) {
-  const difference = daysFromISO(today, date);
-  if (difference === 0) return 'TODAY';
-  if (difference === 1) return 'TOMORROW';
-  if (difference === -1) return 'YESTERDAY';
-  return new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(dateFromISO(date)).toUpperCase();
-}
-
-function daysFromISO(start: string, end: string) {
-  return Math.round((dateFromISO(end).getTime() - dateFromISO(start).getTime()) / 86_400_000);
-}
-
 function daysFromToday(isoDate: string) {
   const [year, month, day] = isoDate.split('-').map(Number);
   const target = new Date(year, month - 1, day);
@@ -429,59 +417,26 @@ function CompactDateRail({ today, selectedDate, colors, onSelect }: {
   colors: AppColors;
   onSelect: (date: string) => void;
 }) {
-  const [browse] = useState(() => new Animated.Value(0));
-  const [drag] = useState(() => new Animated.Value(0));
-  const nearbyDays = Array.from({ length: 3 }, (_, index) => addLocalDays(selectedDate, index + 1));
-  const browseDays = Array.from({ length: 7 }, (_, index) => addLocalDays(selectedDate, index - 3));
-
-  const settle = (targetDate?: string) => {
-    if (targetDate) onSelect(targetDate);
-    Animated.parallel([
-      Animated.spring(drag, { toValue: 0, useNativeDriver: true, damping: 18, stiffness: 220 }),
-      Animated.timing(browse, { toValue: 0, duration: 180, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const responder = PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
-    onPanResponderGrant: () => {
-      Animated.timing(browse, { toValue: 1, duration: 160, useNativeDriver: true }).start();
-    },
-    onPanResponderMove: (_, gesture) => drag.setValue(gesture.dx),
-    onPanResponderRelease: (_, gesture) => {
-      const distance = gesture.dx + gesture.vx * 35;
-      const steps = Math.max(-3, Math.min(3, Math.round(-distance / 54)));
-      settle(steps === 0 ? undefined : addLocalDays(selectedDate, steps));
-    },
-    onPanResponderTerminate: () => settle(),
-  });
-
-  const titleMotion = {
-    opacity: browse.interpolate({ inputRange: [0, 0.72], outputRange: [1, 0], extrapolate: 'clamp' }),
-    transform: [{ translateX: browse.interpolate({ inputRange: [0, 1], outputRange: [0, -36] }) }],
-  };
-  const compactMotion = {
-    opacity: browse.interpolate({ inputRange: [0, 0.45], outputRange: [1, 0], extrapolate: 'clamp' }),
-  };
-  const browseMotion = {
-    opacity: browse,
-    transform: [{ translateX: Animated.multiply(drag, 0.18) }],
-  };
+  const pastDayCount = 14;
+  const pastDays = Array.from({ length: pastDayCount }, (_, index) => addLocalDays(today, index - pastDayCount));
+  const futureDays = Array.from({ length: 45 }, (_, index) => addLocalDays(today, index + 1));
 
   return (
-    <View {...responder.panHandlers} style={[styles.compactDateHeader, { borderColor: colors.separator }]}>
-      <Animated.View pointerEvents="none" style={[styles.compactDateCopy, titleMotion]}>
-        <Text style={[styles.compactEyebrow, { color: selectedDate === today ? colors.red : colors.blue }]}>{dayEyebrow(selectedDate, today)}</Text>
-        <Text adjustsFontSizeToFit numberOfLines={2} style={[styles.compactDateTitle, { color: colors.text }]}>{formatDay(selectedDate)}</Text>
-      </Animated.View>
-
-      <Animated.View style={[styles.nearbyRail, compactMotion]}>
-        {nearbyDays.map((date) => <RailDay colors={colors} date={date} key={date} onSelect={onSelect} selectedDate={selectedDate} today={today} />)}
-      </Animated.View>
-
-      <Animated.View pointerEvents="none" style={[styles.browseRail, browseMotion]}>
-        {browseDays.map((date) => <RailDay colors={colors} date={date} key={date} onSelect={(next) => settle(next)} selectedDate={selectedDate} today={today} />)}
-      </Animated.View>
+    <View style={[styles.dateStripFrame, { borderColor: colors.separator }]}>
+      <ScrollView
+        contentContainerStyle={styles.dateStripContent}
+        contentOffset={{ x: pastDayCount * 48 + 18, y: 0 }}
+        decelerationRate="fast"
+        horizontal
+        showsHorizontalScrollIndicator={false}
+      >
+        {pastDays.map((date) => <RailDay colors={colors} date={date} key={date} onSelect={onSelect} selectedDate={selectedDate} today={today} />)}
+        <Pressable accessibilityLabel="Return to today" onPress={() => onSelect(today)} style={styles.expandedToday}>
+          <Text style={[styles.compactEyebrow, { color: colors.red }]}>TODAY</Text>
+          <Text adjustsFontSizeToFit numberOfLines={1} style={[styles.compactDateTitle, { color: colors.text }]}>{formatDay(today)}</Text>
+        </Pressable>
+        {futureDays.map((date) => <RailDay colors={colors} date={date} key={date} onSelect={onSelect} selectedDate={selectedDate} today={today} />)}
+      </ScrollView>
     </View>
   );
 }
@@ -1152,13 +1107,12 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   pressed: { opacity: 0.6 },
   topBar: { height: 44, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  compactDateHeader: { height: 76, marginHorizontal: 18, borderBottomWidth: StyleSheet.hairlineWidth, justifyContent: 'center', overflow: 'hidden' },
-  compactDateCopy: { width: '57%', justifyContent: 'center' },
+  dateStripFrame: { height: 76, borderBottomWidth: StyleSheet.hairlineWidth },
+  dateStripContent: { paddingHorizontal: 18, alignItems: 'center' },
+  expandedToday: { width: 210, height: 75, paddingLeft: 18, justifyContent: 'center' },
   compactEyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 0.9, marginBottom: 3 },
   compactDateTitle: { fontSize: 19, lineHeight: 22, fontWeight: '700', letterSpacing: -0.45 },
-  nearbyRail: { position: 'absolute', right: 0, top: 9, bottom: 8, width: '40%', flexDirection: 'row', alignItems: 'center' },
-  browseRail: { position: 'absolute', left: 0, right: 0, top: 9, bottom: 8, flexDirection: 'row', alignItems: 'center' },
-  dayRailItem: { flex: 1, alignItems: 'center', gap: 3 },
+  dayRailItem: { width: 48, alignItems: 'center', gap: 3 },
   dayRailLabel: { fontSize: 8, fontWeight: '700', letterSpacing: 0.35 },
   dayRailOrb: { width: 34, height: 34, borderRadius: 17, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
   dayRailNumber: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
