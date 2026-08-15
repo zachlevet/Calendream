@@ -29,6 +29,7 @@ export function useTodayData(date: string, _reviewDate = date) {
   const [journals, setJournals] = useState<Record<string, string>>(() => ({
     [_reviewDate]: 'Today feels open. I want to protect time for the work and people that matter.',
   }));
+  const [libraryDates, setLibraryDates] = useState<Set<string>>(() => new Set());
   const items = allItems.filter((item) => item.anchorStart === date);
   const upcoming = allItems
     .filter((item) => item.anchorStart !== null && item.anchorStart > date)
@@ -41,6 +42,7 @@ export function useTodayData(date: string, _reviewDate = date) {
     overdueTasks: [] as PlanningItem[],
     morningReviewDue: false,
     journal,
+    journalInLibrary: libraryDates.has(date),
     loading: false,
     saveItem: async (draft: ItemDraft) => {
       setAllItems((current) => {
@@ -71,6 +73,11 @@ export function useTodayData(date: string, _reviewDate = date) {
       setAllItems((current) => current.filter((item) => item.id !== id));
     },
     saveJournal: async (value: string) => setJournals((current) => ({ ...current, [date]: value })),
+    saveJournalToLibrary: async (value: string) => {
+      if (!value.trim()) return;
+      setJournals((current) => ({ ...current, [date]: value }));
+      setLibraryDates((current) => new Set(current).add(date));
+    },
     moveOverdueTask: async (_id: string, _targetDate: string) => undefined,
     dismissOverdueTask: async (_id: string) => undefined,
     skipMorningReview: async () => undefined,
@@ -80,5 +87,5 @@ export function useTodayData(date: string, _reviewDate = date) {
         return [...current].sort((a, b) => (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0));
       });
     },
-  }), [date, items, journal, upcoming]);
+  }), [date, items, journal, libraryDates, upcoming]);
 }

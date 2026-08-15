@@ -30,6 +30,13 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS journal_library (
+      date TEXT PRIMARY KEY NOT NULL,
+      reflection TEXT NOT NULL,
+      saved_at TEXT NOT NULL,
+      FOREIGN KEY (date) REFERENCES daily_pages(date) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS habits (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,

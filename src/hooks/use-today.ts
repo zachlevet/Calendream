@@ -63,10 +63,11 @@ export function useTodayData(date: string, reviewDate = date) {
   const [overdueTasks, setOverdueTasks] = useState<PlanningItem[]>([]);
   const [morningReviewed, setMorningReviewed] = useState(false);
   const [journal, setJournal] = useState('');
+  const [journalInLibrary, setJournalInLibrary] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const [todayRows, upcomingRows, overdueRows, page, morningReview] = await Promise.all([
+    const [todayRows, upcomingRows, overdueRows, page, morningReview, libraryEntry] = await Promise.all([
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
                 start_time, completed_at, notes, location, sort_order,
@@ -108,6 +109,7 @@ export function useTodayData(date: string, reviewDate = date) {
       db.getFirstAsync<{ value: string }>(
         "SELECT value FROM app_meta WHERE key = 'last_morning_review'",
       ),
+      db.getFirstAsync<{ date: string }>('SELECT date FROM journal_library WHERE date = ?', date),
     ]);
 
     setItems(todayRows.map(toItem));
@@ -115,6 +117,7 @@ export function useTodayData(date: string, reviewDate = date) {
     setOverdueTasks(overdueRows.map(toItem));
     setMorningReviewed(morningReview?.value === reviewDate);
     setJournal(page?.reflection ?? '');
+    setJournalInLibrary(Boolean(libraryEntry));
     setLoading(false);
   }, [date, db, reviewDate]);
 
@@ -224,6 +227,22 @@ export function useTodayData(date: string, reviewDate = date) {
     setJournal(reflection);
   }, [date, db]);
 
+  const saveJournalToLibrary = useCallback(async (reflection: string) => {
+    if (!reflection.trim()) return;
+    const now = new Date().toISOString();
+    await saveJournal(reflection);
+    await db.runAsync(
+      `INSERT INTO journal_library (date, reflection, saved_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(date) DO UPDATE SET reflection = excluded.reflection,
+                                       saved_at = excluded.saved_at`,
+      date,
+      reflection,
+      now,
+    );
+    setJournalInLibrary(true);
+  }, [date, db, saveJournal]);
+
   const markMorningReviewed = useCallback(async () => {
     const now = new Date().toISOString();
     await db.runAsync(
@@ -273,11 +292,13 @@ export function useTodayData(date: string, reviewDate = date) {
     overdueTasks,
     morningReviewDue: overdueTasks.length > 0 && !morningReviewed,
     journal,
+    journalInLibrary,
     loading,
     saveItem,
     toggleTask,
     deleteItem,
     saveJournal,
+    saveJournalToLibrary,
     moveOverdueTask,
     dismissOverdueTask,
     skipMorningReview,
