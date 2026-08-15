@@ -418,24 +418,63 @@ function CompactDateRail({ today, selectedDate, colors, onSelect }: {
   onSelect: (date: string) => void;
 }) {
   const pastDayCount = 14;
+  const homeOffset = pastDayCount * 48 + 18;
+  const strip = useRef<ScrollView>(null);
+  const [todayExpansion] = useState(() => new Animated.Value(1));
+  const [todayExpanded, setTodayExpanded] = useState(true);
   const pastDays = Array.from({ length: pastDayCount }, (_, index) => addLocalDays(today, index - pastDayCount));
   const futureDays = Array.from({ length: 45 }, (_, index) => addLocalDays(today, index + 1));
+
+  function collapseToday() {
+    if (!todayExpanded) return;
+    setTodayExpanded(false);
+    Animated.timing(todayExpansion, { toValue: 0, duration: 220, useNativeDriver: false }).start();
+  }
+
+  function selectDate(date: string) {
+    if (date !== today) {
+      collapseToday();
+      onSelect(date);
+      return;
+    }
+
+    onSelect(today);
+    setTodayExpanded(true);
+    strip.current?.scrollTo({ x: homeOffset, animated: true });
+    Animated.timing(todayExpansion, { toValue: 1, duration: 260, useNativeDriver: false }).start();
+  }
 
   return (
     <View style={[styles.dateStripFrame, { borderColor: colors.separator }]}>
       <ScrollView
         contentContainerStyle={styles.dateStripContent}
-        contentOffset={{ x: pastDayCount * 48 + 18, y: 0 }}
+        contentOffset={{ x: homeOffset, y: 0 }}
         decelerationRate="fast"
         horizontal
+        onScrollBeginDrag={collapseToday}
+        ref={strip}
         showsHorizontalScrollIndicator={false}
       >
-        {pastDays.map((date) => <RailDay colors={colors} date={date} key={date} onSelect={onSelect} selectedDate={selectedDate} today={today} />)}
-        <Pressable accessibilityLabel="Return to today" onPress={() => onSelect(today)} style={styles.expandedToday}>
-          <Text style={[styles.compactEyebrow, { color: colors.red }]}>TODAY</Text>
-          <Text adjustsFontSizeToFit numberOfLines={1} style={[styles.compactDateTitle, { color: colors.text }]}>{formatDay(today)}</Text>
-        </Pressable>
-        {futureDays.map((date) => <RailDay colors={colors} date={date} key={date} onSelect={onSelect} selectedDate={selectedDate} today={today} />)}
+        {pastDays.map((date) => <RailDay colors={colors} date={date} key={date} onSelect={selectDate} selectedDate={selectedDate} today={today} />)}
+        <Animated.View style={[styles.todayMorph, {
+          width: todayExpansion.interpolate({ inputRange: [0, 1], outputRange: [48, 210] }),
+        }]}>
+          <Pressable accessibilityLabel="Return to today" onPress={() => selectDate(today)} style={styles.todayMorphButton}>
+            <Animated.View pointerEvents="none" style={[styles.expandedToday, { opacity: todayExpansion }]}>
+              <Text style={[styles.compactEyebrow, { color: colors.red }]}>TODAY</Text>
+              <Text adjustsFontSizeToFit numberOfLines={1} style={[styles.compactDateTitle, { color: colors.text }]}>{formatDay(today)}</Text>
+            </Animated.View>
+            <Animated.View pointerEvents="none" style={[styles.collapsedToday, {
+              opacity: todayExpansion.interpolate({ inputRange: [0, 0.35], outputRange: [1, 0] }),
+            }]}>
+              <Text style={[styles.dayRailLabel, { color: colors.red }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'narrow' }).format(dateFromISO(today))}</Text>
+              <View style={[styles.dayRailOrb, { borderColor: colors.red, borderWidth: 1.5 }]}>
+                <Text style={[styles.dayRailNumber, { color: colors.text }]}>{dateFromISO(today).getDate()}</Text>
+              </View>
+            </Animated.View>
+          </Pressable>
+        </Animated.View>
+        {futureDays.map((date) => <RailDay colors={colors} date={date} key={date} onSelect={selectDate} selectedDate={selectedDate} today={today} />)}
       </ScrollView>
     </View>
   );
@@ -1109,7 +1148,10 @@ const styles = StyleSheet.create({
   topBar: { height: 44, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   dateStripFrame: { height: 76, borderBottomWidth: StyleSheet.hairlineWidth },
   dateStripContent: { paddingHorizontal: 18, alignItems: 'center' },
-  expandedToday: { width: 210, height: 75, paddingLeft: 18, justifyContent: 'center' },
+  todayMorph: { height: 75, overflow: 'hidden' },
+  todayMorphButton: { flex: 1 },
+  expandedToday: { position: 'absolute', left: 0, top: 0, width: 210, height: 75, paddingLeft: 18, justifyContent: 'center' },
+  collapsedToday: { position: 'absolute', left: 0, top: 9, width: 48, alignItems: 'center', gap: 3 },
   compactEyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 0.9, marginBottom: 3 },
   compactDateTitle: { fontSize: 19, lineHeight: 22, fontWeight: '700', letterSpacing: -0.45 },
   dayRailItem: { width: 48, alignItems: 'center', gap: 3 },
