@@ -288,14 +288,10 @@ export function TodayScreen() {
           ) : (
             <>
               <SectionHeader
-                action="Add event"
                 colors={colors}
-                onAction={() => void toggleNewInlineEditor('event')}
                 title="Events"
               />
-              {events.length === 0 ? (
-                <EmptyRow colors={colors} label="No events planned" />
-              ) : events.map((event) => (
+              {events.map((event) => (
                 <Fragment key={event.id}>
                 <Pressable
                   onPress={() => void toggleInlineEditor(event)}
@@ -336,19 +332,17 @@ export function TodayScreen() {
                   )}
                 </Fragment>
               ))}
-              {inlineEditor?.kind === 'event' && !inlineEditor.item && (
+              {inlineEditor?.kind === 'event' && !inlineEditor.item ? (
                 <InlineComposer colors={colors} key="new-event" kind="event" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+              ) : (
+                <BlankItemRow colors={colors} kind="event" onPress={() => void toggleNewInlineEditor('event')} />
               )}
 
               <SectionHeader
-                action="Add task"
                 colors={colors}
-                onAction={() => void toggleNewInlineEditor('task')}
                 title="Tasks"
               />
-              {tasks.length === 0 ? (
-                <EmptyRow colors={colors} label="No tasks yet" />
-              ) : tasks.map((task, index) => (
+              {tasks.map((task, index) => (
                 <Fragment key={task.id}>
                   <DraggableTaskRow colors={colors} index={index} onEdit={() => void toggleInlineEditor(task)} onMove={moveTask} onToggle={() => void data.toggleTask(task)} task={task} />
                   {inlineEditor?.item?.id === task.id && (
@@ -356,8 +350,10 @@ export function TodayScreen() {
                   )}
                 </Fragment>
               ))}
-              {inlineEditor?.kind === 'task' && !inlineEditor.item && (
+              {inlineEditor?.kind === 'task' && !inlineEditor.item ? (
                 <InlineComposer colors={colors} key="new-task" kind="task" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+              ) : (
+                <BlankItemRow colors={colors} kind="task" onPress={() => void toggleNewInlineEditor('task')} />
               )}
 
               <DailyReflection
@@ -534,26 +530,39 @@ function RailDay({ date, today, selectedDate, colors, onSelect }: {
   );
 }
 
-function SectionHeader({ title, action, onAction, colors }: {
+function SectionHeader({ title, colors }: {
   title: string;
-  action?: string;
-  onAction?: () => void;
   colors: AppColors;
 }) {
   return (
     <View style={styles.sectionHeader}>
       <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
-      {action && (
-        <Pressable onPress={onAction} hitSlop={8}>
-          <Text style={[styles.sectionAction, { color: colors.blue }]}>{action}</Text>
-        </Pressable>
-      )}
     </View>
   );
 }
 
-function EmptyRow({ label, colors }: { label: string; colors: AppColors }) {
-  return <Text style={[styles.emptyRow, { color: colors.tertiary, borderColor: colors.separator }]}>{label}</Text>;
+function BlankItemRow({ kind, colors, onPress }: {
+  kind: 'task' | 'event';
+  colors: AppColors;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={`Add ${kind}`}
+      onPress={onPress}
+      style={({ pressed }) => [styles.blankItemRow, { borderColor: colors.separator }, pressed && styles.pressed]}
+    >
+      {kind === 'task' ? (
+        <View style={[styles.blankCheckbox, { borderColor: colors.separator }]} />
+      ) : (
+        <>
+          <Text style={[styles.blankEventTime, { color: colors.tertiary }]}>—</Text>
+          <View style={[styles.eventRule, { backgroundColor: colors.separator }]} />
+        </>
+      )}
+      <Text style={[styles.blankItemText, { color: colors.tertiary }]}>Add {kind}</Text>
+    </Pressable>
+  );
 }
 
 function TabButton({ active, label, onPress, colors }: {
@@ -1210,7 +1219,6 @@ const styles = StyleSheet.create({
   loader: { paddingVertical: 40 },
   sectionHeader: { marginTop: 5, height: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4 },
-  sectionAction: { fontSize: 14, fontWeight: '600' },
   eventRow: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
   eventTime: { width: 68, fontSize: 13, fontVariant: ['tabular-nums'] },
   eventRule: { width: 3, height: 27, borderRadius: 2, marginRight: 11 },
@@ -1224,7 +1232,10 @@ const styles = StyleSheet.create({
   checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   taskCopy: { flex: 1, paddingVertical: 8 },
   completed: { textDecorationLine: 'line-through' },
-  emptyRow: { height: 42, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 14, paddingTop: 10 },
+  blankItemRow: { minHeight: 44, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
+  blankCheckbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, marginRight: 11 },
+  blankEventTime: { width: 68, fontSize: 13 },
+  blankItemText: { fontSize: 15, fontWeight: '500' },
   tabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 78, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', paddingTop: 8, paddingBottom: 20 },
   tabButton: { flex: 1, alignItems: 'center', gap: 4 },
   tabGlyph: { width: 23, height: 16, borderRadius: 6 },
