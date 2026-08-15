@@ -147,6 +147,7 @@ export default function HomeScreen() {
   const todayScroll = useRef<ScrollView>(null);
   const dayPage = useRef<View>(null);
   const keyboardTop = useRef(Dimensions.get('window').height);
+  const editorTransition = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -164,6 +165,10 @@ export default function HomeScreen() {
     const timer = setTimeout(() => setJournal(data.journal), 0);
     return () => clearTimeout(timer);
   }, [data.journal]);
+
+  useEffect(() => () => {
+    if (editorTransition.current) clearTimeout(editorTransition.current);
+  }, []);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -215,6 +220,10 @@ export default function HomeScreen() {
   }
 
   async function toggleInlineEditor(item: PlanningItem) {
+    if (editorTransition.current) {
+      clearTimeout(editorTransition.current);
+      editorTransition.current = null;
+    }
     const editingItem = inlineEditor?.item;
     if (editingItem && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
 
@@ -226,21 +235,41 @@ export default function HomeScreen() {
       return;
     }
 
-    setInlineDraft({
-      id: item.id,
-      kind: item.kind,
-      title: item.title,
-      date: item.anchorStart ?? selectedDate,
-      time: item.startTime,
-      notes: item.notes,
-      location: item.location,
-      locationPlace: item.locationPlace,
-    });
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setInlineEditor({ kind: item.kind, item });
+    const openItem = () => {
+      setInlineDraft({
+        id: item.id,
+        kind: item.kind,
+        title: item.title,
+        date: item.anchorStart ?? selectedDate,
+        time: item.startTime,
+        notes: item.notes,
+        location: item.location,
+        locationPlace: item.locationPlace,
+      });
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setInlineEditor({ kind: item.kind, item });
+    };
+
+    if (inlineEditor) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setInlineDraft(null);
+      setInlineEditor(null);
+      Keyboard.dismiss();
+      editorTransition.current = setTimeout(() => {
+        editorTransition.current = null;
+        openItem();
+      }, 260);
+      return;
+    }
+
+    openItem();
   }
 
   function closeInlineEditor() {
+    if (editorTransition.current) {
+      clearTimeout(editorTransition.current);
+      editorTransition.current = null;
+    }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setInlineDraft(null);
     setInlineEditor(null);
@@ -248,10 +277,31 @@ export default function HomeScreen() {
   }
 
   async function toggleNewInlineEditor(kind: 'task' | 'event') {
+    if (editorTransition.current) {
+      clearTimeout(editorTransition.current);
+      editorTransition.current = null;
+    }
     if (inlineEditor?.item && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
+    const closingCurrent = Boolean(inlineEditor);
+    const sameNewEditor = inlineEditor?.kind === kind && !inlineEditor.item;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setInlineDraft(null);
-    setInlineEditor(inlineEditor?.kind === kind && !inlineEditor.item ? null : { kind });
+    setInlineEditor(null);
+    if (sameNewEditor) return;
+
+    const openNew = () => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setInlineEditor({ kind });
+    };
+    if (!closingCurrent) {
+      openNew();
+      return;
+    }
+    Keyboard.dismiss();
+    editorTransition.current = setTimeout(() => {
+      editorTransition.current = null;
+      openNew();
+    }, 260);
   }
 
   function moveTask(taskId: string, targetIndex: number) {
