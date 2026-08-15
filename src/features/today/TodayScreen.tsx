@@ -46,14 +46,14 @@ import { QuickCaptureSheet } from '@/features/quick-capture/QuickCaptureSheet';
 type Destination = 'today' | 'timeline';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
 
-const EDITOR_FADE_OUT_MS = 140;
-const EDITOR_LAYOUT_MS = 240;
-const EDITOR_FADE_IN_MS = 220;
-
 function configureEditorLayout() {
   LayoutAnimation.configureNext({
-    duration: EDITOR_LAYOUT_MS,
-    update: { type: LayoutAnimation.Types.easeInEaseOut },
+    duration: 380,
+    update: {
+      type: LayoutAnimation.Types.spring,
+      springDamping: 0.9,
+      initialVelocity: 0.15,
+    },
     create: { type: LayoutAnimation.Types.easeOut, property: LayoutAnimation.Properties.opacity },
     delete: { type: LayoutAnimation.Types.easeIn, property: LayoutAnimation.Properties.opacity },
   });
@@ -79,8 +79,6 @@ export function TodayScreen() {
   const todayScroll = useRef<ScrollView>(null);
   const dayPage = useRef<View>(null);
   const keyboardTop = useRef(Dimensions.get('window').height);
-  const editorTransition = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [inlineEditorOpacity] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -98,11 +96,6 @@ export function TodayScreen() {
     const timer = setTimeout(() => setJournal(data.journal), 0);
     return () => clearTimeout(timer);
   }, [data.journal]);
-
-  useEffect(() => () => {
-    if (editorTransition.current) clearTimeout(editorTransition.current);
-    inlineEditorOpacity.stopAnimation();
-  }, [inlineEditorOpacity]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -154,138 +147,48 @@ export function TodayScreen() {
   }
 
   async function toggleInlineEditor(item: PlanningItem) {
-    inlineEditorOpacity.stopAnimation();
-    if (editorTransition.current) {
-      clearTimeout(editorTransition.current);
-      editorTransition.current = null;
-    }
     const editingItem = inlineEditor?.item;
     if (editingItem && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
 
     if (editingItem?.id === item.id) {
-      Animated.timing(inlineEditorOpacity, {
-        toValue: 0,
-        duration: EDITOR_FADE_OUT_MS,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (!finished) return;
-        configureEditorLayout();
-        setInlineDraft(null);
-        setInlineEditor(null);
-        inlineEditorOpacity.setValue(1);
-        Keyboard.dismiss();
-      });
-      return;
-    }
-
-    const openItem = () => {
-      setInlineDraft({
-        id: item.id,
-        kind: item.kind,
-        title: item.title,
-        date: item.anchorStart ?? selectedDate,
-        time: item.startTime,
-        notes: item.notes,
-        location: item.location,
-        locationPlace: item.locationPlace,
-      });
-      inlineEditorOpacity.setValue(0);
-      configureEditorLayout();
-      setInlineEditor({ kind: item.kind, item });
-      Animated.timing(inlineEditorOpacity, {
-        toValue: 1,
-        duration: EDITOR_FADE_IN_MS,
-        delay: 45,
-        useNativeDriver: true,
-      }).start();
-    };
-
-    if (inlineEditor) {
-      Animated.timing(inlineEditorOpacity, {
-        toValue: 0,
-        duration: EDITOR_FADE_OUT_MS,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (!finished) return;
-        configureEditorLayout();
-        setInlineDraft(null);
-        setInlineEditor(null);
-        Keyboard.dismiss();
-        editorTransition.current = setTimeout(() => {
-          editorTransition.current = null;
-          openItem();
-        }, EDITOR_LAYOUT_MS - 45);
-      });
-      return;
-    }
-
-    openItem();
-  }
-
-  function closeInlineEditor() {
-    inlineEditorOpacity.stopAnimation();
-    if (editorTransition.current) {
-      clearTimeout(editorTransition.current);
-      editorTransition.current = null;
-    }
-    Animated.timing(inlineEditorOpacity, {
-      toValue: 0,
-      duration: EDITOR_FADE_OUT_MS,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (!finished) return;
       configureEditorLayout();
       setInlineDraft(null);
       setInlineEditor(null);
-      inlineEditorOpacity.setValue(1);
       Keyboard.dismiss();
+      return;
+    }
+
+    configureEditorLayout();
+    setInlineDraft({
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      date: item.anchorStart ?? selectedDate,
+      time: item.startTime,
+      notes: item.notes,
+      location: item.location,
+      locationPlace: item.locationPlace,
     });
+    setInlineEditor({ kind: item.kind, item });
+  }
+
+  function closeInlineEditor() {
+    configureEditorLayout();
+    setInlineDraft(null);
+    setInlineEditor(null);
+    Keyboard.dismiss();
   }
 
   async function toggleNewInlineEditor(kind: 'task' | 'event') {
-    inlineEditorOpacity.stopAnimation();
-    if (editorTransition.current) {
-      clearTimeout(editorTransition.current);
-      editorTransition.current = null;
-    }
     if (inlineEditor?.item && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
-    const closingCurrent = Boolean(inlineEditor);
     const sameNewEditor = inlineEditor?.kind === kind && !inlineEditor.item;
     if (sameNewEditor) {
       closeInlineEditor();
       return;
     }
-
-    const openNew = () => {
-      inlineEditorOpacity.setValue(0);
-      configureEditorLayout();
-      setInlineEditor({ kind });
-      Animated.timing(inlineEditorOpacity, {
-        toValue: 1,
-        duration: EDITOR_FADE_IN_MS,
-        delay: 45,
-        useNativeDriver: true,
-      }).start();
-    };
-    if (!closingCurrent) {
-      openNew();
-      return;
-    }
-    Animated.timing(inlineEditorOpacity, {
-      toValue: 0,
-      duration: EDITOR_FADE_OUT_MS,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (!finished) return;
-      configureEditorLayout();
-      setInlineDraft(null);
-      setInlineEditor(null);
-      Keyboard.dismiss();
-      editorTransition.current = setTimeout(() => {
-        editorTransition.current = null;
-        openNew();
-      }, EDITOR_LAYOUT_MS - 45);
-    });
+    configureEditorLayout();
+    setInlineDraft(null);
+    setInlineEditor({ kind });
   }
 
   function moveTask(taskId: string, targetIndex: number) {
@@ -435,16 +338,12 @@ export function TodayScreen() {
                   )}
                 </Pressable>
                   {inlineEditor?.item?.id === event.id && (
-                    <Animated.View style={{ opacity: inlineEditorOpacity }}>
-                      <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
-                    </Animated.View>
+                    <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
                   )}
                 </Fragment>
               ))}
               {inlineEditor?.kind === 'event' && !inlineEditor.item && (
-                <Animated.View style={{ opacity: inlineEditorOpacity }}>
-                  <InlineComposer colors={colors} key="new-event" kind="event" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
-                </Animated.View>
+                <InlineComposer colors={colors} key="new-event" kind="event" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
               )}
 
               <SectionHeader
@@ -459,16 +358,12 @@ export function TodayScreen() {
                 <Fragment key={task.id}>
                   <DraggableTaskRow colors={colors} index={index} onEdit={() => void toggleInlineEditor(task)} onMove={moveTask} onToggle={() => void data.toggleTask(task)} task={task} />
                   {inlineEditor?.item?.id === task.id && (
-                    <Animated.View style={{ opacity: inlineEditorOpacity }}>
-                      <InlineComposer colors={colors} initial={task} key={task.id} kind="task" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
-                    </Animated.View>
+                    <InlineComposer colors={colors} initial={task} key={task.id} kind="task" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
                   )}
                 </Fragment>
               ))}
               {inlineEditor?.kind === 'task' && !inlineEditor.item && (
-                <Animated.View style={{ opacity: inlineEditorOpacity }}>
-                  <InlineComposer colors={colors} key="new-task" kind="task" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
-                </Animated.View>
+                <InlineComposer colors={colors} key="new-task" kind="task" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
               )}
 
               <DailyReflection
