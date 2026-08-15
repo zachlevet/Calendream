@@ -45,6 +45,19 @@ import { DailyReflection } from './components/DailyReflection';
 type Destination = 'today' | 'timeline';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
 
+const EDITOR_FADE_OUT_MS = 140;
+const EDITOR_LAYOUT_MS = 240;
+const EDITOR_FADE_IN_MS = 220;
+
+function configureEditorLayout() {
+  LayoutAnimation.configureNext({
+    duration: EDITOR_LAYOUT_MS,
+    update: { type: LayoutAnimation.Types.easeInEaseOut },
+    create: { type: LayoutAnimation.Types.easeOut, property: LayoutAnimation.Properties.opacity },
+    delete: { type: LayoutAnimation.Types.easeIn, property: LayoutAnimation.Properties.opacity },
+  });
+}
+
 function countLabel(count: number, singular: string) {
   return `${count} ${singular}${count === 1 ? '' : 's'}`;
 }
@@ -65,6 +78,7 @@ export function TodayScreen() {
   const dayPage = useRef<View>(null);
   const keyboardTop = useRef(Dimensions.get('window').height);
   const editorTransition = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [inlineEditorOpacity] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -85,7 +99,8 @@ export function TodayScreen() {
 
   useEffect(() => () => {
     if (editorTransition.current) clearTimeout(editorTransition.current);
-  }, []);
+    inlineEditorOpacity.stopAnimation();
+  }, [inlineEditorOpacity]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -137,6 +152,7 @@ export function TodayScreen() {
   }
 
   async function toggleInlineEditor(item: PlanningItem) {
+    inlineEditorOpacity.stopAnimation();
     if (editorTransition.current) {
       clearTimeout(editorTransition.current);
       editorTransition.current = null;
@@ -145,10 +161,18 @@ export function TodayScreen() {
     if (editingItem && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
 
     if (editingItem?.id === item.id) {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setInlineDraft(null);
-      setInlineEditor(null);
-      Keyboard.dismiss();
+      Animated.timing(inlineEditorOpacity, {
+        toValue: 0,
+        duration: EDITOR_FADE_OUT_MS,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) return;
+        configureEditorLayout();
+        setInlineDraft(null);
+        setInlineEditor(null);
+        inlineEditorOpacity.setValue(1);
+        Keyboard.dismiss();
+      });
       return;
     }
 
@@ -163,19 +187,33 @@ export function TodayScreen() {
         location: item.location,
         locationPlace: item.locationPlace,
       });
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      inlineEditorOpacity.setValue(0);
+      configureEditorLayout();
       setInlineEditor({ kind: item.kind, item });
+      Animated.timing(inlineEditorOpacity, {
+        toValue: 1,
+        duration: EDITOR_FADE_IN_MS,
+        delay: 45,
+        useNativeDriver: true,
+      }).start();
     };
 
     if (inlineEditor) {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setInlineDraft(null);
-      setInlineEditor(null);
-      Keyboard.dismiss();
-      editorTransition.current = setTimeout(() => {
-        editorTransition.current = null;
-        openItem();
-      }, 260);
+      Animated.timing(inlineEditorOpacity, {
+        toValue: 0,
+        duration: EDITOR_FADE_OUT_MS,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (!finished) return;
+        configureEditorLayout();
+        setInlineDraft(null);
+        setInlineEditor(null);
+        Keyboard.dismiss();
+        editorTransition.current = setTimeout(() => {
+          editorTransition.current = null;
+          openItem();
+        }, EDITOR_LAYOUT_MS - 45);
+      });
       return;
     }
 
@@ -183,17 +221,27 @@ export function TodayScreen() {
   }
 
   function closeInlineEditor() {
+    inlineEditorOpacity.stopAnimation();
     if (editorTransition.current) {
       clearTimeout(editorTransition.current);
       editorTransition.current = null;
     }
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setInlineDraft(null);
-    setInlineEditor(null);
-    Keyboard.dismiss();
+    Animated.timing(inlineEditorOpacity, {
+      toValue: 0,
+      duration: EDITOR_FADE_OUT_MS,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished) return;
+      configureEditorLayout();
+      setInlineDraft(null);
+      setInlineEditor(null);
+      inlineEditorOpacity.setValue(1);
+      Keyboard.dismiss();
+    });
   }
 
   async function toggleNewInlineEditor(kind: 'task' | 'event') {
+    inlineEditorOpacity.stopAnimation();
     if (editorTransition.current) {
       clearTimeout(editorTransition.current);
       editorTransition.current = null;
@@ -201,24 +249,41 @@ export function TodayScreen() {
     if (inlineEditor?.item && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
     const closingCurrent = Boolean(inlineEditor);
     const sameNewEditor = inlineEditor?.kind === kind && !inlineEditor.item;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setInlineDraft(null);
-    setInlineEditor(null);
-    if (sameNewEditor) return;
+    if (sameNewEditor) {
+      closeInlineEditor();
+      return;
+    }
 
     const openNew = () => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      inlineEditorOpacity.setValue(0);
+      configureEditorLayout();
       setInlineEditor({ kind });
+      Animated.timing(inlineEditorOpacity, {
+        toValue: 1,
+        duration: EDITOR_FADE_IN_MS,
+        delay: 45,
+        useNativeDriver: true,
+      }).start();
     };
     if (!closingCurrent) {
       openNew();
       return;
     }
-    Keyboard.dismiss();
-    editorTransition.current = setTimeout(() => {
-      editorTransition.current = null;
-      openNew();
-    }, 260);
+    Animated.timing(inlineEditorOpacity, {
+      toValue: 0,
+      duration: EDITOR_FADE_OUT_MS,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished) return;
+      configureEditorLayout();
+      setInlineDraft(null);
+      setInlineEditor(null);
+      Keyboard.dismiss();
+      editorTransition.current = setTimeout(() => {
+        editorTransition.current = null;
+        openNew();
+      }, EDITOR_LAYOUT_MS - 45);
+    });
   }
 
   function moveTask(taskId: string, targetIndex: number) {
@@ -367,13 +432,17 @@ export function TodayScreen() {
                     </Pressable>
                   )}
                 </Pressable>
-                {inlineEditor?.item?.id === event.id && (
-                <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
-                )}
+                  {inlineEditor?.item?.id === event.id && (
+                    <Animated.View style={{ opacity: inlineEditorOpacity }}>
+                      <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                    </Animated.View>
+                  )}
                 </Fragment>
               ))}
               {inlineEditor?.kind === 'event' && !inlineEditor.item && (
-                <InlineComposer colors={colors} key="new-event" kind="event" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                <Animated.View style={{ opacity: inlineEditorOpacity }}>
+                  <InlineComposer colors={colors} key="new-event" kind="event" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                </Animated.View>
               )}
 
               <SectionHeader
@@ -388,12 +457,16 @@ export function TodayScreen() {
                 <Fragment key={task.id}>
                   <DraggableTaskRow colors={colors} index={index} onEdit={() => void toggleInlineEditor(task)} onMove={moveTask} onToggle={() => void data.toggleTask(task)} task={task} />
                   {inlineEditor?.item?.id === task.id && (
-                    <InlineComposer colors={colors} initial={task} key={task.id} kind="task" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                    <Animated.View style={{ opacity: inlineEditorOpacity }}>
+                      <InlineComposer colors={colors} initial={task} key={task.id} kind="task" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                    </Animated.View>
                   )}
                 </Fragment>
               ))}
               {inlineEditor?.kind === 'task' && !inlineEditor.item && (
-                <InlineComposer colors={colors} key="new-task" kind="task" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                <Animated.View style={{ opacity: inlineEditorOpacity }}>
+                  <InlineComposer colors={colors} key="new-task" kind="task" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                </Animated.View>
               )}
 
               <DailyReflection
