@@ -46,9 +46,10 @@ export function isGoalVisibleInPeriod(goal: Goal, period: Pick<TimelinePeriod, '
   return goal.startsOn <= period.end && goal.targetDate >= period.start;
 }
 
-export function shouldStickGoal(goal: Goal, visibleDate: string, originY: number | undefined, scrollOffset: number, firstLoadedDate: string, topInset: number) {
-  if (goal.startsOn > visibleDate || goal.targetDate < visibleDate) return false;
-  return originY === undefined ? goal.startsOn < firstLoadedDate : scrollOffset + topInset >= originY;
+export function isGoalRelevantAtZoom(goal: Goal, zoom: TimelineZoom) {
+  if (zoom === 'today' || zoom === 'week' || zoom === 'month') return true;
+  if (zoom === 'quarter') return goal.scope === 'quarter' || goal.scope === 'year';
+  return goal.scope === 'year';
 }
 
 export function daysBetweenDates(start: string, end: string) {

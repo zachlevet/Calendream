@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
 
 import type { ItemDraft } from '@/models/planning';
 import { formatDestination, formatShortDate } from '@/shared/date';
@@ -31,6 +32,8 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
   const dateLabel = captureEndDate && captureEndDate !== captureDate
     ? `${formatShortDate(captureDate)}–${formatShortDate(captureEndDate)}`
     : formatDestination(captureDate);
+  const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
+  const fallbackGlass = colors.background === '#000000' ? 'rgba(28,28,31,0.94)' : 'rgba(252,252,253,0.94)';
 
   function close() {
     setText('');
@@ -57,10 +60,11 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
   }
 
   return (
-    <Modal animationType="fade" onRequestClose={close} transparent visible={visible}>
+    <Modal animationType="fade" onRequestClose={close} presentationStyle="overFullScreen" transparent visible={visible}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.screen}>
         <Pressable accessibilityLabel="Close quick capture" onPress={close} style={styles.backdrop} />
-        <View style={[styles.sheet, { backgroundColor: colors.background, borderColor: colors.separator }]}> 
+        <View style={[styles.sheet, { borderColor: colors.separator }, !glassAvailable && { backgroundColor: fallbackGlass }]}>
+          {glassAvailable && <GlassView glassEffectStyle="regular" isInteractive style={styles.sheetGlass} tintColor={colors.background === '#000000' ? 'rgba(36,36,40,0.78)' : 'rgba(255,255,255,0.78)'} />}
           <View style={styles.handle} />
           <Text style={[styles.heading, { color: colors.text }]}>New item</Text>
           <TextInput
@@ -134,8 +138,9 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
 
 const styles = StyleSheet.create({
   screen: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.16)' },
-  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 18, paddingTop: 8, paddingBottom: 14 },
+  backdrop: { position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.06)' },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 18, paddingTop: 8, paddingBottom: 14, overflow: 'hidden' },
+  sheetGlass: { position: 'absolute', inset: 0 },
   handle: { width: 34, height: 4, borderRadius: 2, backgroundColor: '#C7C7CC', alignSelf: 'center', marginBottom: 13 },
   heading: { fontSize: 15, fontWeight: '700' },
   input: { minHeight: 70, maxHeight: 150, paddingTop: 10, paddingBottom: 8, fontSize: 22, lineHeight: 29, fontWeight: '500', textAlignVertical: 'top' },

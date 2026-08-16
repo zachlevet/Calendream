@@ -165,8 +165,7 @@ export function TodayScreen() {
     () => data.items.filter((item) => item.kind === 'task'),
     [data.items],
   );
-  const prioritizedGoals = useMemo(() => [...data.goals].sort((a, b) => {
-    if (Boolean(a.completed) !== Boolean(b.completed)) return a.completed ? 1 : -1;
+  const prioritizedGoals = useMemo(() => data.goals.filter((goal) => !goal.completed).sort((a, b) => {
     const scopePriority = { year: 0, quarter: 1, month: 2 };
     return scopePriority[a.scope] - scopePriority[b.scope] || a.targetDate.localeCompare(b.targetDate);
   }), [data.goals]);
@@ -274,7 +273,6 @@ export function TodayScreen() {
   }
 
   function openQuickCapture(preset?: CapturePreset) {
-    setCalendarOpen(false);
     setCapturePreset(preset ?? null);
     setQuickCaptureOpen(true);
   }

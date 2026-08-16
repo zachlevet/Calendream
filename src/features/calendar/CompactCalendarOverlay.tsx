@@ -83,9 +83,10 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
         if (!range) return;
         if (range.start === range.end) onSelectDate(range.start);
         else onSelectRange(range.start, range.end);
+        setTimeout(() => setSelection(null), 350);
       });
   }, [cells, indexAtPoint, onSelectDate, onSelectRange]);
-  const calendarGesture = Gesture.Exclusive(rangeGesture, Gesture.Native());
+  const calendarGesture = Gesture.Simultaneous(rangeGesture, Gesture.Native());
   const selectionStart = selection ? Math.min(selection.first, selection.last) : -1;
   const selectionEnd = selection ? Math.max(selection.first, selection.last) : -1;
 
@@ -108,7 +109,7 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
               const last = selected && index === selectionEnd;
               const current = cell.date === today;
               return (
-                <Pressable accessibilityLabel={cell.date ? new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(dateFromISO(cell.date)) : undefined} disabled={!cell.date} key={`${cell.date ?? 'empty'}-${index}`} onPress={() => cell.date && onSelectDate(cell.date)} style={styles.dayCell}>
+                <Pressable accessibilityLabel={cell.date ? new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(dateFromISO(cell.date)) : undefined} disabled={!cell.date} key={`${cell.date ?? 'empty'}-${index}`} onPress={() => { if (!selection && cell.date) onSelectDate(cell.date); }} style={styles.dayCell}>
                   {selected && <View style={[styles.rangeFill, { backgroundColor: colors.blueSoft }, first && styles.rangeFirst, last && styles.rangeLast]} />}
                   {current && !selected && <View style={[styles.todayCircle, { borderColor: colors.red }]} />}
                   <Text style={[styles.dayNumber, { color: selected ? colors.blue : cell.date ? colors.text : 'transparent' }, current && !selected && { color: colors.red, fontWeight: '800' }]}>{cell.day ?? ''}</Text>
@@ -140,8 +141,8 @@ const styles = StyleSheet.create({
   rangeFill: { position: 'absolute', left: 0, right: 0, top: 4, bottom: 4 },
   rangeFirst: { borderTopLeftRadius: 16, borderBottomLeftRadius: 16 },
   rangeLast: { borderTopRightRadius: 16, borderBottomRightRadius: 16 },
-  todayCircle: { position: 'absolute', width: 31, height: 31, borderRadius: 16, borderWidth: 1.5 },
+  todayCircle: { position: 'absolute', width: 28, height: 28, borderRadius: 14, borderWidth: 1.5 },
   dayNumber: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  eventDot: { position: 'absolute', bottom: 3, width: 4, height: 4, borderRadius: 2 },
+  eventDot: { position: 'absolute', bottom: 0, width: 4, height: 4, borderRadius: 2 },
   hint: { textAlign: 'center', fontSize: 10, fontWeight: '600', marginTop: 2 },
 });
