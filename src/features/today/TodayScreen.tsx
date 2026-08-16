@@ -44,12 +44,15 @@ import { palette, type AppColors } from '@/theme/colors';
 import CalendreamMapKit from '../../../modules/calendream-mapkit/src/CalendreamMapKitModule';
 import type { MapSuggestion } from '../../../modules/calendream-mapkit/src/CalendreamMapKit.types';
 import { DailyReflection } from './components/DailyReflection';
+import { CompactCalendarOverlay } from '@/features/calendar/CompactCalendarOverlay';
 import { QuickCaptureSheet } from '@/features/quick-capture/QuickCaptureSheet';
+import type { CaptureKind } from '@/features/quick-capture/parseQuickCapture';
 import { SearchOverlay } from '@/features/search/SearchResults';
 import { TimelineScreen } from '@/features/timeline/TimelineScreen';
 
 type Destination = 'today' | 'timeline';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
+type CapturePreset = { date: string; endDate?: string; kind?: CaptureKind; dateLocked?: boolean };
 
 function eventAccent(event: PlanningItem, colors: AppColors) {
   const phase = eventPhase(event);
@@ -80,6 +83,8 @@ export function TodayScreen() {
   const [destination, setDestination] = useState<Destination>('today');
   const [editor, setEditor] = useState<EditorState>(null);
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
+  const [capturePreset, setCapturePreset] = useState<CapturePreset | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -259,7 +264,25 @@ export function TodayScreen() {
   function openSearch() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setDestination('today');
+    setCalendarOpen(false);
     setSearchOpen(true);
+  }
+
+  function openQuickCapture(preset?: CapturePreset) {
+    setCalendarOpen(false);
+    setCapturePreset(preset ?? null);
+    setQuickCaptureOpen(true);
+  }
+
+  function closeQuickCapture() {
+    setQuickCaptureOpen(false);
+    setCapturePreset(null);
+  }
+
+  function toggleCalendar() {
+    Keyboard.dismiss();
+    if (searchOpen) closeSearch();
+    setCalendarOpen((open) => !open);
   }
 
   function closeSearch() {
@@ -304,7 +327,7 @@ export function TodayScreen() {
           </View>
           <Pressable
             accessibilityLabel="Add an item"
-            onPress={() => setQuickCaptureOpen(true)}
+            onPress={() => openQuickCapture()}
             style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
           >
             <Text style={styles.addSymbol}>+</Text>
@@ -322,8 +345,15 @@ export function TodayScreen() {
                 <SymbolView name="magnifyingglass" size={16} tintColor={colors.text} />
               </Pressable>
               <Pressable
+                accessibilityLabel="Open calendar"
+                onPress={toggleCalendar}
+                style={({ pressed }) => [styles.calendarButton, { backgroundColor: calendarOpen ? colors.blueSoft : colors.card }, pressed && styles.pressed]}
+              >
+                <SymbolView name="calendar" size={16} tintColor={calendarOpen ? colors.blue : colors.text} />
+              </Pressable>
+              <Pressable
                 accessibilityLabel="Add an item"
-                onPress={() => setQuickCaptureOpen(true)}
+                onPress={() => openQuickCapture()}
                 style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
               >
                 <Text style={styles.addSymbol}>+</Text>
@@ -533,6 +563,19 @@ export function TodayScreen() {
         <SearchOverlay colors={colors} loading={searchLoading} onSelect={selectSearchResult} query={searchQuery} results={searchResults} />
       )}
 
+      {calendarOpen && (
+        <CompactCalendarOverlay
+          colors={colors}
+          dataRevision={timelineRevision}
+          initialDate={selectedDate}
+          loadRange={data.loadRange}
+          onClose={() => setCalendarOpen(false)}
+          onSelectDate={(date) => openQuickCapture({ date, dateLocked: true, kind: 'event' })}
+          onSelectRange={(date, endDate) => openQuickCapture({ date, dateLocked: true, endDate, kind: 'trip' })}
+          today={today}
+        />
+      )}
+
       <View style={[styles.tabBar, { backgroundColor: colors.chrome, borderColor: colors.separator }]}>
         <TabButton active={destination === 'today'} colors={colors} label="Today" onPress={() => setDestination('today')} />
         <TabButton active={destination === 'timeline'} colors={colors} label="Timeline" onPress={() => setDestination('timeline')} />
@@ -549,8 +592,12 @@ export function TodayScreen() {
       />
       <QuickCaptureSheet
         colors={colors}
-        date={selectedDate}
-        onClose={() => setQuickCaptureOpen(false)}
+        date={capturePreset?.date ?? selectedDate}
+        dateLocked={capturePreset?.dateLocked}
+        endDate={capturePreset?.endDate}
+        initialKind={capturePreset?.kind}
+        key={`${quickCaptureOpen}-${capturePreset?.date ?? selectedDate}-${capturePreset?.endDate ?? 'single'}-${capturePreset?.kind ?? 'automatic'}`}
+        onClose={closeQuickCapture}
         onSave={async (draft) => {
           await data.saveItem(draft);
           setTimelineRevision((revision) => revision + 1);
@@ -1375,6 +1422,7 @@ const styles = StyleSheet.create({
   wordmark: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   searchButton: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  calendarButton: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   searchOrb: { flex: 1, height: 34, borderRadius: 17, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   searchInput: { flex: 1, height: 34, fontSize: 15, paddingVertical: 0 },
   addButton: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#FF3B30', alignItems: 'center', justifyContent: 'center' },

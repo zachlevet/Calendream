@@ -2,12 +2,16 @@ import { useMemo, useState } from 'react';
 import { KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { ItemDraft } from '@/models/planning';
+import { formatDestination, formatShortDate } from '@/shared/date';
 import type { AppColors } from '@/theme/colors';
 import { type CaptureKind, parseQuickCapture } from './parseQuickCapture';
 
 interface QuickCaptureSheetProps {
   colors: AppColors;
   date: string;
+  dateLocked?: boolean;
+  endDate?: string;
+  initialKind?: CaptureKind;
   visible: boolean;
   onClose: () => void;
   onSave: (draft: ItemDraft) => Promise<void>;
@@ -15,18 +19,22 @@ interface QuickCaptureSheetProps {
 
 const KINDS: CaptureKind[] = ['task', 'event', 'trip'];
 
-export function QuickCaptureSheet({ colors, date, visible, onClose, onSave }: QuickCaptureSheetProps) {
+export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, initialKind, visible, onClose, onSave }: QuickCaptureSheetProps) {
   const [text, setText] = useState('');
-  const [override, setOverride] = useState<CaptureKind | null>(null);
+  const [override, setOverride] = useState<CaptureKind | null>(initialKind ?? null);
   const [choosingKind, setChoosingKind] = useState(false);
   const [saving, setSaving] = useState(false);
   const parsed = useMemo(() => parseQuickCapture(text, date), [date, text]);
   const kind = override ?? parsed.kind;
+  const dateLabel = endDate && endDate !== date
+    ? `${formatShortDate(date)}–${formatShortDate(endDate)}`
+    : formatDestination(date);
 
   function close() {
     setText('');
     setOverride(null);
     setChoosingKind(false);
+    setSaving(false);
     onClose();
   }
 
@@ -36,7 +44,8 @@ export function QuickCaptureSheet({ colors, date, visible, onClose, onSave }: Qu
     await onSave({
       kind: kind === 'task' ? 'task' : 'event',
       title: parsed.title,
-      date: parsed.date,
+      date: dateLocked ? date : parsed.date,
+      endDate: kind === 'task' ? undefined : endDate,
       time: kind === 'task' ? undefined : parsed.time,
       altitude: kind === 'trip' ? 4 : kind === 'event' ? 1 : 0,
       eventType: kind === 'trip' ? 'trip' : 'event',
@@ -57,10 +66,12 @@ export function QuickCaptureSheet({ colors, date, visible, onClose, onSave }: Qu
             multiline
             onChangeText={(value) => {
               setText(value);
-              setOverride(null);
+              if (!dateLocked) setOverride(null);
             }}
             onSubmitEditing={() => void submit()}
-            placeholder="Morning run at 7 a.m."
+            placeholder={endDate && endDate !== date
+              ? `Event from ${formatShortDate(date)}–${formatShortDate(endDate)}`
+              : dateLocked ? `Add something on ${formatShortDate(date)}` : 'Morning run at 7 a.m.'}
             placeholderTextColor={colors.tertiary}
             returnKeyType="done"
             style={[styles.input, { color: colors.text }]}
@@ -69,6 +80,11 @@ export function QuickCaptureSheet({ colors, date, visible, onClose, onSave }: Qu
 
           <View style={styles.footer}>
             <View style={styles.metadata}>
+              {dateLocked && (
+                <View style={[styles.datePill, { backgroundColor: colors.card }]}>
+                  <Text style={[styles.dateText, { color: colors.secondary }]}>{dateLabel}</Text>
+                </View>
+              )}
               {parsed.time && kind !== 'task' && <Text style={[styles.time, { color: colors.secondary }]}>{parsed.time}</Text>}
               <Pressable
                 accessibilityLabel={`Detected as ${kind}. Tap to change.`}
@@ -100,6 +116,7 @@ export function QuickCaptureSheet({ colors, date, visible, onClose, onSave }: Qu
               ))}
             </View>
             <Pressable
+              accessibilityLabel="Save new item"
               disabled={!parsed.title || saving}
               onPress={() => void submit()}
               style={[styles.addButton, { backgroundColor: parsed.title ? colors.red : colors.tertiary }]}
@@ -122,6 +139,8 @@ const styles = StyleSheet.create({
   input: { minHeight: 70, maxHeight: 150, paddingTop: 10, paddingBottom: 8, fontSize: 22, lineHeight: 29, fontWeight: '500', textAlignVertical: 'top' },
   footer: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   metadata: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  datePill: { minHeight: 29, borderRadius: 15, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  dateText: { fontSize: 11, fontWeight: '700' },
   time: { fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] },
   kindOrb: { minHeight: 29, borderRadius: 15, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   kindText: { fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
