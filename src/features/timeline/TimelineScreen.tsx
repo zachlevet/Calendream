@@ -7,7 +7,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import type { ItemDraft, PlanningItem, TimelineSnapshot, TimelineZoom } from '@/models/planning';
 import { addLocalDays, dateFromISO, formatShortDate } from '@/shared/date';
-import { eventPhase } from '@/shared/time';
+import { eventPhase, timeMinutes } from '@/shared/time';
 import type { AppColors } from '@/theme/colors';
 import { buildTimelinePeriods, isVisibleAtZoom, isoWeekNumber, type TimelinePeriod } from './periods';
 
@@ -306,9 +306,11 @@ function WeekPage({ period, items, today, colors, editingItem, editingSlot, inli
   const days = Array.from({ length: 7 }, (_, index) => addLocalDays(period.start, index))
     .map((date) => ({
       date,
-      events: items.filter((item) => item.kind === 'event' && item.anchorStart !== null && item.anchorStart <= date && (item.anchorEnd ?? item.anchorStart) >= date),
+      items: items
+        .filter((item) => item.anchorStart !== null && item.anchorStart <= date && (item.anchorEnd ?? item.anchorStart) >= date)
+        .sort((a, b) => a.kind.localeCompare(b.kind) || timeMinutes(a.startTime) - timeMinutes(b.startTime) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
     }))
-    .filter((day) => day.events.length > 0);
+    .filter((day) => day.items.length > 0);
   return (
     <>
       {period.current && <Text style={[styles.eyebrow, { color: colors.red }]}>This week</Text>}
@@ -316,8 +318,8 @@ function WeekPage({ period, items, today, colors, editingItem, editingSlot, inli
         <Text style={[styles.weekTitle, { color: colors.text }]}>Week {isoWeekNumber(period.start)}</Text>
         <Text style={[styles.periodSubtitle, { color: colors.secondary }]}>{period.title}</Text>
       </View>
-      {!days.length && <Text style={[styles.emptyWeek, { color: colors.tertiary }]}>No events yet, let’s get planning :)</Text>}
-      {days.map(({ date, events }) => {
+      {!days.length && <Text style={[styles.emptyWeek, { color: colors.tertiary }]}>No events or tasks yet, let’s get planning :)</Text>}
+      {days.map(({ date, items: dayItems }) => {
         const parsed = dateFromISO(date);
         return (
           <View key={date} style={[styles.weekDay, { borderColor: date === today ? colors.red : colors.separator }, date === today && styles.currentWeekDay]}>
@@ -325,7 +327,7 @@ function WeekPage({ period, items, today, colors, editingItem, editingSlot, inli
               <Text style={[styles.weekDayName, { color: date === today ? colors.red : colors.text }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(parsed)}</Text>
               <Text style={[styles.weekDayDate, { color: colors.secondary }]}>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)}</Text>
             </Pressable>
-            {events.map((item) => { const slot = `week-${date}-${item.id}`; return <View key={`${date}-${item.id}`}><CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
+            {dayItems.map((item) => { const slot = `week-${date}-${item.id}`; return <View key={`${date}-${item.id}`}><CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
           </View>
         );
       })}
