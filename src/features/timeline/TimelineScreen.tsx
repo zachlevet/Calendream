@@ -232,9 +232,7 @@ function Period({ period, zoom, items, loading, reflection, today, colors, editi
   onOpenDay: (date: string) => void;
 }) {
   const visibleItems = items.filter((item) => overlaps(item, period) && isVisibleAtZoom(item, zoom));
-  const presentStyle = period.current
-    ? zoom === 'today' ? { borderTopWidth: 0 } : { borderTopColor: colors.red, borderTopWidth: 2 }
-    : { borderTopColor: colors.separator };
+  const presentStyle = period.current ? { borderTopWidth: 0 } : { borderTopColor: colors.separator };
   const shared = { colors, editingItem, editingSlot, inlineEditor, onEditItem };
 
   return (
@@ -272,10 +270,7 @@ function DayPage({ date, period, items, reflection, today, colors, editingItem, 
   return (
     <>
       {period.current ? (
-        <View style={styles.todayMarker}>
-          <Text style={[styles.dayEyebrow, { color: dayAccent }]}>{period.eyebrow}</Text>
-          <View style={[styles.todayMarkerLine, { backgroundColor: colors.red }]} />
-        </View>
+        <CurrentMarker colors={colors} label={period.eyebrow ?? 'Today'} />
       ) : <Text style={[styles.dayEyebrow, { color: dayAccent }]}>{period.eyebrow}</Text>}
       <Pressable onPress={() => onOpenDay(date)}>
         <Text style={[styles.dayTitle, { color: colors.text }]}>{period.title}</Text>
@@ -320,7 +315,7 @@ function WeekPage({ period, items, today, colors, editingItem, editingSlot, inli
     .filter((day) => day.items.length > 0);
   return (
     <>
-      {period.current && <Text style={[styles.eyebrow, { color: colors.red }]}>This week</Text>}
+      {period.current && <CurrentMarker colors={colors} label="This week" />}
       <View style={styles.weekTitleRow}>
         <Text style={[styles.weekTitle, { color: colors.text }]}>Week {isoWeekNumber(period.start)}</Text>
         <Text style={[styles.periodSubtitle, { color: colors.secondary }]}>{period.title}</Text>
@@ -358,7 +353,7 @@ function CoarsePeriod({ period, zoom, items, loading, colors, editingItem, editi
   const shownItems = items.slice(0, limit);
   return (
     <>
-      {period.eyebrow && <Text style={[styles.eyebrow, { color: colors.red }]}>{period.eyebrow}</Text>}
+      {period.eyebrow && <CurrentMarker colors={colors} label={period.eyebrow} />}
       <Pressable onPress={() => onOpenDay(period.start)}>
         <View style={styles.periodTitleRow}>
           <Text style={[zoom === 'year' ? styles.yearTitle : styles.periodTitle, { color: colors.text }]}>{period.title}</Text>
@@ -373,6 +368,10 @@ function CoarsePeriod({ period, zoom, items, loading, colors, editingItem, editi
 
 function TimelineSectionHeader({ title, colors, onPress }: { title: string; colors: AppColors; onPress: () => void }) {
   return <View style={styles.sectionHeader}><Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text><Pressable hitSlop={8} onPress={onPress}><Text style={[styles.sectionAction, { color: colors.blue }]}>Add {title.slice(0, -1).toLowerCase()}</Text></Pressable></View>;
+}
+
+function CurrentMarker({ colors, label }: { colors: AppColors; label: string }) {
+  return <View style={styles.currentMarker}><Text style={[styles.dayEyebrow, { color: colors.red }]}>{label}</Text><View style={[styles.currentMarkerLine, { backgroundColor: colors.red }]} /></View>;
 }
 
 function TimelineItem({ item, colors, onPress }: { item: PlanningItem; colors: AppColors; onPress: () => void }) {
@@ -395,13 +394,12 @@ function overlaps(item: PlanningItem, period: TimelinePeriod) {
 const styles = StyleSheet.create({
   screen: { flex: 1 }, timeline: { flex: 1 }, content: { paddingHorizontal: 18, paddingBottom: 170 },
   period: { paddingTop: 18, paddingBottom: 24, borderTopWidth: 1 },
-  eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 2 },
   periodTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   periodTitle: { fontSize: 29, lineHeight: 34, fontWeight: '700', letterSpacing: -0.8 },
   yearTitle: { fontSize: 42, lineHeight: 47, fontWeight: '700', letterSpacing: -1.3 }, periodSubtitle: { fontSize: 14, fontWeight: '600' },
   dayEyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' }, dayTitle: { fontSize: 31, fontWeight: '700', letterSpacing: -1, marginTop: 3 }, daySubtitle: { fontSize: 14, marginTop: 3 },
-  todayMarker: { minHeight: 14, flexDirection: 'row', alignItems: 'center' },
-  todayMarkerLine: { flex: 1, height: 1, marginLeft: 9, borderRadius: 1 },
+  currentMarker: { minHeight: 14, flexDirection: 'row', alignItems: 'center' },
+  currentMarkerLine: { flex: 1, height: 1, marginLeft: 9, borderRadius: 1 },
   sectionHeader: { marginTop: 10, height: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, sectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4 }, sectionAction: { fontSize: 14, fontWeight: '600' },
   timelineItem: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, eventTime: { width: 68, fontSize: 13, fontVariant: ['tabular-nums'] }, itemRule: { width: 3, height: 25, borderRadius: 2, marginRight: 10 }, itemCopy: { flex: 1, paddingVertical: 6 }, itemTitle: { fontSize: 16, fontWeight: '500' }, itemNote: { fontSize: 12, marginTop: 2 },
   checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' }, openRow: { height: 42, fontSize: 14, paddingTop: 10 },
