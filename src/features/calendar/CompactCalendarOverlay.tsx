@@ -17,21 +17,23 @@ interface CompactCalendarOverlayProps {
   dataRevision: number;
   initialDate: string;
   loadRange: (startDate: string, endDate: string) => Promise<TimelineSnapshot>;
+  onAddDate: (date: string) => void;
   onClose: () => void;
-  onSelectDate: (date: string) => void;
   onSelectRange: (startDate: string, endDate: string) => void;
+  onViewDate: (date: string) => void;
   selectedStartDate?: string;
   selectedEndDate?: string;
   today: string;
 }
 
-export function CompactCalendarOverlay({ colors, dataRevision, initialDate, loadRange, onClose, onSelectDate, onSelectRange, selectedStartDate, selectedEndDate, today }: CompactCalendarOverlayProps) {
+export function CompactCalendarOverlay({ colors, dataRevision, initialDate, loadRange, onAddDate, onClose, onSelectRange, onViewDate, selectedStartDate, selectedEndDate, today }: CompactCalendarOverlayProps) {
   const insets = useSafeAreaInsets();
   const initial = dateFromISO(initialDate);
   const [month, setMonth] = useState(() => new Date(initial.getFullYear(), initial.getMonth(), 1));
   const [eventDates, setEventDates] = useState<Set<string>>(() => new Set());
   const [gridWidth, setGridWidth] = useState(0);
   const [selection, setSelection] = useState<{ first: number; last: number } | null>(null);
+  const [actionDate, setActionDate] = useState<string | null>(null);
   const cells = useMemo(() => buildCalendarMonth(month), [month]);
   const bounds = useMemo(() => calendarMonthBounds(month), [month]);
   const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
@@ -85,11 +87,14 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
         if (firstIndex === null || lastIndex === null) return;
         const range = orderedCalendarRange(cells, firstIndex, lastIndex);
         if (!range) return;
-        if (range.start === range.end) onSelectDate(range.start);
-        else onSelectRange(range.start, range.end);
+        if (range.start === range.end) setActionDate(range.start);
+        else {
+          setActionDate(null);
+          onSelectRange(range.start, range.end);
+        }
         setTimeout(() => setSelection(null), 350);
       });
-  }, [cells, indexAtPoint, onSelectDate, onSelectRange]);
+  }, [cells, indexAtPoint, onSelectRange]);
   const calendarGesture = Gesture.Simultaneous(rangeGesture, Gesture.Native());
   const committedSelection = useMemo(() => {
     if (!selectedStartDate) return null;
@@ -101,8 +106,9 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
     return { first: selectedIndices[0], last: selectedIndices[selectedIndices.length - 1] };
   }, [cells, selectedEndDate, selectedStartDate]);
   const activeSelection = selection ?? committedSelection;
-  const selectionStart = activeSelection ? Math.min(activeSelection.first, activeSelection.last) : -1;
-  const selectionEnd = activeSelection ? Math.max(activeSelection.first, activeSelection.last) : -1;
+  const actionIndex = actionDate ? cells.findIndex((cell) => cell.date === actionDate) : -1;
+  const selectionStart = activeSelection ? Math.min(activeSelection.first, activeSelection.last) : actionIndex;
+  const selectionEnd = activeSelection ? Math.max(activeSelection.first, activeSelection.last) : actionIndex;
 
   return (
     <View pointerEvents="box-none" style={[styles.layer, { top: insets.top + 44 }]}>
@@ -110,9 +116,9 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
       <View style={[styles.panel, !glassAvailable && { backgroundColor: fallbackGlass }]}>
         {glassAvailable && <GlassView glassEffectStyle="regular" isInteractive style={styles.glass} tintColor={colors.background === '#000000' ? 'rgba(44,44,48,0.5)' : 'rgba(255,255,255,0.3)'} />}
         <View style={styles.header}>
-          <Pressable accessibilityLabel="Previous month" hitSlop={10} onPress={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} style={styles.monthButton}><Text style={[styles.chevron, { color: colors.blue }]}>‹</Text></Pressable>
+          <Pressable accessibilityLabel="Previous month" hitSlop={10} onPress={() => { setActionDate(null); setMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1)); }} style={styles.monthButton}><Text style={[styles.chevron, { color: colors.blue }]}>‹</Text></Pressable>
           <Text style={[styles.monthTitle, { color: colors.text }]}>{new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(month)}</Text>
-          <Pressable accessibilityLabel="Next month" hitSlop={10} onPress={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} style={styles.monthButton}><Text style={[styles.chevron, { color: colors.blue }]}>›</Text></Pressable>
+          <Pressable accessibilityLabel="Next month" hitSlop={10} onPress={() => { setActionDate(null); setMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1)); }} style={styles.monthButton}><Text style={[styles.chevron, { color: colors.blue }]}>›</Text></Pressable>
         </View>
         <View style={styles.weekdays}>{orderedWeekdayLabels().map((label, index) => <Text key={`${label}-${index}`} style={[styles.weekday, { color: colors.secondary }]}>{label}</Text>)}</View>
         <GestureDetector gesture={calendarGesture}>
@@ -123,7 +129,7 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
               const last = selected && index === selectionEnd;
               const current = cell.date === today;
               return (
-                <Pressable accessibilityLabel={cell.date ? new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(dateFromISO(cell.date)) : undefined} disabled={!cell.date} key={`${cell.date ?? 'empty'}-${index}`} onPress={() => { if (!selection && cell.date) onSelectDate(cell.date); }} style={styles.dayCell}>
+                <Pressable accessibilityLabel={cell.date ? new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).format(dateFromISO(cell.date)) : undefined} disabled={!cell.date} key={`${cell.date ?? 'empty'}-${index}`} onPress={() => { if (!selection && cell.date) setActionDate(cell.date); }} style={styles.dayCell}>
                   {selected && <View style={[styles.rangeFill, { backgroundColor: colors.blueSoft }, first && styles.rangeFirst, last && styles.rangeLast]} />}
                   {current && !selected && <View style={[styles.todayCircle, { borderColor: colors.red }]} />}
                   <Text style={[styles.dayNumber, { color: selected ? colors.blue : cell.date ? colors.text : 'transparent' }, current && !selected && { color: colors.red, fontWeight: '800' }]}>{cell.day ?? ''}</Text>
@@ -133,7 +139,15 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
             })}
           </View>
         </GestureDetector>
-        <Text style={[styles.hint, { color: colors.tertiary }]}>Tap a day to add · hold and drag for a trip</Text>
+        {actionDate ? (
+          <View style={[styles.actionStrip, { borderColor: colors.separator }]}>
+            <Text numberOfLines={1} style={[styles.actionDate, { color: colors.text }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(dateFromISO(actionDate))}</Text>
+            <View style={styles.actionButtons}>
+              <Pressable accessibilityLabel={`View ${actionDate}`} onPress={() => onViewDate(actionDate)} style={[styles.viewButton, { backgroundColor: colors.card }]}><Text style={[styles.viewButtonText, { color: colors.blue }]}>View day</Text></Pressable>
+              <Pressable accessibilityLabel={`Add on ${actionDate}`} onPress={() => onAddDate(actionDate)} style={[styles.addButton, { backgroundColor: colors.blue }]}><Text style={styles.addButtonText}>＋ Add</Text></Pressable>
+            </View>
+          </View>
+        ) : <Text style={[styles.hint, { color: colors.tertiary }]}>Tap a day to select · hold and drag for a trip</Text>}
       </View>
     </View>
   );
@@ -159,4 +173,11 @@ const styles = StyleSheet.create({
   dayNumber: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
   eventDot: { position: 'absolute', bottom: 0, width: 4, height: 4, borderRadius: 2 },
   hint: { textAlign: 'center', fontSize: 10, fontWeight: '600', marginTop: 2 },
+  actionStrip: { minHeight: 43, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingTop: 7, marginTop: 3 },
+  actionDate: { flex: 1, fontSize: 12, fontWeight: '700' },
+  actionButtons: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  viewButton: { height: 30, borderRadius: 15, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  viewButtonText: { fontSize: 11, fontWeight: '700' },
+  addButton: { height: 30, borderRadius: 15, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
+  addButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
 });

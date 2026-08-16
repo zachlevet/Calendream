@@ -62,6 +62,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   const [zoom, setZoom] = useState<TimelineZoom>('today');
   const [snapshot, setSnapshot] = useState<TimelineSnapshot>({ items: [], goals: [], reflections: {} });
   const [loading, setLoading] = useState(true);
+  const [, setClockRevision] = useState(0);
   const [pinchScale] = useState(() => new Animated.Value(1));
   const [editingItem, setEditingItem] = useState<PlanningItem | null>(null);
   const [editingSlot, setEditingSlot] = useState<string | null>(null);
@@ -101,6 +102,11 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
     const show = Keyboard.addListener(showEvent, (event) => { keyboardTop.current = event.endCoordinates.screenY; });
     const hide = Keyboard.addListener(hideEvent, () => { keyboardTop.current = Dimensions.get('window').height; });
     return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => setClockRevision((revision) => revision + 1), 60_000);
+    return () => clearInterval(interval);
   }, []);
 
   const closeInlineEditor = useCallback(() => {
@@ -336,6 +342,7 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
 }) {
   const events = items.filter((item) => item.kind === 'event');
   const tasks = items.filter((item) => item.kind === 'task');
+  const eventBoundaryId = period.current ? events.find((item) => !isPastAtMoment(item, today))?.id : undefined;
   const dayAccent = date < today ? colors.tertiary : date === today ? colors.red : colors.blue;
   return (
     <>
@@ -350,7 +357,8 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
       <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
 
       <TimelineSectionHeader colors={colors} onPress={() => onOpenDay(date)} title="Events" />
-      {events.length ? events.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}><TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <Text style={[styles.openRow, { color: colors.tertiary }]}>No events planned</Text>}
+      {events.length ? events.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}>{item.id === eventBoundaryId && <CurrentMomentDivider colors={colors} />}<TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <>{period.current && <CurrentMomentDivider colors={colors} />}<Text style={[styles.openRow, { color: colors.tertiary }]}>No events planned</Text></>}
+      {period.current && events.length > 0 && !eventBoundaryId && <CurrentMomentDivider colors={colors} />}
       <TimelineSectionHeader colors={colors} onPress={() => onOpenDay(date)} title="Tasks" />
       {tasks.length ? tasks.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}><TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <Text style={[styles.openRow, { color: colors.tertiary }]}>No tasks yet</Text>}
 
@@ -388,6 +396,9 @@ function WeekPage({ period, items, goals, today, colors, editingItem, editingSlo
         .sort((a, b) => a.kind.localeCompare(b.kind) || timeMinutes(a.startTime) - timeMinutes(b.startTime) || (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
     }))
     .filter((day) => day.items.length > 0);
+  const weekBoundary = period.current
+    ? days.flatMap((day) => day.items.map((item) => ({ date: day.date, item }))).find(({ item }) => !isPastAtMoment(item, today))
+    : undefined;
   return (
     <>
       {period.current && <CurrentMarker colors={colors} label="This week" />}
@@ -404,11 +415,12 @@ function WeekPage({ period, items, goals, today, colors, editingItem, editingSlo
               <TimelineDateGutter colors={colors} date={date} today={today} />
             </Pressable>
             <View style={styles.weekDayItems}>
-              {dayItems.map((item) => { const slot = `week-${date}-${item.id}`; return <View key={`${date}-${item.id}`}><CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
+              {dayItems.map((item) => { const slot = `week-${date}-${item.id}`; const boundary = weekBoundary?.date === date && weekBoundary.item.id === item.id; return <View key={`${date}-${item.id}`}>{boundary && <CurrentMomentDivider colors={colors} week />}<CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
             </View>
           </View>
         );
       })}
+      {period.current && days.length > 0 && !weekBoundary && <CurrentMomentDivider colors={colors} />}
     </>
   );
 }
@@ -434,6 +446,7 @@ function MonthPage({ period, items, goals, loading, today, colors, editingItem, 
   const trips = events.filter(isTrip).length;
   const nestedEventIds = new Set(events.filter((event) => !isTrip(event) && events.some((trip) => isTrip(trip) && trip.anchorStart !== null && trip.anchorEnd !== null && event.anchorStart !== null && event.anchorStart >= trip.anchorStart && event.anchorStart <= trip.anchorEnd)).map((event) => event.id));
   const topLevelEvents = events.filter((event) => !nestedEventIds.has(event.id));
+  const monthBoundaryId = period.current ? topLevelEvents.find((event) => !isPastAtMoment(event, today))?.id : undefined;
   return (
     <>
       {period.eyebrow && <CurrentMarker colors={colors} label={period.eyebrow} />}
@@ -455,10 +468,11 @@ function MonthPage({ period, items, goals, loading, today, colors, editingItem, 
             const slot = `${period.id}-event-${event.id}`;
             if (isTrip(event)) {
               const tripEvents = events.filter((candidate) => !isTrip(candidate) && candidate.anchorStart !== null && event.anchorStart !== null && event.anchorEnd !== null && candidate.anchorStart >= event.anchorStart && candidate.anchorStart <= event.anchorEnd);
-              return <MonthTripGroup colors={colors} editingItem={editingItem} editingSlot={editingSlot} event={event} events={tripEvents} inlineEditor={inlineEditor} key={event.id} onEditItem={onEditItem} period={period} today={today} />;
+              return <View key={event.id}>{event.id === monthBoundaryId && <CurrentMomentDivider colors={colors} />}<MonthTripGroup colors={colors} editingItem={editingItem} editingSlot={editingSlot} event={event} events={tripEvents} inlineEditor={inlineEditor} onEditItem={onEditItem} period={period} today={today} /></View>;
             }
-            return <View key={event.id}><EditorialEventRow colors={colors} event={event} onPress={() => onEditItem(event, slot)} period={period} today={today} />{editingItem?.id === event.id && editingSlot === slot && <View style={styles.spineEditor}>{inlineEditor}</View>}</View>;
+            return <View key={event.id}>{event.id === monthBoundaryId && <CurrentMomentDivider colors={colors} />}<EditorialEventRow colors={colors} event={event} onPress={() => onEditItem(event, slot)} period={period} today={today} />{editingItem?.id === event.id && editingSlot === slot && <View style={styles.spineEditor}>{inlineEditor}</View>}</View>;
           })}
+          {period.current && topLevelEvents.length > 0 && !monthBoundaryId && <CurrentMomentDivider colors={colors} />}
         </View>
       )}
     </>
@@ -467,6 +481,7 @@ function MonthPage({ period, items, goals, loading, today, colors, editingItem, 
 
 function QuarterPage({ period, items, goals, loading, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onToggleGoal, onZoomToDate }: EditorialPeriodProps) {
   const events = items.filter((item) => item.kind === 'event').sort(compareAnchors);
+  const quarterBoundaryId = period.current ? events.find((event) => !isPastAtMoment(event, today))?.id : undefined;
   const months = Array.from({ length: 3 }, (_, index) => {
     const startDate = dateFromISO(period.start);
     const date = new Date(startDate.getFullYear(), startDate.getMonth() + index, 1);
@@ -489,10 +504,11 @@ function QuarterPage({ period, items, goals, loading, today, colors, editingItem
             <Pressable onPress={() => onZoomToDate(month.start, 'month')}><Text style={[styles.quarterMonthTitle, { color: month.start <= today && month.end >= today ? colors.red : colors.text }]}>{month.title}</Text></Pressable>
             {!month.events.length ? <Text style={[styles.quarterOpen, { color: colors.tertiary }]}>Open</Text> : month.events.map((event) => {
               const slot = `${period.id}-${month.start}-${event.id}`;
-              return <View key={event.id}><EditorialCompactEvent colors={colors} event={event} onPress={() => onEditItem(event, slot)} />{editingItem?.id === event.id && editingSlot === slot && inlineEditor}</View>;
+              return <View key={event.id}>{event.id === quarterBoundaryId && <CurrentMomentDivider colors={colors} />}<EditorialCompactEvent colors={colors} event={event} onPress={() => onEditItem(event, slot)} />{editingItem?.id === event.id && editingSlot === slot && inlineEditor}</View>;
             })}
           </View>
         ))}
+        {period.current && events.length > 0 && !quarterBoundaryId && <CurrentMomentDivider colors={colors} />}
       </View>
     </>
   );
@@ -506,6 +522,8 @@ function YearPage({ period, items, goals, loading, today, colors, editingItem, e
     const end = localISO(new Date(year, month + 1, 0));
     return { start, end, title: new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(year, month, 1)), events: events.filter((item) => item.anchorStart !== null && item.anchorStart >= start && item.anchorStart <= end) };
   });
+  const visibleYearEvents = months.flatMap((month) => month.events.slice(0, 3));
+  const yearBoundaryId = period.current ? visibleYearEvents.find((event) => !isPastAtMoment(event, today))?.id : undefined;
   return (
     <>
       {period.eyebrow && <CurrentMarker colors={colors} label={period.eyebrow} />}
@@ -523,7 +541,7 @@ function YearPage({ period, items, goals, loading, today, colors, editingItem, e
             <View key={month.start} style={styles.yearMonthSection}>
               <Pressable onPress={() => onZoomToDate(month.start, 'month')} style={styles.yearMonthSeparator}>
                 <Text style={[styles.yearMonthLabel, { color: currentMonth ? colors.red : pastMonth ? colors.tertiary : colors.secondary }]}>{month.title.toUpperCase()}</Text>
-                <View style={[styles.yearMonthLine, { backgroundColor: currentMonth ? colors.red : colors.separator }]} />
+                <View style={[styles.yearMonthLine, { backgroundColor: colors.separator }]} />
                 <Text style={[styles.yearMonthCount, { color: colors.tertiary }]}>{month.events.length || ''}</Text>
               </Pressable>
               {!month.events.length ? (
@@ -532,6 +550,7 @@ function YearPage({ period, items, goals, loading, today, colors, editingItem, e
                 const slot = `${period.id}-${month.start}-${event.id}`;
                 return (
                   <View key={event.id}>
+                    {event.id === yearBoundaryId && <CurrentMomentDivider colors={colors} />}
                     <Pressable onPress={() => onEditItem(event, slot)} style={styles.yearMoment}>
                       <View style={[isTrip(event) ? styles.yearTripMark : styles.yearEventDot, { backgroundColor: isTrip(event) ? (eventPhase(event) === 'past' ? colors.tertiary : colors.orange) : eventAccent(event, colors) }]} />
                       <Text numberOfLines={1} style={[styles.yearEventText, { color: pastMonth ? colors.secondary : colors.text }]}>{event.title}</Text>
@@ -545,6 +564,7 @@ function YearPage({ period, items, goals, loading, today, colors, editingItem, e
             </View>
           );
         })}
+        {period.current && visibleYearEvents.length > 0 && !yearBoundaryId && <CurrentMomentDivider colors={colors} />}
       </View>
     </>
   );
@@ -555,7 +575,11 @@ function TimelineSectionHeader({ title, colors, onPress }: { title: string; colo
 }
 
 function CurrentMarker({ colors, label }: { colors: AppColors; label: string }) {
-  return <View style={styles.currentMarker}><Text style={[styles.dayEyebrow, { color: colors.red }]}>{label}</Text><View style={[styles.currentMarkerLine, { backgroundColor: colors.red }]} /></View>;
+  return <View style={styles.currentMarker}><Text style={[styles.dayEyebrow, { color: colors.red }]}>{label}</Text></View>;
+}
+
+function CurrentMomentDivider({ colors, week = false }: { colors: AppColors; week?: boolean }) {
+  return <View accessibilityLabel="Current moment" style={[styles.currentMomentDivider, week && styles.currentMomentDividerWeek, { backgroundColor: colors.red }]} />;
 }
 
 function GoalSection({ goals, colors, onToggle }: { goals: Goal[]; colors: AppColors; onToggle: (goal: Goal) => void }) {
@@ -691,6 +715,12 @@ function eventAccent(event: PlanningItem, colors: AppColors) {
   return phase === 'past' ? colors.tertiary : phase === 'current' ? colors.red : colors.blue;
 }
 
+function isPastAtMoment(item: PlanningItem, today: string) {
+  if ((item.anchorEnd ?? item.anchorStart ?? '') < today) return true;
+  if ((item.anchorStart ?? '') > today) return false;
+  return item.kind === 'event' ? eventPhase(item) === 'past' : false;
+}
+
 function compareAnchors(a: PlanningItem, b: PlanningItem) {
   return (a.anchorStart ?? '').localeCompare(b.anchorStart ?? '') || timeMinutes(a.startTime) - timeMinutes(b.startTime);
 }
@@ -721,7 +751,8 @@ const styles = StyleSheet.create({
   yearTitle: { fontSize: 42, lineHeight: 47, fontWeight: '700', letterSpacing: -1.3 }, periodSubtitle: { fontSize: 14, fontWeight: '600' },
   dayEyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' }, dayTitle: { fontSize: 31, fontWeight: '700', letterSpacing: -1, marginTop: 3 }, daySubtitle: { fontSize: 14, marginTop: 3 },
   currentMarker: { minHeight: 14, flexDirection: 'row', alignItems: 'center' },
-  currentMarkerLine: { flex: 1, height: 1, marginLeft: 9, borderRadius: 1 },
+  currentMomentDivider: { height: 1, borderRadius: 1, marginVertical: 4 },
+  currentMomentDividerWeek: { marginLeft: -48 },
   sectionHeader: { marginTop: 10, height: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, sectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4 }, sectionAction: { fontSize: 14, fontWeight: '600' },
   timelineItem: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, eventTime: { width: 68, fontSize: 13, fontVariant: ['tabular-nums'] }, itemRule: { width: 3, height: 25, borderRadius: 2, marginRight: 10 }, itemCopy: { flex: 1, paddingVertical: 6 }, itemTitle: { fontSize: 16, fontWeight: '500' }, itemNote: { fontSize: 12, marginTop: 2 },
   taskCompleted: { textDecorationLine: 'line-through' },

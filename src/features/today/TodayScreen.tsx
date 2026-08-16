@@ -577,9 +577,15 @@ export function TodayScreen() {
           dataRevision={timelineRevision}
           initialDate={selectedDate}
           loadRange={data.loadRange}
+          onAddDate={(date) => openQuickCapture({ date, dateLocked: true, kind: 'event' })}
           onClose={() => setCalendarOpen(false)}
-          onSelectDate={(date) => openQuickCapture({ date, dateLocked: true, kind: 'event' })}
           onSelectRange={(date, endDate) => openQuickCapture({ date, dateLocked: true, endDate, kind: 'trip' })}
+          onViewDate={(date) => {
+            setSelectedDate(date);
+            setInlineEditor(null);
+            setEditor(null);
+            setCalendarOpen(false);
+          }}
           selectedEndDate={quickCaptureOpen ? capturePreset?.endDate ?? capturePreset?.date : undefined}
           selectedStartDate={quickCaptureOpen ? capturePreset?.date : undefined}
           today={today}
