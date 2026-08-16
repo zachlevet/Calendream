@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { ItemDraft } from '@/models/planning';
 import type { AppColors } from '@/theme/colors';
@@ -71,11 +71,32 @@ export function QuickCaptureSheet({ colors, date, visible, onClose, onSave }: Qu
               {parsed.time && kind !== 'task' && <Text style={[styles.time, { color: colors.secondary }]}>{parsed.time}</Text>}
               <Pressable
                 accessibilityLabel={`Detected as ${kind}. Tap to change.`}
-                onPress={() => setChoosingKind((open) => !open)}
+                onPress={() => {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setChoosingKind((open) => !open);
+                }}
                 style={[styles.kindOrb, { backgroundColor: kind === 'trip' ? colors.purpleSoft : kind === 'event' ? colors.blueSoft : colors.card }]}
               >
                 <Text style={[styles.kindText, { color: kind === 'trip' ? colors.purple : kind === 'event' ? colors.blue : colors.secondary }]}>{kind}</Text>
               </Pressable>
+              {choosingKind && KINDS.filter((option) => option !== kind).map((option) => (
+                <Pressable
+                  accessibilityLabel={`Change to ${option}`}
+                  key={option}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setOverride(option);
+                    setChoosingKind(false);
+                  }}
+                  style={[styles.kindOrb, {
+                    backgroundColor: option === 'trip' ? colors.purpleSoft : option === 'event' ? colors.blueSoft : colors.card,
+                  }]}
+                >
+                  <Text style={[styles.kindText, {
+                    color: option === 'trip' ? colors.purple : option === 'event' ? colors.blue : colors.secondary,
+                  }]}>{option}</Text>
+                </Pressable>
+              ))}
             </View>
             <Pressable
               disabled={!parsed.title || saving}
@@ -85,23 +106,6 @@ export function QuickCaptureSheet({ colors, date, visible, onClose, onSave }: Qu
               <Text style={styles.addButtonText}>{saving ? '…' : '↑'}</Text>
             </Pressable>
           </View>
-
-          {choosingKind && (
-            <View style={styles.kindChoices}>
-              {KINDS.map((option) => (
-                <Pressable
-                  key={option}
-                  onPress={() => {
-                    setOverride(option);
-                    setChoosingKind(false);
-                  }}
-                  style={[styles.kindChoice, { backgroundColor: option === kind ? colors.blueSoft : colors.card }]}
-                >
-                  <Text style={[styles.kindChoiceText, { color: option === kind ? colors.blue : colors.text }]}>{option}</Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -116,13 +120,10 @@ const styles = StyleSheet.create({
   heading: { fontSize: 15, fontWeight: '700' },
   input: { minHeight: 70, maxHeight: 150, paddingTop: 10, paddingBottom: 8, fontSize: 22, lineHeight: 29, fontWeight: '500', textAlignVertical: 'top' },
   footer: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  metadata: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  metadata: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
   time: { fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] },
   kindOrb: { minHeight: 29, borderRadius: 15, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   kindText: { fontSize: 12, fontWeight: '700', textTransform: 'capitalize' },
   addButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   addButtonText: { color: '#FFFFFF', fontSize: 22, lineHeight: 23, fontWeight: '700' },
-  kindChoices: { flexDirection: 'row', gap: 8, paddingTop: 10 },
-  kindChoice: { flex: 1, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
-  kindChoiceText: { fontSize: 13, fontWeight: '700', textTransform: 'capitalize' },
 });
