@@ -70,10 +70,6 @@ function configureEditorClose() {
   });
 }
 
-function countLabel(count: number, singular: string) {
-  return `${count} ${singular}${count === 1 ? '' : 's'}`;
-}
-
 export function TodayScreen() {
   const dark = useColorScheme() === 'dark';
   const colors = dark ? palette.dark : palette.light;
@@ -547,10 +543,6 @@ export function TodayScreen() {
       />
       <MorningBriefing
         colors={colors}
-        onDismissTask={async (id) => {
-          setBriefingSessionActive(true);
-          await data.dismissOverdueTask(id);
-        }}
         onMoveTask={async (id, date) => {
           setBriefingSessionActive(true);
           await data.moveOverdueTask(id, date);
@@ -1151,37 +1143,29 @@ function LabeledInput({ label, colors, multiline, ...props }: {
   );
 }
 
-function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissTask, onSkip }: {
+function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onSkip }: {
   visible: boolean;
   tasks: PlanningItem[];
   today: string;
   colors: AppColors;
   onMoveTask: (id: string, date: string) => Promise<void>;
-  onDismissTask: (id: string) => Promise<void>;
   onSkip: () => Promise<void>;
 }) {
-  const task = tasks[0];
-  const [choosingDate, setChoosingDate] = useState(false);
+  const [schedulingTaskId, setSchedulingTaskId] = useState<string | null>(null);
   const [targetDate, setTargetDate] = useState(addLocalDays(today, 1));
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const date = dateFromISO(today);
     return new Date(date.getFullYear(), date.getMonth(), 1);
   });
 
-  function moveTask(id: string, date: string) {
-    setChoosingDate(false);
+  async function moveTask(id: string, date: string) {
+    setSchedulingTaskId(null);
     setTargetDate(addLocalDays(today, 1));
-    void onMoveTask(id, date);
+    await onMoveTask(id, date);
   }
 
-  function dismissTask(task: PlanningItem) {
-    Alert.alert('Dismiss task?', `“${task.title}” will be removed entirely.`, [
-      { text: 'Keep it', style: 'cancel' },
-      { text: 'Dismiss', style: 'destructive', onPress: () => {
-        setChoosingDate(false);
-        void onDismissTask(task.id);
-      } },
-    ]);
+  async function moveAllToToday() {
+    for (const task of tasks) await onMoveTask(task.id, today);
   }
 
   const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
@@ -1191,14 +1175,14 @@ function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissT
     <Modal animationType="fade" onRequestClose={() => void onSkip()} presentationStyle="overFullScreen" statusBarTranslucent transparent visible={visible}>
       <View style={styles.briefingOverlay}>
         <Pressable accessibilityLabel="Close morning review" onPress={() => void onSkip()} style={StyleSheet.absoluteFill} />
-        <View style={[styles.briefingSheet, choosingDate && styles.briefingSheetExpanded, !glassAvailable && { backgroundColor: fallbackGlass, borderColor: colors.background === '#000000' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.9)' }]}>
+        <View style={[styles.briefingSheet, schedulingTaskId && styles.briefingSheetExpanded, !glassAvailable && { backgroundColor: fallbackGlass, borderColor: colors.background === '#000000' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.9)' }]}>
           {glassAvailable && <GlassView glassEffectStyle="regular" style={StyleSheet.absoluteFill} />}
           <SafeAreaView style={styles.briefing} edges={['bottom']}>
         <View style={styles.briefingHeader}>
           <View style={styles.briefingTitleRow}>
             <View>
-              <Text style={[styles.briefingEyebrow, { color: colors.red }]}>GOOD MORNING</Text>
-              <Text style={[styles.briefingTitle, { color: colors.text }]}>Let’s reset your day.</Text>
+              <Text style={styles.briefingEyebrow}>GOOD MORNING</Text>
+              <Text style={[styles.briefingTitle, { color: colors.text }]}>Yesterday’s {tasks.length === 1 ? 'task' : 'tasks'}</Text>
             </View>
             <Pressable accessibilityLabel="Skip unfinished task review for today" onPress={() => void onSkip()} hitSlop={12} style={[styles.reviewClose, { backgroundColor: colors.card }]}>
               <Text style={[styles.reviewCloseText, { color: colors.secondary }]}>×</Text>
@@ -1207,22 +1191,25 @@ function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissT
           <Text style={[styles.briefingBody, { color: colors.secondary }]}>A quick check-in before you begin. Give each unfinished task a home.</Text>
         </View>
 
-        {task && (
+        {tasks.length > 0 && (
           <ScrollView contentContainerStyle={styles.briefingContent} showsVerticalScrollIndicator={false}>
-            <View style={styles.reviewProgress}>
-              <Text style={[styles.reviewCount, { color: colors.secondary }]}>{countLabel(tasks.length, 'task')} to sort</Text>
-              <View style={[styles.progressTrack, { backgroundColor: colors.separator }]}>
-                <View style={[styles.progressFill, { backgroundColor: colors.red }]} />
-              </View>
+            <View style={[styles.rolloverList, { backgroundColor: colors.card }]}>
+              {tasks.map((task, index) => (
+                <View key={task.id} style={[styles.rolloverRow, index > 0 && { borderColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }]}>
+                  <View style={[styles.rolloverCheckbox, { borderColor: colors.tertiary }]} />
+                  <View style={styles.rolloverCopy}>
+                    <Text style={[styles.rolloverTitle, { color: colors.text }]}>{task.title}</Text>
+                    <Text style={[styles.rolloverDate, { color: colors.secondary }]}>Left from {formatShortDate(task.anchorStart)}</Text>
+                    {task.notes && <Text numberOfLines={1} style={[styles.rolloverNotes, { color: colors.secondary }]}>{task.notes}</Text>}
+                  </View>
+                  <Pressable accessibilityLabel={`Schedule ${task.title} for another day`} hitSlop={8} onPress={() => { setSchedulingTaskId(task.id); setTargetDate(addLocalDays(today, 1)); }} style={[styles.scheduleTaskButton, { backgroundColor: colors.blueSoft }]}>
+                    <SymbolView name="chevron.right" size={14} tintColor={colors.blue} weight="semibold" />
+                  </Pressable>
+                </View>
+              ))}
             </View>
 
-            <View style={[styles.rolloverCard, { backgroundColor: colors.card }]}>
-              <Text style={[styles.rolloverDate, { color: colors.secondary }]}>LEFT FROM {formatShortDate(task.anchorStart).toUpperCase()}</Text>
-              <Text style={[styles.rolloverTitle, { color: colors.text }]}>{task.title}</Text>
-              {task.notes && <Text style={[styles.rolloverNotes, { color: colors.secondary }]}>{task.notes}</Text>}
-            </View>
-
-            {choosingDate ? (
+            {schedulingTaskId && (
               <MiniCalendar
                 colors={colors}
                 selected={targetDate}
@@ -1231,29 +1218,22 @@ function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissT
                 onChangeMonth={setVisibleMonth}
                 onSelect={setTargetDate}
               />
-            ) : (
-              <View style={styles.reviewActions}>
-                <Pressable onPress={() => moveTask(task.id, today)} style={[styles.reviewPrimary, { backgroundColor: colors.blue }]}>
-                  <Text style={styles.reviewPrimaryText}>Move to Today</Text>
-                </Pressable>
-                <Pressable onPress={() => setChoosingDate(true)} style={[styles.reviewSecondary, { backgroundColor: colors.card }]}>
-                  <Text style={[styles.reviewSecondaryText, { color: colors.blue }]}>Choose another day</Text>
-                </Pressable>
-                <Pressable onPress={() => dismissTask(task)} style={styles.reviewDismiss}>
-                  <Text style={[styles.dismissActionText, { color: colors.red }]}>Dismiss task</Text>
-                </Pressable>
-              </View>
             )}
 
-            {choosingDate && (
+            {schedulingTaskId && (
               <View style={styles.calendarFooter}>
-                <Pressable onPress={() => setChoosingDate(false)} style={styles.calendarCancel}>
+                <Pressable onPress={() => setSchedulingTaskId(null)} style={styles.calendarCancel}>
                   <Text style={[styles.reviewSecondaryText, { color: colors.secondary }]}>Cancel</Text>
                 </Pressable>
-                <Pressable onPress={() => moveTask(task.id, targetDate)} style={[styles.calendarConfirm, { backgroundColor: colors.blue }]}>
+                <Pressable onPress={() => void moveTask(schedulingTaskId, targetDate)} style={[styles.calendarConfirm, { backgroundColor: colors.blue }]}>
                   <Text style={styles.reviewPrimaryText}>Move to {formatDestination(targetDate)}</Text>
                 </Pressable>
               </View>
+            )}
+            {!schedulingTaskId && (
+              <Pressable onPress={() => void moveAllToToday()} style={[styles.reviewPrimary, { backgroundColor: colors.blue }]}>
+                <Text style={styles.reviewPrimaryText}>Move all to Today</Text>
+              </Pressable>
             )}
             <Pressable onPress={() => void onSkip()} style={styles.skipTodayButton}>
               <Text style={[styles.skipTodayText, { color: colors.secondary }]}>Skip for today</Text>
@@ -1430,27 +1410,23 @@ const styles = StyleSheet.create({
   briefing: { flexShrink: 1 },
   briefingHeader: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10 },
   briefingTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  briefingEyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  briefingEyebrow: { color: '#FF9F0A', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   briefingTitle: { fontSize: 28, fontWeight: '700', letterSpacing: -0.8, marginTop: 3 },
   briefingBody: { fontSize: 14, lineHeight: 19, marginTop: 6, maxWidth: 360 },
   reviewClose: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   reviewCloseText: { fontSize: 25, lineHeight: 27, fontWeight: '400' },
   briefingContent: { paddingHorizontal: 18, paddingBottom: 12 },
-  reviewProgress: { marginBottom: 12 },
-  reviewCount: { fontSize: 13, fontWeight: '600', marginBottom: 7 },
-  progressTrack: { height: 3, borderRadius: 2, overflow: 'hidden' },
-  progressFill: { width: '28%', height: 3, borderRadius: 2 },
-  rolloverCard: { borderRadius: 18, padding: 17 },
-  rolloverDate: { fontSize: 10, fontWeight: '700', letterSpacing: 0.7 },
-  rolloverTitle: { fontSize: 19, fontWeight: '700', letterSpacing: -0.3, marginTop: 4 },
-  rolloverNotes: { fontSize: 13, lineHeight: 18, marginTop: 3 },
-  reviewActions: { gap: 9, marginTop: 14 },
-  reviewPrimary: { height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  rolloverList: { borderRadius: 18, paddingHorizontal: 14, overflow: 'hidden' },
+  rolloverRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingVertical: 9 },
+  rolloverCheckbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, marginRight: 11 },
+  rolloverCopy: { flex: 1, paddingRight: 8 },
+  rolloverDate: { fontSize: 11, fontWeight: '500', marginTop: 2 },
+  rolloverTitle: { fontSize: 16, fontWeight: '600', letterSpacing: -0.15 },
+  rolloverNotes: { fontSize: 12, lineHeight: 17, marginTop: 2 },
+  scheduleTaskButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  reviewPrimary: { height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   reviewPrimaryText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
-  reviewSecondary: { height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   reviewSecondaryText: { fontSize: 15, fontWeight: '600' },
-  reviewDismiss: { height: 40, alignItems: 'center', justifyContent: 'center' },
-  dismissActionText: { fontSize: 13, fontWeight: '600' },
   calendarCard: { borderRadius: 18, padding: 14, marginTop: 12 },
   quickLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.7, marginBottom: 8 },
   quickDays: { flexDirection: 'row', gap: 7 },
