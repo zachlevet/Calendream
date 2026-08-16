@@ -9,7 +9,7 @@ import type { Goal, ItemDraft, PlanningItem, TimelineSnapshot, TimelineZoom } fr
 import { addLocalDays, dateFromISO, formatShortDate, localISO } from '@/shared/date';
 import { eventPhase, timeMinutes } from '@/shared/time';
 import type { AppColors } from '@/theme/colors';
-import { buildTimelinePeriods, isGoalVisibleInPeriod, isVisibleAtZoom, isoWeekNumber, type TimelinePeriod } from './periods';
+import { buildTimelinePeriods, dateAtPeriodProgress, isGoalVisibleInPeriod, isVisibleAtZoom, isoWeekNumber, progressThroughPeriod, type TimelinePeriod } from './periods';
 
 interface TimelineScreenProps {
   colors: AppColors;
@@ -40,6 +40,23 @@ const ZOOM_LEVELS: { id: TimelineZoom; label: string }[] = [
 ];
 const TIMELINE_TOP_INSET = 92;
 
+interface PeriodPosition {
+  start: string;
+  end: string;
+  y: number;
+  height: number;
+}
+
+function dateAtPosition(position: PeriodPosition, viewportY: number) {
+  const progress = position.height > 0 ? Math.max(0, Math.min(1, (viewportY - position.y) / position.height)) : 0;
+  return dateAtPeriodProgress(position.start, position.end, progress);
+}
+
+function yForDate(position: PeriodPosition, date: string) {
+  if (position.height <= 0) return position.y;
+  return position.y + progressThroughPeriod(position.start, position.end, date) * position.height;
+}
+
 export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveItem, onToggleGoal, onOpenDay, renderInlineEditor }: TimelineScreenProps) {
   const [zoom, setZoom] = useState<TimelineZoom>('today');
   const [snapshot, setSnapshot] = useState<TimelineSnapshot>({ items: [], goals: [], reflections: {} });
@@ -51,9 +68,9 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   const scroll = useRef<ScrollView>(null);
   const editorView = useRef<View>(null);
   const scrollOffset = useRef(0);
-  const currentPeriodY = useRef(0);
+  const currentPeriod = useRef<PeriodPosition | null>(null);
   const focusDate = useRef(today);
-  const periodPositions = useRef(new Map<string, { start: string; end: string; y: number }>());
+  const periodPositions = useRef(new Map<string, PeriodPosition>());
   const keyboardTop = useRef(Dimensions.get('window').height);
   const alignedZoom = useRef<TimelineZoom | null>(null);
   const loadedRange = useRef('');
@@ -130,28 +147,43 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
 
   const changeZoom = useCallback((nextZoom: TimelineZoom, requestedDate?: string) => {
     if (nextZoom === zoom) return;
-    const viewportY = scrollOffset.current + 48;
-    const visiblePeriod = [...periodPositions.current.values()].sort((a, b) => a.y - b.y).filter((position) => position.y <= viewportY).at(-1);
-    const visibleAnchor = visiblePeriod && today >= visiblePeriod.start && today <= visiblePeriod.end ? today : visiblePeriod?.start;
+    const viewportY = scrollOffset.current + Math.min(250, Dimensions.get('window').height * 0.32);
+    const positions = [...periodPositions.current.values()].sort((a, b) => a.y - b.y);
+    const visiblePeriod = positions.find((position) => viewportY >= position.y && viewportY <= position.y + position.height)
+      ?? positions.reduce<PeriodPosition | undefined>((nearest, position) => {
+        if (!nearest) return position;
+        const distance = Math.abs(position.y + position.height / 2 - viewportY);
+        const nearestDistance = Math.abs(nearest.y + nearest.height / 2 - viewportY);
+        return distance < nearestDistance ? position : nearest;
+      }, undefined);
+    const visibleAnchor = visiblePeriod ? dateAtPosition(visiblePeriod, viewportY) : undefined;
     focusDate.current = requestedDate ?? visibleAnchor ?? focusDate.current;
     periodPositions.current.clear();
     alignedZoom.current = null;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setZoom(nextZoom);
-  }, [today, zoom]);
-
-  const alignPeriod = useCallback((period: TimelinePeriod, y: number) => {
-    periodPositions.current.set(period.id, { start: period.start, end: period.end, y });
-    if (period.current) currentPeriodY.current = y;
-    if (alignedZoom.current === zoom) return;
-    if (focusDate.current < period.start || focusDate.current > period.end) return;
-    alignedZoom.current = zoom;
-    setTimeout(() => scroll.current?.scrollTo({ y: Math.max(0, y - TIMELINE_TOP_INSET), animated: false }), 20);
   }, [zoom]);
+
+  const alignPeriod = useCallback((period: TimelinePeriod, y: number, height: number) => {
+    const position = { start: period.start, end: period.end, y, height };
+    periodPositions.current.set(period.id, position);
+    if (period.current) currentPeriod.current = position;
+  }, []);
+
+  useEffect(() => {
+    if (loading || alignedZoom.current === zoom) return;
+    const timer = setTimeout(() => {
+      const position = [...periodPositions.current.values()].find((candidate) => focusDate.current >= candidate.start && focusDate.current <= candidate.end);
+      if (!position) return;
+      alignedZoom.current = zoom;
+      scroll.current?.scrollTo({ y: Math.max(0, yForDate(position, focusDate.current) - TIMELINE_TOP_INSET), animated: false });
+    }, 40);
+    return () => clearTimeout(timer);
+  }, [loading, snapshot, zoom]);
 
   const goHome = useCallback(() => {
     focusDate.current = today;
-    scroll.current?.scrollTo({ y: Math.max(0, currentPeriodY.current - TIMELINE_TOP_INSET), animated: true });
+    if (currentPeriod.current) scroll.current?.scrollTo({ y: Math.max(0, yForDate(currentPeriod.current, today) - TIMELINE_TOP_INSET), animated: true });
   }, [today]);
 
   const pinch = Gesture.Pinch()
@@ -251,7 +283,7 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
   editingItem: PlanningItem | null;
   editingSlot: string | null;
   inlineEditor: ReactNode;
-  onPeriodLayout: (period: TimelinePeriod, y: number) => void;
+  onPeriodLayout: (period: TimelinePeriod, y: number, height: number) => void;
   onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
   onToggleGoal: (goal: Goal) => void;
@@ -264,7 +296,7 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
 
   return (
     <View
-      onLayout={(event) => onPeriodLayout(period, event.nativeEvent.layout.y)}
+      onLayout={(event) => onPeriodLayout(period, event.nativeEvent.layout.y, event.nativeEvent.layout.height)}
       style={[styles.period, presentStyle]}
     >
       {zoom === 'today' ? (

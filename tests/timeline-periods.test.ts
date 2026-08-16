@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { Goal, PlanningItem } from '../src/models/planning.ts';
-import { buildTimelinePeriods, isoWeekNumber, isGoalVisibleInPeriod, isVisibleAtZoom, timelineAltitude } from '../src/features/timeline/periods.ts';
+import { buildTimelinePeriods, dateAtPeriodProgress, isoWeekNumber, isGoalVisibleInPeriod, isVisibleAtZoom, progressThroughPeriod, timelineAltitude } from '../src/features/timeline/periods.ts';
 
 test('timeline surrounds today with past and future days', () => {
   const periods = buildTimelinePeriods('today', '2026-08-15');
@@ -87,4 +87,10 @@ test('a year goal remains visible in nested periods until its target date', () =
   assert.equal(isGoalVisibleInPeriod(goal, { start: '2026-08-01', end: '2026-08-31' }), true);
   assert.equal(isGoalVisibleInPeriod(goal, { start: '2026-11-09', end: '2026-11-15' }), true);
   assert.equal(isGoalVisibleInPeriod(goal, { start: '2026-11-16', end: '2026-11-22' }), false);
+});
+
+test('zoom context maps a visible position to the same area of a period', () => {
+  const middleOf2027 = dateAtPeriodProgress('2027-01-01', '2027-12-31', 0.5);
+  assert.equal(middleOf2027.startsWith('2027-07'), true);
+  assert.equal(progressThroughPeriod('2027-01-01', '2027-12-31', '2027-07-02') > 0.49, true);
 });

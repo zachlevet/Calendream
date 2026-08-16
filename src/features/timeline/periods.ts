@@ -46,6 +46,21 @@ export function isGoalVisibleInPeriod(goal: Goal, period: Pick<TimelinePeriod, '
   return goal.startsOn <= period.end && goal.targetDate >= period.start;
 }
 
+export function daysBetweenDates(start: string, end: string) {
+  const first = dateFromISO(start);
+  const last = dateFromISO(end);
+  return Math.max(0, Math.round((Date.UTC(last.getFullYear(), last.getMonth(), last.getDate()) - Date.UTC(first.getFullYear(), first.getMonth(), first.getDate())) / 86_400_000));
+}
+
+export function dateAtPeriodProgress(start: string, end: string, progress: number) {
+  return addLocalDays(start, Math.round(daysBetweenDates(start, end) * Math.max(0, Math.min(1, progress))));
+}
+
+export function progressThroughPeriod(start: string, end: string, date: string) {
+  const span = daysBetweenDates(start, end);
+  return span === 0 ? 0 : Math.max(0, Math.min(1, daysBetweenDates(start, date) / span));
+}
+
 export function buildTimelinePeriods(zoom: TimelineZoom, today: string): TimelinePeriod[] {
   const current = dateFromISO(today);
 
