@@ -4,7 +4,7 @@ export const palette = {
     text: '#111111', secondary: '#6C6C70', tertiary: '#AEAEB2', separator: '#E5E5EA',
     blue: '#007AFF', blueSoft: '#E8F2FF', red: '#FF3B30',
     purple: '#7650B3', purpleSoft: '#F3EDFF', amber: '#FF9500', amberSoft: '#FFF4DF',
-    orange: '#FF6B00', orangeSoft: '#FFF0E3', yellow: '#D69E00', yellowSoft: '#FFF7CF',
+    orange: '#FF6B00', orangeSoft: '#FFF0E3', yellow: '#C78D00', yellowSoft: '#FFF9DC',
   },
   dark: {
     background: '#000000', card: '#1C1C1E', chrome: 'rgba(28,28,30,0.96)',
