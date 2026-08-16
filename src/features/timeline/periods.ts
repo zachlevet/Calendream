@@ -46,6 +46,11 @@ export function isGoalVisibleInPeriod(goal: Goal, period: Pick<TimelinePeriod, '
   return goal.startsOn <= period.end && goal.targetDate >= period.start;
 }
 
+export function shouldStickGoal(goal: Goal, visibleDate: string, originY: number | undefined, scrollOffset: number, firstLoadedDate: string, topInset: number) {
+  if (goal.startsOn > visibleDate || goal.targetDate < visibleDate) return false;
+  return originY === undefined ? goal.startsOn < firstLoadedDate : scrollOffset + topInset >= originY;
+}
+
 export function daysBetweenDates(start: string, end: string) {
   const first = dateFromISO(start);
   const last = dateFromISO(end);

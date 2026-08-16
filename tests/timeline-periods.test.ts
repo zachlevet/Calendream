@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { Goal, PlanningItem } from '../src/models/planning.ts';
-import { buildTimelinePeriods, dateAtPeriodProgress, isoWeekNumber, isGoalVisibleInPeriod, isVisibleAtZoom, progressThroughPeriod, timelineAltitude } from '../src/features/timeline/periods.ts';
+import { buildTimelinePeriods, dateAtPeriodProgress, isoWeekNumber, isGoalVisibleInPeriod, isVisibleAtZoom, progressThroughPeriod, shouldStickGoal, timelineAltitude } from '../src/features/timeline/periods.ts';
 
 test('timeline surrounds today with past and future days', () => {
   const periods = buildTimelinePeriods('today', '2026-08-15');
@@ -87,6 +87,13 @@ test('a year goal remains visible in nested periods until its target date', () =
   assert.equal(isGoalVisibleInPeriod(goal, { start: '2026-08-01', end: '2026-08-31' }), true);
   assert.equal(isGoalVisibleInPeriod(goal, { start: '2026-11-09', end: '2026-11-15' }), true);
   assert.equal(isGoalVisibleInPeriod(goal, { start: '2026-11-16', end: '2026-11-22' }), false);
+});
+
+test('a goal sticks only after its inline origin reaches the header', () => {
+  const goal: Goal = { id: 'ironman', title: 'Race my first Ironman', scope: 'year', startsOn: '2026-08-16', targetDate: '2026-10-30' };
+  assert.equal(shouldStickGoal(goal, '2026-08-16', 240, 180, '2026-07-01', 8), false);
+  assert.equal(shouldStickGoal(goal, '2026-08-16', 240, 232, '2026-07-01', 8), true);
+  assert.equal(shouldStickGoal(goal, '2026-10-31', 240, 400, '2026-07-01', 8), false);
 });
 
 test('zoom context maps a visible position to the same area of a period', () => {

@@ -165,6 +165,11 @@ export function TodayScreen() {
     () => data.items.filter((item) => item.kind === 'task'),
     [data.items],
   );
+  const prioritizedGoals = useMemo(() => [...data.goals].sort((a, b) => {
+    if (Boolean(a.completed) !== Boolean(b.completed)) return a.completed ? 1 : -1;
+    const scopePriority = { year: 0, quarter: 1, month: 2 };
+    return scopePriority[a.scope] - scopePriority[b.scope] || a.targetDate.localeCompare(b.targetDate);
+  }), [data.goals]);
   const now = new Date();
   const currentMinutes = selectedDate === today ? now.getHours() * 60 + now.getMinutes() : selectedDate > today ? -1 : Number.MAX_SAFE_INTEGER;
   const nextEvent = events.find((event) => {
@@ -382,44 +387,36 @@ export function TodayScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {(data.upcoming.length > 0 || data.goals.length > 0) && (
+          {data.upcoming.length > 0 && (
             <ScrollView
               horizontal
               contentContainerStyle={styles.upcomingList}
               showsHorizontalScrollIndicator={false}
               style={styles.upcomingScroller}
             >
-              {data.upcoming.slice(0, 2).map((item) => {
+              {data.upcoming.map((item) => {
                 const days = daysFromToday(item.anchorStart ?? selectedDate);
+                const trip = item.eventType === 'trip' || (item.anchorStart !== null && item.anchorEnd !== null && item.anchorEnd > item.anchorStart);
+                const titleAlreadyIncludesDates = /^[A-Z][a-z]+\s+\d{1,2}\s*[-–—]\s*\d{1,2}/.test(item.title);
+                const label = trip && item.anchorStart
+                  ? titleAlreadyIncludesDates ? item.title : `${formatShortDate(item.anchorStart)}${item.anchorEnd && item.anchorEnd !== item.anchorStart ? `–${formatShortDate(item.anchorEnd)}` : ''} ${item.title}`
+                  : `${item.title} · ${days === 1 ? 'tomorrow' : `in ${days} days`}`;
                 return (
                   <Pressable
                     key={item.id}
                     onPress={() => setEditor({ kind: 'event', item })}
-                    style={[styles.upcomingPill, { backgroundColor: colors.blueSoft }]}
+                    style={[styles.upcomingPill, { backgroundColor: trip ? colors.amberSoft : colors.blueSoft }]}
                   >
-                    <Text style={[styles.upcomingText, { color: colors.blue }]} numberOfLines={1}>
-                      {item.title} · {days === 1 ? 'tomorrow' : `in ${days} days`}
-                    </Text>
+                    <Text style={[styles.upcomingText, { color: trip ? colors.amber : colors.blue }]} numberOfLines={1}>{label}</Text>
                   </Pressable>
                 );
               })}
-              {data.goals.map((goal) => (
-                <TodayGoalPill colors={colors} goal={goal} key={goal.id} onToggle={() => void data.toggleGoal(goal)} />
-              ))}
-              {data.upcoming.slice(2).map((item) => {
-                const days = daysFromToday(item.anchorStart ?? selectedDate);
-                return (
-                  <Pressable
-                    key={item.id}
-                    onPress={() => setEditor({ kind: 'event', item })}
-                    style={[styles.upcomingPill, { backgroundColor: colors.blueSoft }]}
-                  >
-                    <Text style={[styles.upcomingText, { color: colors.blue }]} numberOfLines={1}>
-                      {item.title} · {days === 1 ? 'tomorrow' : `in ${days} days`}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+            </ScrollView>
+          )}
+
+          {prioritizedGoals.length > 0 && (
+            <ScrollView horizontal contentContainerStyle={styles.goalReminderList} showsHorizontalScrollIndicator={false} style={styles.goalReminderScroller}>
+              {prioritizedGoals.map((goal) => <TodayGoalPill colors={colors} goal={goal} key={goal.id} onToggle={() => void data.toggleGoal(goal)} />)}
             </ScrollView>
           )}
 
@@ -1442,6 +1439,8 @@ const styles = StyleSheet.create({
   upcomingList: { paddingHorizontal: 18, gap: 7 },
   upcomingPill: { minHeight: 28, borderRadius: 14, paddingHorizontal: 11, justifyContent: 'center', maxWidth: 260 },
   upcomingText: { fontSize: 13, fontWeight: '600' },
+  goalReminderScroller: { marginHorizontal: -18, marginTop: -3, marginBottom: 10 },
+  goalReminderList: { paddingHorizontal: 18, gap: 7 },
   todayGoalPill: { minHeight: 28, maxWidth: 260, borderRadius: 14, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
   todayGoalPillStar: { fontSize: 15, lineHeight: 17, fontWeight: '700' },
   todayGoalPillText: { flexShrink: 1, fontSize: 13, fontWeight: '600' },
