@@ -348,7 +348,7 @@ export function TodayScreen() {
                 <SymbolView name="magnifyingglass" size={16} tintColor={colors.text} />
               </Pressable>
               <Pressable
-                accessibilityLabel="Open calendar"
+                accessibilityLabel={calendarOpen ? 'Close calendar' : 'Open calendar'}
                 onPress={toggleCalendar}
                 style={({ pressed }) => [styles.calendarButton, { backgroundColor: calendarOpen ? colors.blueSoft : colors.card }, pressed && styles.pressed]}
               >
@@ -580,6 +580,8 @@ export function TodayScreen() {
           onClose={() => setCalendarOpen(false)}
           onSelectDate={(date) => openQuickCapture({ date, dateLocked: true, kind: 'event' })}
           onSelectRange={(date, endDate) => openQuickCapture({ date, dateLocked: true, endDate, kind: 'trip' })}
+          selectedEndDate={quickCaptureOpen ? capturePreset?.endDate ?? capturePreset?.date : undefined}
+          selectedStartDate={quickCaptureOpen ? capturePreset?.date : undefined}
           today={today}
         />
       )}
@@ -1407,7 +1409,7 @@ function MiniCalendar({ colors, selected, today, visibleMonth, onChangeMonth, on
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   pressed: { opacity: 0.6 },
-  topBar: { height: 44, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topBar: { position: 'relative', zIndex: 60, height: 44, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   dateStripFrame: { height: 76, borderBottomWidth: StyleSheet.hairlineWidth },
   dateStripContent: { paddingHorizontal: 18, alignItems: 'center' },
   todayMorph: { height: 75, overflow: 'hidden' },

@@ -19,10 +19,12 @@ interface CompactCalendarOverlayProps {
   onClose: () => void;
   onSelectDate: (date: string) => void;
   onSelectRange: (startDate: string, endDate: string) => void;
+  selectedStartDate?: string;
+  selectedEndDate?: string;
   today: string;
 }
 
-export function CompactCalendarOverlay({ colors, dataRevision, initialDate, loadRange, onClose, onSelectDate, onSelectRange, today }: CompactCalendarOverlayProps) {
+export function CompactCalendarOverlay({ colors, dataRevision, initialDate, loadRange, onClose, onSelectDate, onSelectRange, selectedStartDate, selectedEndDate, today }: CompactCalendarOverlayProps) {
   const initial = dateFromISO(initialDate);
   const [month, setMonth] = useState(() => new Date(initial.getFullYear(), initial.getMonth(), 1));
   const [eventDates, setEventDates] = useState<Set<string>>(() => new Set());
@@ -87,8 +89,18 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
       });
   }, [cells, indexAtPoint, onSelectDate, onSelectRange]);
   const calendarGesture = Gesture.Simultaneous(rangeGesture, Gesture.Native());
-  const selectionStart = selection ? Math.min(selection.first, selection.last) : -1;
-  const selectionEnd = selection ? Math.max(selection.first, selection.last) : -1;
+  const committedSelection = useMemo(() => {
+    if (!selectedStartDate) return null;
+    const endDate = selectedEndDate ?? selectedStartDate;
+    const selectedIndices = cells
+      .map((cell, index) => cell.date && cell.date >= selectedStartDate && cell.date <= endDate ? index : -1)
+      .filter((index) => index >= 0);
+    if (!selectedIndices.length) return null;
+    return { first: selectedIndices[0], last: selectedIndices[selectedIndices.length - 1] };
+  }, [cells, selectedEndDate, selectedStartDate]);
+  const activeSelection = selection ?? committedSelection;
+  const selectionStart = activeSelection ? Math.min(activeSelection.first, activeSelection.last) : -1;
+  const selectionEnd = activeSelection ? Math.max(activeSelection.first, activeSelection.last) : -1;
 
   return (
     <View pointerEvents="box-none" style={styles.layer}>
@@ -126,7 +138,7 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
 }
 
 const styles = StyleSheet.create({
-  layer: { position: 'absolute', zIndex: 40, top: 48, left: 0, right: 0, bottom: 78 },
+  layer: { position: 'absolute', zIndex: 40, top: 44, left: 0, right: 0, bottom: 78 },
   backdrop: { position: 'absolute', inset: 0 },
   panel: { marginHorizontal: 10, borderRadius: 24, overflow: 'hidden', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 9, shadowColor: '#000000', shadowOpacity: 0.14, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 12 },
   glass: { position: 'absolute', inset: 0, borderRadius: 24 },

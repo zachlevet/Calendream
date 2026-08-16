@@ -600,19 +600,6 @@ function MonthTripGroup({ event, events, period, today, colors, editingItem, edi
         const slot = `${period.id}-trip-${event.id}-${child.id}`;
         return <View key={child.id}><EditorialEventRow colors={colors} event={child} onPress={() => onEditItem(child, slot)} period={period} today={today} tripRailMode="event" tripSubdued={tripPast} />{editingItem?.id === child.id && editingSlot === slot && <View style={styles.spineEditor}>{inlineEditor}</View>}</View>;
       })}
-      {event.anchorStart && event.anchorEnd && event.anchorEnd > event.anchorStart && <TripEndRow colors={colors} date={event.anchorEnd} subdued={tripPast} today={today} />}
-    </View>
-  );
-}
-
-function TripEndRow({ date, today, colors, subdued }: { date: string; today: string; colors: AppColors; subdued: boolean }) {
-  return (
-    <View accessibilityLabel={`Trip ends ${date}`} style={styles.tripEndRow}>
-      <TimelineDateGutter colors={colors} date={date} subdued={subdued} today={today} />
-      <View style={styles.spineRail}>
-        <View style={[styles.tripEndSegment, { backgroundColor: subdued ? colors.tertiary : colors.orange }]} />
-      </View>
-      <View style={styles.tripEndBody} />
     </View>
   );
 }
@@ -762,9 +749,6 @@ const styles = StyleSheet.create({
   tripSegmentTop: { position: 'absolute', top: 0, height: 22, width: 4 },
   tripEventDot: { position: 'absolute', top: 27, width: 7, height: 7, borderRadius: 4 },
   tripSegmentBottom: { position: 'absolute', top: 39, bottom: 0, width: 4 },
-  tripEndRow: { minHeight: 62, flexDirection: 'row', alignItems: 'stretch' },
-  tripEndSegment: { position: 'absolute', top: 0, bottom: 14, width: 4, borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
-  tripEndBody: { flex: 1 },
   editorialEventBody: { flex: 1, minHeight: 62, justifyContent: 'center', borderRadius: 14, paddingHorizontal: 11, paddingVertical: 8 },
   editorialEventHeading: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   editorialEventTitle: { flex: 1, fontSize: 15, lineHeight: 19, fontWeight: '600' },
