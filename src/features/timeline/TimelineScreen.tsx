@@ -151,8 +151,8 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   const timelineGesture = Gesture.Simultaneous(Gesture.Native(), pinch);
 
   const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
-  const fallbackGlass = colors.background === '#000000' ? 'rgba(50,50,54,0.78)' : 'rgba(246,246,248,0.78)';
-  const fallbackLens = colors.background === '#000000' ? 'rgba(105,105,110,0.58)' : 'rgba(255,255,255,0.66)';
+  const fallbackGlass = colors.background === '#000000' ? 'rgba(58,58,62,0.82)' : 'rgba(118,118,128,0.34)';
+  const fallbackLens = colors.background === '#000000' ? 'rgba(10,132,255,0.82)' : 'rgba(0,122,255,0.78)';
 
   return (
     <View style={styles.screen}>
@@ -187,7 +187,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
           <SymbolView name="house.fill" size={18} tintColor={colors.text} weight="semibold" />
         </Pressable>
         <View style={[styles.dockSurface, !glassAvailable && { backgroundColor: fallbackGlass }]}>
-          {glassAvailable && <GlassView glassEffectStyle="regular" style={styles.dockGlass} />}
+          {glassAvailable && <GlassView glassEffectStyle="regular" style={styles.dockGlass} tintColor={colors.background === '#000000' ? 'rgba(70,70,74,0.5)' : 'rgba(118,118,128,0.25)'} />}
           <View style={styles.dockContent}>
             {ZOOM_LEVELS.map((level) => {
               const active = level.id === zoom;
@@ -199,9 +199,9 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
                   style={styles.dockButton}
                 >
                   {active && (glassAvailable
-                    ? <GlassView glassEffectStyle="clear" isInteractive style={styles.activeLens} tintColor={colors.background === '#000000' ? 'rgba(95,95,100,0.42)' : 'rgba(255,255,255,0.38)'} />
+                    ? <GlassView glassEffectStyle="regular" isInteractive style={styles.activeLens} tintColor={colors.blue} />
                     : <View style={[styles.activeLens, { backgroundColor: fallbackLens }]} />)}
-                  <Text numberOfLines={1} style={[styles.dockLabel, { color: active ? colors.text : colors.secondary }]}>{level.label}</Text>
+                  <Text numberOfLines={1} style={[styles.dockLabel, { color: active ? '#FFFFFF' : colors.text }]}>{level.label}</Text>
                 </Pressable>
               );
             })}
