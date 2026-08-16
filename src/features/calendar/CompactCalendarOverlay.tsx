@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { TimelineSnapshot } from '@/models/planning';
 import { addLocalDays, dateFromISO } from '@/shared/date';
@@ -25,6 +26,7 @@ interface CompactCalendarOverlayProps {
 }
 
 export function CompactCalendarOverlay({ colors, dataRevision, initialDate, loadRange, onClose, onSelectDate, onSelectRange, selectedStartDate, selectedEndDate, today }: CompactCalendarOverlayProps) {
+  const insets = useSafeAreaInsets();
   const initial = dateFromISO(initialDate);
   const [month, setMonth] = useState(() => new Date(initial.getFullYear(), initial.getMonth(), 1));
   const [eventDates, setEventDates] = useState<Set<string>>(() => new Set());
@@ -103,7 +105,7 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
   const selectionEnd = activeSelection ? Math.max(activeSelection.first, activeSelection.last) : -1;
 
   return (
-    <View pointerEvents="box-none" style={styles.layer}>
+    <View pointerEvents="box-none" style={[styles.layer, { top: insets.top + 44 }]}>
       <Pressable accessibilityLabel="Close calendar" onPress={onClose} style={styles.backdrop} />
       <View style={[styles.panel, !glassAvailable && { backgroundColor: fallbackGlass }]}>
         {glassAvailable && <GlassView glassEffectStyle="regular" isInteractive style={styles.glass} tintColor={colors.background === '#000000' ? 'rgba(44,44,48,0.5)' : 'rgba(255,255,255,0.3)'} />}
@@ -138,7 +140,7 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
 }
 
 const styles = StyleSheet.create({
-  layer: { position: 'absolute', zIndex: 40, top: 44, left: 0, right: 0, bottom: 78 },
+  layer: { position: 'absolute', zIndex: 40, left: 0, right: 0, bottom: 78 },
   backdrop: { position: 'absolute', inset: 0 },
   panel: { marginHorizontal: 10, borderRadius: 24, overflow: 'hidden', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 9, shadowColor: '#000000', shadowOpacity: 0.14, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 12 },
   glass: { position: 'absolute', inset: 0, borderRadius: 24 },
