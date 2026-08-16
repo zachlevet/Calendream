@@ -709,8 +709,8 @@ function CompactDateRail({ today, selectedDate, colors, onSelect }: {
               opacity: todayExpansion.interpolate({ inputRange: [0, 0.35], outputRange: [1, 0] }),
             }]}>
               <Text style={[styles.dayRailLabel, { color: colors.red }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'narrow' }).format(dateFromISO(today))}</Text>
-              <View style={[styles.dayRailOrb, { borderColor: colors.red, borderWidth: 1.5 }]}>
-                <Text style={[styles.dayRailNumber, { color: colors.text }]}>{dateFromISO(today).getDate()}</Text>
+              <View style={[styles.dayRailOrb, { backgroundColor: colors.red }]}>
+                <Text style={[styles.dayRailNumber, { color: '#FFFFFF' }]}>{dateFromISO(today).getDate()}</Text>
               </View>
             </Animated.View>
           </Pressable>
@@ -736,10 +736,10 @@ function RailDay({ date, today, selectedDate, colors, onSelect }: {
       <Text style={[styles.dayRailLabel, { color: actualToday ? colors.red : colors.secondary }]}>{weekday}</Text>
       <View style={[
         styles.dayRailOrb,
-        actualToday && !selected && { borderColor: colors.red, borderWidth: 1.5 },
+        actualToday && !selected && { backgroundColor: colors.red },
         selected && { backgroundColor: colors.blue },
       ]}>
-        <Text style={[styles.dayRailNumber, { color: selected ? '#FFFFFF' : colors.text }]}>{dateFromISO(date).getDate()}</Text>
+        <Text style={[styles.dayRailNumber, { color: selected || actualToday ? '#FFFFFF' : colors.text }]}>{dateFromISO(date).getDate()}</Text>
       </View>
     </Pressable>
   );
