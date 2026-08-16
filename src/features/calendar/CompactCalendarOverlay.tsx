@@ -4,8 +4,9 @@ import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'ex
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import type { TimelineSnapshot } from '@/models/planning';
+import type { PlanningItem, TimelineSnapshot } from '@/models/planning';
 import { addLocalDays, dateFromISO } from '@/shared/date';
+import { eventPhase, timeMinutes } from '@/shared/time';
 import { orderedWeekdayLabels } from '@/shared/week';
 import type { AppColors } from '@/theme/colors';
 import { buildCalendarMonth, calendarMonthBounds, orderedCalendarRange } from './compactCalendar';
@@ -31,6 +32,7 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
   const initial = dateFromISO(initialDate);
   const [month, setMonth] = useState(() => new Date(initial.getFullYear(), initial.getMonth(), 1));
   const [eventDates, setEventDates] = useState<Set<string>>(() => new Set());
+  const [monthItems, setMonthItems] = useState<PlanningItem[]>([]);
   const [gridWidth, setGridWidth] = useState(0);
   const [selection, setSelection] = useState<{ first: number; last: number } | null>(null);
   const [actionDate, setActionDate] = useState<string | null>(null);
@@ -53,6 +55,7 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
         }
       });
       setEventDates(marked);
+      setMonthItems(snapshot.items);
     });
     return () => { active = false; };
   }, [bounds.end, bounds.start, dataRevision, loadRange]);
@@ -109,6 +112,12 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
   const actionIndex = actionDate ? cells.findIndex((cell) => cell.date === actionDate) : -1;
   const selectionStart = activeSelection ? Math.min(activeSelection.first, activeSelection.last) : actionIndex;
   const selectionEnd = activeSelection ? Math.max(activeSelection.first, activeSelection.last) : actionIndex;
+  const previewEvents = useMemo(() => {
+    if (!actionDate) return [];
+    return monthItems
+      .filter((item) => item.kind === 'event' && item.anchorStart && item.anchorStart <= actionDate && (item.anchorEnd ?? item.anchorStart) >= actionDate)
+      .sort((a, b) => timeMinutes(a.startTime) - timeMinutes(b.startTime) || (a.anchorStart ?? '').localeCompare(b.anchorStart ?? ''));
+  }, [actionDate, monthItems]);
 
   return (
     <View pointerEvents="box-none" style={[styles.layer, { top: insets.top + 44 }]}>
@@ -141,14 +150,33 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
         </GestureDetector>
         {actionDate ? (
           <View style={[styles.actionStrip, { borderColor: colors.separator }]}>
-            <Text numberOfLines={1} style={[styles.actionDate, { color: colors.text }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(dateFromISO(actionDate))}</Text>
-            <View style={styles.actionButtons}>
-              <Pressable accessibilityLabel={`View ${actionDate}`} onPress={() => onViewDate(actionDate)} style={[styles.viewButton, { backgroundColor: colors.card }]}><Text style={[styles.viewButtonText, { color: colors.blue }]}>View day</Text></Pressable>
-              <Pressable accessibilityLabel={`Add on ${actionDate}`} onPress={() => onAddDate(actionDate)} style={[styles.addButton, { backgroundColor: colors.blue }]}><Text style={styles.addButtonText}>＋ Add</Text></Pressable>
+            <View style={styles.actionHeader}>
+              <Text numberOfLines={1} style={[styles.actionDate, { color: colors.text }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).format(dateFromISO(actionDate))}</Text>
+              <View style={styles.actionButtons}>
+                <Pressable accessibilityLabel={`View ${actionDate}`} onPress={() => onViewDate(actionDate)} style={[styles.viewButton, { backgroundColor: colors.card }]}><Text style={[styles.viewButtonText, { color: colors.blue }]}>View day</Text></Pressable>
+                <Pressable accessibilityLabel={`Add on ${actionDate}`} onPress={() => onAddDate(actionDate)} style={[styles.addButton, { backgroundColor: colors.blue }]}><Text style={styles.addButtonText}>＋ Add</Text></Pressable>
+              </View>
+            </View>
+            <View style={styles.previewList}>
+              {previewEvents.length ? previewEvents.slice(0, 3).map((item) => <CalendarPreviewEvent colors={colors} item={item} key={item.id} />) : <Text style={[styles.previewEmpty, { color: colors.tertiary }]}>Nothing planned yet</Text>}
+              {previewEvents.length > 3 && <Text style={[styles.previewMore, { color: colors.secondary }]}>+{previewEvents.length - 3} more</Text>}
             </View>
           </View>
         ) : <Text style={[styles.hint, { color: colors.tertiary }]}>Tap a day to select · hold and drag for a trip</Text>}
       </View>
+    </View>
+  );
+}
+
+function CalendarPreviewEvent({ item, colors }: { item: PlanningItem; colors: AppColors }) {
+  const trip = item.eventType === 'trip' || Boolean(item.anchorStart && item.anchorEnd && item.anchorEnd > item.anchorStart);
+  const past = eventPhase(item) === 'past';
+  const accent = past ? colors.tertiary : trip ? colors.orange : colors.blue;
+  return (
+    <View style={styles.previewRow}>
+      <View style={[trip ? styles.previewTripMark : styles.previewEventDot, { backgroundColor: accent }]} />
+      <Text numberOfLines={1} style={[styles.previewTitle, { color: past ? colors.secondary : colors.text }]}>{item.title}</Text>
+      <Text style={[styles.previewMeta, { color: trip ? accent : colors.secondary }]}>{item.startTime ?? (trip ? 'Trip' : 'All day')}</Text>
     </View>
   );
 }
@@ -173,11 +201,20 @@ const styles = StyleSheet.create({
   dayNumber: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
   eventDot: { position: 'absolute', bottom: 0, width: 4, height: 4, borderRadius: 2 },
   hint: { textAlign: 'center', fontSize: 10, fontWeight: '600', marginTop: 2 },
-  actionStrip: { minHeight: 43, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, paddingTop: 7, marginTop: 3 },
+  actionStrip: { minHeight: 43, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 7, marginTop: 3 },
+  actionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   actionDate: { flex: 1, fontSize: 12, fontWeight: '700' },
   actionButtons: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   viewButton: { height: 30, borderRadius: 15, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
   viewButtonText: { fontSize: 11, fontWeight: '700' },
   addButton: { height: 30, borderRadius: 15, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
   addButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+  previewList: { paddingTop: 5 },
+  previewRow: { minHeight: 27, flexDirection: 'row', alignItems: 'center' },
+  previewEventDot: { width: 6, height: 6, borderRadius: 3, marginHorizontal: 5, marginRight: 9 },
+  previewTripMark: { width: 3, height: 18, borderRadius: 2, marginHorizontal: 6, marginRight: 10 },
+  previewTitle: { flex: 1, fontSize: 12, fontWeight: '600' },
+  previewMeta: { marginLeft: 8, fontSize: 10, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  previewEmpty: { minHeight: 27, paddingTop: 6, fontSize: 11 },
+  previewMore: { paddingLeft: 20, paddingTop: 2, paddingBottom: 2, fontSize: 10, fontWeight: '600' },
 });
