@@ -90,6 +90,7 @@ export function TodayScreen() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [timelineRevision, setTimelineRevision] = useState(0);
+  const [timelineEntryRevision, setTimelineEntryRevision] = useState(0);
   const [journal, setJournal] = useState('');
   const [briefingSessionActive, setBriefingSessionActive] = useState(false);
   const [inlineEditor, setInlineEditor] = useState<EditorState>(null);
@@ -286,6 +287,14 @@ export function TodayScreen() {
     Keyboard.dismiss();
     if (searchOpen) closeSearch();
     setCalendarOpen((open) => !open);
+  }
+
+  function openTimelineHome() {
+    Keyboard.dismiss();
+    setCalendarOpen(false);
+    if (searchOpen) closeSearch();
+    setTimelineEntryRevision((revision) => revision + 1);
+    setDestination('timeline');
   }
 
   function closeSearch() {
@@ -533,6 +542,7 @@ export function TodayScreen() {
         <TimelineScreen
           colors={colors}
           dataRevision={timelineRevision}
+          key={`timeline-home-${timelineEntryRevision}`}
           loadRange={data.loadRange}
           onSaveItem={async (draft) => {
             await data.saveItem(draft);
@@ -585,6 +595,7 @@ export function TodayScreen() {
             setInlineEditor(null);
             setEditor(null);
             setCalendarOpen(false);
+            setDestination('today');
           }}
           selectedEndDate={quickCaptureOpen ? capturePreset?.endDate ?? capturePreset?.date : undefined}
           selectedStartDate={quickCaptureOpen ? capturePreset?.date : undefined}
@@ -594,7 +605,7 @@ export function TodayScreen() {
 
       <View style={[styles.tabBar, { backgroundColor: colors.chrome, borderColor: colors.separator }]}>
         <TabButton active={destination === 'today'} colors={colors} label="Today" onPress={() => setDestination('today')} />
-        <TabButton active={destination === 'timeline'} colors={colors} label="Timeline" onPress={() => setDestination('timeline')} />
+        <TabButton active={destination === 'timeline'} colors={colors} label="Timeline" onPress={openTimelineHome} />
       </View>
 
       <ItemEditor

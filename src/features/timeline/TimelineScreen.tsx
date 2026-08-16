@@ -172,19 +172,28 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   }, []);
 
   const alignToFocus = useCallback(() => {
-    if (loading || alignedZoom.current === zoom) return;
+    if (loading || alignedZoom.current === zoom) return true;
     const position = [...periodPositions.current.values()].find((candidate) => focusDate.current >= candidate.start && focusDate.current <= candidate.end);
-    if (!position) return;
+    if (!position) return false;
     alignedZoom.current = zoom;
     const targetY = alignPeriodFromStart.current ? position.y : yForDate(position, focusDate.current);
     alignPeriodFromStart.current = false;
     scroll.current?.scrollTo({ y: Math.max(0, targetY - TIMELINE_TOP_INSET), animated: false });
+    return true;
   }, [loading, zoom]);
 
   useEffect(() => {
-    const timer = setTimeout(alignToFocus, 40);
-    return () => clearTimeout(timer);
-  }, [alignToFocus, snapshot]);
+    if (loading) return;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tryAlignment = () => {
+      attempts += 1;
+      if (alignToFocus() || attempts >= 12) return;
+      timer = setTimeout(tryAlignment, 40);
+    };
+    timer = setTimeout(tryAlignment, 0);
+    return () => { if (timer) clearTimeout(timer); };
+  }, [alignToFocus, loading, snapshot]);
 
   const goHome = useCallback(() => {
     focusDate.current = today;
