@@ -504,6 +504,10 @@ export function TodayScreen() {
             await data.toggleGoal(goal);
             setTimelineRevision((revision) => revision + 1);
           }}
+          onToggleTask={async (item) => {
+            await data.toggleTask(item);
+            setTimelineRevision((revision) => revision + 1);
+          }}
           onOpenDay={(date) => {
             setSelectedDate(date);
             setDestination('today');

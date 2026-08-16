@@ -18,6 +18,7 @@ interface TimelineScreenProps {
   loadRange: (startDate: string, endDate: string) => Promise<TimelineSnapshot>;
   onSaveItem: (draft: ItemDraft) => Promise<void>;
   onToggleGoal: (goal: Goal) => Promise<void>;
+  onToggleTask: (item: PlanningItem) => Promise<void>;
   onOpenDay: (date: string) => void;
   renderInlineEditor: (options: TimelineInlineEditorOptions) => ReactNode;
 }
@@ -57,7 +58,7 @@ function yForDate(position: PeriodPosition, date: string) {
   return position.y + progressThroughPeriod(position.start, position.end, date) * position.height;
 }
 
-export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveItem, onToggleGoal, onOpenDay, renderInlineEditor }: TimelineScreenProps) {
+export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveItem, onToggleGoal, onToggleTask, onOpenDay, renderInlineEditor }: TimelineScreenProps) {
   const [zoom, setZoom] = useState<TimelineZoom>('today');
   const [snapshot, setSnapshot] = useState<TimelineSnapshot>({ items: [], goals: [], reflections: {} });
   const [loading, setLoading] = useState(true);
@@ -225,6 +226,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
                 onEditItem={(item, slot) => void editInline(item, slot)}
                 onOpenDay={onOpenDay}
                 onToggleGoal={(goal) => void onToggleGoal(goal)}
+                onToggleTask={(item) => void onToggleTask(item)}
                 onZoomToDate={(date, nextZoom) => changeZoom(nextZoom, date)}
                 period={period}
                 reflection={snapshot.reflections[period.start]}
@@ -271,7 +273,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   );
 }
 
-function Period({ period, zoom, items, goals, loading, reflection, today, colors, editingItem, editingSlot, inlineEditor, onPeriodLayout, onEditItem, onOpenDay, onToggleGoal, onZoomToDate }: {
+function Period({ period, zoom, items, goals, loading, reflection, today, colors, editingItem, editingSlot, inlineEditor, onPeriodLayout, onEditItem, onOpenDay, onToggleGoal, onToggleTask, onZoomToDate }: {
   period: TimelinePeriod;
   zoom: TimelineZoom;
   items: PlanningItem[];
@@ -287,6 +289,7 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
   onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
   onToggleGoal: (goal: Goal) => void;
+  onToggleTask: (item: PlanningItem) => void;
   onZoomToDate: (date: string, zoom: TimelineZoom) => void;
 }) {
   const visibleItems = items.filter((item) => overlaps(item, period) && isVisibleAtZoom(item, zoom));
@@ -300,9 +303,9 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
       style={[styles.period, presentStyle]}
     >
       {zoom === 'today' ? (
-        <DayPage {...shared} date={period.start} goals={visibleGoals} items={visibleItems} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} period={period} reflection={reflection} today={today} />
+        <DayPage {...shared} date={period.start} goals={visibleGoals} items={visibleItems} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} onToggleTask={onToggleTask} period={period} reflection={reflection} today={today} />
       ) : zoom === 'week' ? (
-        <WeekPage {...shared} goals={visibleGoals} items={visibleItems} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} period={period} today={today} />
+        <WeekPage {...shared} goals={visibleGoals} items={visibleItems} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} onToggleTask={onToggleTask} period={period} today={today} />
       ) : zoom === 'month' ? (
         <MonthPage {...shared} goals={visibleGoals} items={visibleItems} loading={loading} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} onZoomToDate={onZoomToDate} period={period} today={today} />
       ) : zoom === 'quarter' ? (
@@ -314,7 +317,7 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
   );
 }
 
-function DayPage({ date, period, items, goals, reflection, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay, onToggleGoal }: {
+function DayPage({ date, period, items, goals, reflection, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay, onToggleGoal, onToggleTask }: {
   date: string;
   period: TimelinePeriod;
   items: PlanningItem[];
@@ -328,6 +331,7 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
   onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
   onToggleGoal: (goal: Goal) => void;
+  onToggleTask: (item: PlanningItem) => void;
 }) {
   const events = items.filter((item) => item.kind === 'event');
   const tasks = items.filter((item) => item.kind === 'task');
@@ -345,9 +349,9 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
       <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
 
       <TimelineSectionHeader colors={colors} onPress={() => onOpenDay(date)} title="Events" />
-      {events.length ? events.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}><TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <Text style={[styles.openRow, { color: colors.tertiary }]}>No events planned</Text>}
+      {events.length ? events.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}><TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <Text style={[styles.openRow, { color: colors.tertiary }]}>No events planned</Text>}
       <TimelineSectionHeader colors={colors} onPress={() => onOpenDay(date)} title="Tasks" />
-      {tasks.length ? tasks.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}><TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <Text style={[styles.openRow, { color: colors.tertiary }]}>No tasks yet</Text>}
+      {tasks.length ? tasks.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}><TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <Text style={[styles.openRow, { color: colors.tertiary }]}>No tasks yet</Text>}
 
       {(reflection || date <= today) && (
         <View style={styles.reflection}>
@@ -361,7 +365,7 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
   );
 }
 
-function WeekPage({ period, items, goals, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay, onToggleGoal }: {
+function WeekPage({ period, items, goals, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay, onToggleGoal, onToggleTask }: {
   period: TimelinePeriod;
   items: PlanningItem[];
   goals: Goal[];
@@ -373,6 +377,7 @@ function WeekPage({ period, items, goals, today, colors, editingItem, editingSlo
   onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
   onToggleGoal: (goal: Goal) => void;
+  onToggleTask: (item: PlanningItem) => void;
 }) {
   const days = Array.from({ length: 7 }, (_, index) => addLocalDays(period.start, index))
     .map((date) => ({
@@ -399,7 +404,7 @@ function WeekPage({ period, items, goals, today, colors, editingItem, editingSlo
               <Text style={[styles.weekDayName, { color: date === today ? colors.red : colors.text }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(parsed)}</Text>
               <Text style={[styles.weekDayDate, { color: colors.secondary }]}>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)}</Text>
             </Pressable>
-            {dayItems.map((item) => { const slot = `week-${date}-${item.id}`; return <View key={`${date}-${item.id}`}><CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
+            {dayItems.map((item) => { const slot = `week-${date}-${item.id}`; return <View key={`${date}-${item.id}`}><CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
           </View>
         );
       })}
@@ -609,12 +614,23 @@ function EditorialCompactEvent({ event, colors, onPress }: { event: PlanningItem
   );
 }
 
-function TimelineItem({ item, colors, onPress }: { item: PlanningItem; colors: AppColors; onPress: () => void }) {
-  return <Pressable onPress={onPress} style={({ pressed }) => [styles.timelineItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>{item.kind === 'task' ? <View style={[styles.checkbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>{item.completed && <Text style={styles.checkmark}>✓</Text>}</View> : <><Text style={[styles.eventTime, { color: colors.secondary }]}>{item.startTime || 'All day'}</Text><View style={[styles.itemRule, { backgroundColor: eventAccent(item, colors) }]} /></>}<View style={styles.itemCopy}><Text style={[styles.itemTitle, { color: item.completed ? colors.tertiary : colors.text }]}>{item.title}</Text>{item.notes && <Text numberOfLines={1} style={[styles.itemNote, { color: colors.secondary }]}>{item.notes}</Text>}</View></Pressable>;
+function TimelineItem({ item, colors, onPress, onToggleTask }: { item: PlanningItem; colors: AppColors; onPress: () => void; onToggleTask: () => void }) {
+  return <Pressable onPress={onPress} style={({ pressed }) => [styles.timelineItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>{item.kind === 'task' ? <Pressable accessibilityLabel={item.completed ? `Mark ${item.title} incomplete` : `Complete ${item.title}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); onToggleTask(); }} style={[styles.checkbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>{item.completed && <Text style={styles.checkmark}>✓</Text>}</Pressable> : <><Text style={[styles.eventTime, { color: colors.secondary }]}>{item.startTime || 'All day'}</Text><View style={[styles.itemRule, { backgroundColor: eventAccent(item, colors) }]} /></>}<View style={styles.itemCopy}><Text style={[styles.itemTitle, { color: item.completed ? colors.tertiary : colors.text }, item.completed && styles.taskCompleted]}>{item.title}</Text>{item.notes && <Text numberOfLines={1} style={[styles.itemNote, { color: colors.secondary }]}>{item.notes}</Text>}</View></Pressable>;
 }
 
-function CompactItem({ item, colors, onPress }: { item: PlanningItem; colors: AppColors; onPress: () => void }) {
-  return <Pressable onPress={onPress} style={({ pressed }) => [styles.compactItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}><Text style={[styles.compactDate, { color: colors.secondary }]}>{item.startTime ?? formatShortDate(item.anchorStart)}</Text><View style={[styles.itemRule, { backgroundColor: item.kind === 'event' ? eventAccent(item, colors) : colors.tertiary }]} /><Text numberOfLines={1} style={[styles.compactTitle, { color: item.completed ? colors.tertiary : colors.text }]}>{item.title}</Text></Pressable>;
+function CompactItem({ item, colors, onPress, onToggleTask }: { item: PlanningItem; colors: AppColors; onPress: () => void; onToggleTask: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.compactItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>
+      {item.kind === 'task' ? (
+        <Pressable accessibilityLabel={item.completed ? `Mark ${item.title} incomplete` : `Complete ${item.title}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); onToggleTask(); }} style={[styles.weekTaskCheckbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>
+          {item.completed && <Text style={styles.checkmark}>✓</Text>}
+        </Pressable>
+      ) : (
+        <><Text style={[styles.compactDate, { color: colors.secondary }]}>{item.startTime ?? formatShortDate(item.anchorStart)}</Text><View style={[styles.itemRule, { backgroundColor: eventAccent(item, colors) }]} /></>
+      )}
+      <Text numberOfLines={1} style={[styles.compactTitle, { color: item.completed ? colors.tertiary : colors.text }, item.completed && styles.taskCompleted]}>{item.title}</Text>
+    </Pressable>
+  );
 }
 
 function eventAccent(event: PlanningItem, colors: AppColors) {
@@ -655,11 +671,12 @@ const styles = StyleSheet.create({
   currentMarkerLine: { flex: 1, height: 1, marginLeft: 9, borderRadius: 1 },
   sectionHeader: { marginTop: 10, height: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, sectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4 }, sectionAction: { fontSize: 14, fontWeight: '600' },
   timelineItem: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, eventTime: { width: 68, fontSize: 13, fontVariant: ['tabular-nums'] }, itemRule: { width: 3, height: 25, borderRadius: 2, marginRight: 10 }, itemCopy: { flex: 1, paddingVertical: 6 }, itemTitle: { fontSize: 16, fontWeight: '500' }, itemNote: { fontSize: 12, marginTop: 2 },
+  taskCompleted: { textDecorationLine: 'line-through' },
   checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' }, openRow: { height: 42, fontSize: 14, paddingTop: 10 },
   reflection: { marginTop: 12 }, reflectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, marginBottom: 8 }, reflectionBox: { minHeight: 58, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, justifyContent: 'center' }, reflectionText: { fontSize: 16, lineHeight: 22 },
   weekTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }, weekTitle: { fontSize: 29, fontWeight: '700', letterSpacing: -0.8 }, weekDay: { paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth }, weekDayHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 3 }, weekDayName: { fontSize: 17, fontWeight: '700' }, weekDayDate: { fontSize: 13, fontWeight: '600' }, weekOpen: { fontSize: 13, paddingVertical: 6 },
   emptyWeek: { fontSize: 15, lineHeight: 21, paddingVertical: 12 },
-  compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactDate: { width: 72, fontSize: 12, fontVariant: ['tabular-nums'] }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },
+  compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactDate: { width: 72, fontSize: 12, fontVariant: ['tabular-nums'] }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, weekTaskCheckbox: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },
   editorialHeader: { marginBottom: 12 },
   periodSummary: { fontSize: 12, fontWeight: '600', marginTop: 4 },
   editorialEmpty: { fontSize: 15, lineHeight: 21, paddingVertical: 18 },
