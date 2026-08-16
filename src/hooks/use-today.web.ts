@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 
-import type { ItemDraft, PlanningItem } from '../models/planning';
+import type { ItemDraft, PlanningItem, SearchResult } from '../models/planning';
+import { matchingSnippet } from '../shared/search';
 
 export type { ItemDraft } from '../models/planning';
 
@@ -87,5 +88,29 @@ export function useTodayData(date: string, _reviewDate = date) {
         return [...current].sort((a, b) => (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0));
       });
     },
-  }), [date, items, journal, libraryDates, upcoming]);
+    searchAll: async (rawQuery: string): Promise<SearchResult[]> => {
+      const query = rawQuery.trim();
+      if (!query) return [];
+      const normalized = query.toLocaleLowerCase();
+      const itemResults = allItems
+        .filter((item) => [item.title, item.notes, item.location].some((value) => value?.toLocaleLowerCase().includes(normalized)))
+        .map((item): SearchResult => ({
+          id: item.id,
+          kind: item.kind,
+          date: item.anchorStart ?? date,
+          title: item.title,
+          snippet: matchingSnippet(item.notes, query),
+        }));
+      const noteResults = Object.entries(journals)
+        .filter(([, reflection]) => reflection.toLocaleLowerCase().includes(normalized))
+        .map(([noteDate, reflection]): SearchResult => ({
+          id: `note-${noteDate}`,
+          kind: 'note',
+          date: noteDate,
+          title: 'Daily Reflection',
+          snippet: matchingSnippet(reflection, query),
+        }));
+      return [...itemResults, ...noteResults];
+    },
+  }), [allItems, date, items, journal, journals, libraryDates, upcoming]);
 }

@@ -36,3 +36,11 @@ export interface PlanningItem {
   locationPlace?: LocationPlace;
   sortOrder?: number;
 }
+
+export interface SearchResult {
+  id: string;
+  kind: 'event' | 'task' | 'note';
+  date: string;
+  title: string;
+  snippet?: string;
+}

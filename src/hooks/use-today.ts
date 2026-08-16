@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 
-import type { ItemDraft, PlanningItem } from '../models/planning';
+import type { ItemDraft, PlanningItem, SearchResult } from '../models/planning';
+import { matchingSnippet } from '../shared/search';
 
 export type { ItemDraft } from '../models/planning';
 
@@ -190,6 +191,50 @@ export function useTodayData(date: string, reviewDate = date) {
     await refresh();
   }, [db, refresh]);
 
+  const searchAll = useCallback(async (rawQuery: string): Promise<SearchResult[]> => {
+    const query = rawQuery.trim();
+    if (!query) return [];
+    const pattern = `%${query}%`;
+    const [itemRows, noteRows] = await Promise.all([
+      db.getAllAsync<{ id: string; kind: 'task' | 'event'; title: string; anchor_start: string; notes: string | null }>(
+        `SELECT id, kind, title, anchor_start, notes
+         FROM items
+         WHERE deleted_at IS NULL AND anchor_start IS NOT NULL
+           AND (title LIKE ? COLLATE NOCASE OR notes LIKE ? COLLATE NOCASE OR location LIKE ? COLLATE NOCASE)
+         ORDER BY anchor_start DESC
+         LIMIT 40`,
+        pattern,
+        pattern,
+        pattern,
+      ),
+      db.getAllAsync<{ date: string; reflection: string }>(
+        `SELECT date, reflection
+         FROM daily_pages
+         WHERE reflection LIKE ? COLLATE NOCASE
+         ORDER BY date DESC
+         LIMIT 20`,
+        pattern,
+      ),
+    ]);
+
+    return [
+      ...itemRows.map((row): SearchResult => ({
+        id: row.id,
+        kind: row.kind,
+        date: row.anchor_start,
+        title: row.title,
+        snippet: matchingSnippet(row.notes, query),
+      })),
+      ...noteRows.map((row): SearchResult => ({
+        id: `note-${row.date}`,
+        kind: 'note',
+        date: row.date,
+        title: 'Daily Reflection',
+        snippet: matchingSnippet(row.reflection, query),
+      })),
+    ];
+  }, [db]);
+
   const toggleTask = useCallback(async (item: PlanningItem) => {
     const now = new Date().toISOString();
     await db.runAsync(
@@ -303,5 +348,6 @@ export function useTodayData(date: string, reviewDate = date) {
     dismissOverdueTask,
     skipMorningReview,
     reorderTasks,
+    searchAll,
   };
 }

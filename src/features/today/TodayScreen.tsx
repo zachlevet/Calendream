@@ -21,10 +21,11 @@ import {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { SymbolView } from 'expo-symbols';
 
 import { useTodayData, type ItemDraft } from '@/hooks/use-today';
 import { useLocalToday } from '@/hooks/use-local-today';
-import type { LocationPlace, PlanningItem } from '@/models/planning';
+import type { LocationPlace, PlanningItem, SearchResult } from '@/models/planning';
 import {
   addLocalDays,
   dateFromISO,
@@ -42,6 +43,7 @@ import CalendreamMapKit from '../../../modules/calendream-mapkit/src/CalendreamM
 import type { MapSuggestion } from '../../../modules/calendream-mapkit/src/CalendreamMapKit.types';
 import { DailyReflection } from './components/DailyReflection';
 import { QuickCaptureSheet } from '@/features/quick-capture/QuickCaptureSheet';
+import { SearchResults } from '@/features/search/SearchResults';
 
 type Destination = 'today' | 'timeline';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
@@ -63,9 +65,14 @@ export function TodayScreen() {
   const today = useLocalToday();
   const [selectedDate, setSelectedDate] = useState(today);
   const data = useTodayData(selectedDate, today);
+  const searchAll = data.searchAll;
   const [destination, setDestination] = useState<Destination>('today');
   const [editor, setEditor] = useState<EditorState>(null);
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [journal, setJournal] = useState('');
   const [briefingSessionActive, setBriefingSessionActive] = useState(false);
   const [inlineEditor, setInlineEditor] = useState<EditorState>(null);
@@ -90,6 +97,31 @@ export function TodayScreen() {
     const timer = setTimeout(() => setJournal(data.journal), 0);
     return () => clearTimeout(timer);
   }, [data.journal]);
+
+  useEffect(() => {
+    if (!searchOpen || !searchQuery.trim()) {
+      const timer = setTimeout(() => {
+        setSearchResults([]);
+        setSearchLoading(false);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setSearchLoading(true);
+      void searchAll(searchQuery).then((results) => {
+        if (cancelled) return;
+        setSearchResults(results);
+        setSearchLoading(false);
+      });
+    }, 140);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchAll, searchOpen, searchQuery]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -205,20 +237,69 @@ export function TodayScreen() {
     }, Platform.OS === 'ios' ? 90 : 140);
   }
 
+  function openSearch() {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSearchOpen(true);
+  }
+
+  function closeSearch() {
+    Keyboard.dismiss();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSearchResults([]);
+  }
+
+  function selectSearchResult(result: SearchResult) {
+    setDestination('today');
+    setSelectedDate(result.date);
+    closeSearch();
+  }
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.topBar}>
-        <Text style={[styles.wordmark, { color: colors.text }]}>Calendream</Text>
-        <Pressable
-          accessibilityLabel="Add an item"
-          onPress={() => setQuickCaptureOpen(true)}
-          style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.addSymbol}>+</Text>
-        </Pressable>
+        {searchOpen ? (
+          <View style={[styles.searchOrb, { backgroundColor: colors.card }]}>
+            <SymbolView name="magnifyingglass" size={16} tintColor={colors.secondary} />
+            <TextInput
+              autoFocus
+              clearButtonMode="while-editing"
+              onChangeText={setSearchQuery}
+              placeholder="Search Calendream"
+              placeholderTextColor={colors.tertiary}
+              returnKeyType="search"
+              style={[styles.searchInput, { color: colors.text }]}
+              value={searchQuery}
+            />
+            <Pressable accessibilityLabel="Close search" hitSlop={8} onPress={closeSearch}>
+              <SymbolView name="xmark.circle.fill" size={18} tintColor={colors.tertiary} />
+            </Pressable>
+          </View>
+        ) : (
+          <>
+            <Text style={[styles.wordmark, { color: colors.text }]}>Calendream</Text>
+            <View style={styles.headerActions}>
+              <Pressable
+                accessibilityLabel="Search"
+                onPress={openSearch}
+                style={({ pressed }) => [styles.searchButton, { backgroundColor: colors.card }, pressed && styles.pressed]}
+              >
+                <SymbolView name="magnifyingglass" size={16} tintColor={colors.text} />
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Add an item"
+                onPress={() => setQuickCaptureOpen(true)}
+                style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.addSymbol}>+</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
       </View>
 
-      {destination === 'today' && (
+      {destination === 'today' && !searchOpen && (
         <CompactDateRail colors={colors} onSelect={(date) => {
           setSelectedDate(date);
           setInlineEditor(null);
@@ -226,7 +307,9 @@ export function TodayScreen() {
         }} selectedDate={selectedDate} today={today} />
       )}
 
-      {destination === 'today' ? (
+      {searchOpen ? (
+        <SearchResults colors={colors} loading={searchLoading} onSelect={selectSearchResult} query={searchQuery} results={searchResults} />
+      ) : destination === 'today' ? (
         <View ref={dayPage} style={styles.dayPage}>
         <ScrollView
           key={selectedDate}
@@ -380,10 +463,10 @@ export function TodayScreen() {
         </View>
       )}
 
-      <View style={[styles.tabBar, { backgroundColor: colors.chrome, borderColor: colors.separator }]}>
+      {!searchOpen && <View style={[styles.tabBar, { backgroundColor: colors.chrome, borderColor: colors.separator }]}>
         <TabButton active={destination === 'today'} colors={colors} label="Today" onPress={() => setDestination('today')} />
         <TabButton active={destination === 'timeline'} colors={colors} label="Timeline" onPress={() => setDestination('timeline')} />
-      </View>
+      </View>}
 
       <ItemEditor
         colors={colors}
@@ -1202,6 +1285,10 @@ const styles = StyleSheet.create({
   dayRailNumber: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] },
   dayPage: { flex: 1 },
   wordmark: { fontSize: 17, fontWeight: '700', letterSpacing: -0.3 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  searchButton: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  searchOrb: { flex: 1, height: 34, borderRadius: 17, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  searchInput: { flex: 1, height: 34, fontSize: 15, paddingVertical: 0 },
   addButton: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#FF3B30', alignItems: 'center', justifyContent: 'center' },
   addSymbol: { color: '#FFFFFF', fontSize: 24, lineHeight: 25, fontWeight: '400' },
   scrollContent: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 104 },
