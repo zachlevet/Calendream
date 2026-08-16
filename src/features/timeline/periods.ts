@@ -32,13 +32,16 @@ export function timelineAltitude(zoom: TimelineZoom) {
 export function isVisibleAtZoom(item: PlanningItem, zoom: TimelineZoom) {
   if (zoom === 'today' || zoom === 'week') return true;
 
-  const coarsePlanningItem = item.precision === 'month' || item.precision === 'quarter' || item.precision === 'year';
-  if (item.kind === 'task' && !coarsePlanningItem) return false;
   if (zoom === 'month') {
-    return item.altitude >= timelineAltitude(zoom) && (item.kind === 'event' || coarsePlanningItem);
+    return item.kind === 'event' || (item.kind === 'task' && item.precision === 'month');
+  }
+  if (zoom === 'quarter') {
+    return (item.kind === 'event' && item.altitude >= timelineAltitude(zoom))
+      || (item.kind === 'task' && item.precision === 'quarter');
   }
 
-  return item.altitude >= timelineAltitude(zoom);
+  return (item.kind === 'event' && item.altitude >= timelineAltitude(zoom))
+    || (item.kind === 'task' && item.precision === 'year');
 }
 
 export function buildTimelinePeriods(zoom: TimelineZoom, today: string): TimelinePeriod[] {

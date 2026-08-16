@@ -61,7 +61,7 @@ test('ordinary tasks disappear at month scale even if their altitude is raised',
   assert.equal(isVisibleAtZoom(laundry, 'quarter'), false);
 });
 
-test('trips and coarse goals survive broader timeline levels', () => {
+test('trips survive broad levels while goals appear only at their own scope', () => {
   const trip: PlanningItem = {
     id: 'trip',
     kind: 'event',
@@ -83,7 +83,14 @@ test('trips and coarse goals survive broader timeline levels', () => {
 
   assert.equal(isVisibleAtZoom(trip, 'month'), true);
   assert.equal(isVisibleAtZoom(trip, 'year'), true);
-  assert.equal(isVisibleAtZoom(goal, 'month'), true);
+  assert.equal(isVisibleAtZoom(goal, 'month'), false);
   assert.equal(isVisibleAtZoom(goal, 'quarter'), true);
-  assert.equal(isVisibleAtZoom(goal, 'year'), true);
+  assert.equal(isVisibleAtZoom(goal, 'year'), false);
+});
+
+test('month shows all events but never ordinary tasks', () => {
+  const dinner: PlanningItem = { id: 'dinner', kind: 'event', title: 'Dinner', anchorStart: '2026-08-20', anchorEnd: '2026-08-20', precision: 'time', altitude: 1 };
+  const monthlyGoal: PlanningItem = { id: 'monthly-goal', kind: 'task', title: 'Run 40 miles', anchorStart: '2026-08-01', anchorEnd: '2026-08-31', precision: 'month', altitude: 2 };
+  assert.equal(isVisibleAtZoom(dinner, 'month'), true);
+  assert.equal(isVisibleAtZoom(monthlyGoal, 'month'), true);
 });

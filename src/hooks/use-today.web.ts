@@ -12,6 +12,13 @@ function addDays(isoDate: string, amount: number) {
 }
 
 function sampleItems(today: string): PlanningItem[] {
+  const [year, month] = today.split('-').map(Number);
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+  const monthEnd = addDays(monthStart, new Date(year, month, 0).getDate() - 1);
+  const quarterStartMonth = Math.floor((month - 1) / 3) * 3 + 1;
+  const quarterStart = `${year}-${String(quarterStartMonth).padStart(2, '0')}-01`;
+  const quarterEndMonth = quarterStartMonth + 2;
+  const quarterEnd = `${year}-${String(quarterEndMonth).padStart(2, '0')}-${String(new Date(year, quarterEndMonth, 0).getDate()).padStart(2, '0')}`;
   return [
     { id: 'web-plan', kind: 'event', title: 'Morning planning', anchorStart: today, anchorEnd: today, precision: 'time', altitude: 1, startTime: '8:30 AM', notes: 'Choose the three things that matter most today.' },
     { id: 'web-coffee', kind: 'event', title: 'Coffee with Alex', anchorStart: today, anchorEnd: today, precision: 'time', altitude: 1, startTime: '10:00 AM', location: "Jo's Coffee, Austin, TX" },
@@ -33,6 +40,13 @@ function sampleItems(today: string): PlanningItem[] {
     { id: 'web-holiday', kind: 'event', title: 'Holiday travel', anchorStart: addDays(today, 110), anchorEnd: addDays(today, 118), precision: 'day', altitude: 4 },
     { id: 'web-ski', kind: 'event', title: 'Ski weekend', anchorStart: addDays(today, 160), anchorEnd: addDays(today, 163), precision: 'day', altitude: 4 },
     { id: 'web-europe', kind: 'event', title: 'Europe trip', anchorStart: addDays(today, 240), anchorEnd: addDays(today, 252), precision: 'day', altitude: 4 },
+    { id: 'web-month-goal', kind: 'task', title: 'Run three times each week', anchorStart: monthStart, anchorEnd: monthEnd, precision: 'month', altitude: 2 },
+    { id: 'web-quarter-goal', kind: 'task', title: 'Build a consistent creative practice', anchorStart: quarterStart, anchorEnd: quarterEnd, precision: 'quarter', altitude: 3 },
+    { id: 'web-year-goal', kind: 'task', title: 'Make Calendream part of daily life', anchorStart: `${year}-01-01`, anchorEnd: `${year}-12-31`, precision: 'year', altitude: 4 },
+    { id: 'web-birthday', kind: 'event', title: 'Birthday dinner', anchorStart: addDays(today, -8), anchorEnd: addDays(today, -8), precision: 'time', altitude: 1, startTime: '7:30 PM' },
+    { id: 'web-gallery', kind: 'event', title: 'Gallery opening', anchorStart: addDays(today, 18), anchorEnd: addDays(today, 18), precision: 'time', altitude: 1, startTime: '6:00 PM' },
+    { id: 'web-wedding', kind: 'event', title: 'Maya & Theo’s wedding', anchorStart: addDays(today, 32), anchorEnd: addDays(today, 32), precision: 'day', altitude: 4 },
+    { id: 'web-retreat', kind: 'event', title: 'Creative retreat', anchorStart: addDays(today, 88), anchorEnd: addDays(today, 91), precision: 'day', altitude: 4 },
   ];
 }
 

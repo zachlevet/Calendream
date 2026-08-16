@@ -177,6 +177,39 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       );
     });
   }
+
+  const editorialMarker = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_meta WHERE key = 'sample_editorial_v2'",
+  );
+  if (!editorialMarker) {
+    const now = new Date();
+    const createdAt = now.toISOString();
+    const today = localDate(now);
+    const [year, month] = today.split('-').map(Number);
+    const samples = [
+      { id: 'editorial-month-goal', kind: 'task', title: 'Run three times each week', start: localDate(new Date(year, month - 1, 1)), end: localDate(new Date(year, month, 0)), precision: 'month', altitude: 2 },
+      { id: 'editorial-birthday', kind: 'event', title: 'Birthday dinner', start: addDate(today, -8), end: addDate(today, -8), precision: 'time', altitude: 1, time: '7:30 PM' },
+      { id: 'editorial-gallery', kind: 'event', title: 'Gallery opening', start: addDate(today, 18), end: addDate(today, 18), precision: 'time', altitude: 1, time: '6:00 PM' },
+      { id: 'editorial-wedding', kind: 'event', title: 'Maya & Theo’s wedding', start: addDate(today, 32), end: addDate(today, 32), precision: 'day', altitude: 4 },
+      { id: 'editorial-retreat', kind: 'event', title: 'Creative retreat', start: addDate(today, 88), end: addDate(today, 91), precision: 'day', altitude: 4 },
+    ] as const;
+    await db.withTransactionAsync(async () => {
+      for (const sample of samples) {
+        await db.runAsync(
+          `INSERT OR IGNORE INTO items
+            (id, kind, title, anchor_start, anchor_end, precision, altitude,
+             start_time, sort_order, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+          sample.id, sample.kind, sample.title, sample.start, sample.end, sample.precision,
+          sample.altitude, 'time' in sample ? sample.time : null, createdAt, createdAt,
+        );
+      }
+      await db.runAsync(
+        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_editorial_v2', 'seeded', ?)",
+        createdAt,
+      );
+    });
+  }
 }
 
 function localDate(date: Date) {
