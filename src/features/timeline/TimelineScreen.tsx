@@ -71,6 +71,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   const scrollOffset = useRef(0);
   const currentPeriod = useRef<PeriodPosition | null>(null);
   const focusDate = useRef(today);
+  const alignPeriodFromStart = useRef(false);
   const periodPositions = useRef(new Map<string, PeriodPosition>());
   const keyboardTop = useRef(Dimensions.get('window').height);
   const alignedZoom = useRef<TimelineZoom | null>(null);
@@ -138,7 +139,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   // eslint-disable-next-line react-hooks/refs
   const inlineEditor = editingItem ? <View ref={editorView}>{renderInlineEditor({ item: editingItem, date: editingItem.anchorStart ?? today, onCancel: closeInlineEditor, onDraftChange: setInlineDraft, onReveal: revealInline, onSave: saveInline })}</View> : null;
 
-  const changeZoom = useCallback((nextZoom: TimelineZoom, requestedDate?: string) => {
+  const changeZoom = useCallback((nextZoom: TimelineZoom, requestedDate?: string, alignment: 'date' | 'period' = 'date') => {
     if (nextZoom === zoom) return;
     const viewportY = scrollOffset.current + Math.min(250, Dimensions.get('window').height * 0.32);
     const positions = [...periodPositions.current.values()].sort((a, b) => a.y - b.y);
@@ -151,6 +152,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
       }, undefined);
     const visibleAnchor = visiblePeriod ? dateAtPosition(visiblePeriod, viewportY) : undefined;
     focusDate.current = requestedDate ?? visibleAnchor ?? focusDate.current;
+    alignPeriodFromStart.current = alignment === 'period';
     periodPositions.current.clear();
     alignedZoom.current = null;
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -168,7 +170,9 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
     const position = [...periodPositions.current.values()].find((candidate) => focusDate.current >= candidate.start && focusDate.current <= candidate.end);
     if (!position) return;
     alignedZoom.current = zoom;
-    scroll.current?.scrollTo({ y: Math.max(0, yForDate(position, focusDate.current) - TIMELINE_TOP_INSET), animated: false });
+    const targetY = alignPeriodFromStart.current ? position.y : yForDate(position, focusDate.current);
+    alignPeriodFromStart.current = false;
+    scroll.current?.scrollTo({ y: Math.max(0, targetY - TIMELINE_TOP_INSET), animated: false });
   }, [loading, zoom]);
 
   useEffect(() => {
@@ -178,6 +182,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
 
   const goHome = useCallback(() => {
     focusDate.current = today;
+    alignPeriodFromStart.current = false;
     if (currentPeriod.current) scroll.current?.scrollTo({ y: Math.max(0, currentPeriod.current.y - TIMELINE_TOP_INSET), animated: true });
   }, [today]);
 
@@ -249,7 +254,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
                   <Pressable
                     accessibilityLabel={`${level.label} timeline view`}
                     key={level.id}
-                    onPress={() => changeZoom(level.id)}
+                    onPress={() => level.id === zoom ? goHome() : changeZoom(level.id, today, 'period')}
                     style={styles.dockButton}
                   >
                     {active && (glassAvailable
