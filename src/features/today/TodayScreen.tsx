@@ -43,7 +43,7 @@ import CalendreamMapKit from '../../../modules/calendream-mapkit/src/CalendreamM
 import type { MapSuggestion } from '../../../modules/calendream-mapkit/src/CalendreamMapKit.types';
 import { DailyReflection } from './components/DailyReflection';
 import { QuickCaptureSheet } from '@/features/quick-capture/QuickCaptureSheet';
-import { SearchResults } from '@/features/search/SearchResults';
+import { SearchOverlay } from '@/features/search/SearchResults';
 
 type Destination = 'today' | 'timeline';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
@@ -239,6 +239,7 @@ export function TodayScreen() {
 
   function openSearch() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setDestination('today');
     setSearchOpen(true);
   }
 
@@ -260,12 +261,18 @@ export function TodayScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.topBar}>
         {searchOpen ? (
+          <>
           <View style={[styles.searchOrb, { backgroundColor: colors.card }]}>
             <SymbolView name="magnifyingglass" size={16} tintColor={colors.secondary} />
             <TextInput
               autoFocus
               clearButtonMode="while-editing"
-              onChangeText={setSearchQuery}
+              onChangeText={(value) => {
+                if (Boolean(value.trim()) !== Boolean(searchQuery.trim())) {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                }
+                setSearchQuery(value);
+              }}
               placeholder="Search Calendream"
               placeholderTextColor={colors.tertiary}
               returnKeyType="search"
@@ -276,6 +283,14 @@ export function TodayScreen() {
               <SymbolView name="xmark.circle.fill" size={18} tintColor={colors.tertiary} />
             </Pressable>
           </View>
+          <Pressable
+            accessibilityLabel="Add an item"
+            onPress={() => setQuickCaptureOpen(true)}
+            style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.addSymbol}>+</Text>
+          </Pressable>
+          </>
         ) : (
           <>
             <Text style={[styles.wordmark, { color: colors.text }]}>Calendream</Text>
@@ -299,7 +314,7 @@ export function TodayScreen() {
         )}
       </View>
 
-      {destination === 'today' && !searchOpen && (
+      {destination === 'today' && (
         <CompactDateRail colors={colors} onSelect={(date) => {
           setSelectedDate(date);
           setInlineEditor(null);
@@ -307,9 +322,7 @@ export function TodayScreen() {
         }} selectedDate={selectedDate} today={today} />
       )}
 
-      {searchOpen ? (
-        <SearchResults colors={colors} loading={searchLoading} onSelect={selectSearchResult} query={searchQuery} results={searchResults} />
-      ) : destination === 'today' ? (
+      {destination === 'today' ? (
         <View ref={dayPage} style={styles.dayPage}>
         <ScrollView
           key={selectedDate}
@@ -463,10 +476,14 @@ export function TodayScreen() {
         </View>
       )}
 
-      {!searchOpen && <View style={[styles.tabBar, { backgroundColor: colors.chrome, borderColor: colors.separator }]}>
+      {searchOpen && Boolean(searchQuery.trim()) && (
+        <SearchOverlay colors={colors} loading={searchLoading} onSelect={selectSearchResult} query={searchQuery} results={searchResults} />
+      )}
+
+      <View style={[styles.tabBar, { backgroundColor: colors.chrome, borderColor: colors.separator }]}>
         <TabButton active={destination === 'today'} colors={colors} label="Today" onPress={() => setDestination('today')} />
         <TabButton active={destination === 'timeline'} colors={colors} label="Timeline" onPress={() => setDestination('timeline')} />
-      </View>}
+      </View>
 
       <ItemEditor
         colors={colors}

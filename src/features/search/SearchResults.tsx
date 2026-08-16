@@ -1,4 +1,5 @@
-import { ScrollView, StyleSheet, Text, Pressable, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, Pressable, View } from 'react-native';
+import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
 
 import { formatLongDate } from '@/shared/date';
 import type { SearchResult } from '@/models/planning';
@@ -10,6 +11,27 @@ interface SearchResultsProps {
   query: string;
   results: SearchResult[];
   onSelect: (result: SearchResult) => void;
+}
+
+export function SearchOverlay(props: SearchResultsProps) {
+  const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
+
+  return (
+    <View style={[styles.overlay, !glassAvailable && { backgroundColor: props.colors.chrome, borderColor: props.colors.separator }]}>
+      {glassAvailable && (
+        <GlassView
+          colorScheme="auto"
+          glassEffectStyle="regular"
+          isInteractive
+          style={styles.glass}
+          tintColor="rgba(255,255,255,0.12)"
+        />
+      )}
+      <View style={styles.overlayContent}>
+        <SearchResults {...props} />
+      </View>
+    </View>
+  );
 }
 
 const GROUPS: { kind: SearchResult['kind']; title: string }[] = [
@@ -54,6 +76,25 @@ export function SearchResults({ colors, loading, query, results, onSelect }: Sea
 }
 
 const styles = StyleSheet.create({
+  overlay: {
+    position: 'absolute',
+    zIndex: 20,
+    top: 50,
+    left: 10,
+    right: 10,
+    height: 390,
+    borderRadius: 24,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'transparent',
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 10,
+  },
+  glass: { position: 'absolute', inset: 0, borderRadius: 24 },
+  overlayContent: { flex: 1 },
   content: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 100 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
   emptyText: { fontSize: 15, textAlign: 'center' },
