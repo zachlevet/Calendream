@@ -382,14 +382,31 @@ export function TodayScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {data.upcoming.length > 0 && (
+          {(data.upcoming.length > 0 || data.goals.length > 0) && (
             <ScrollView
               horizontal
               contentContainerStyle={styles.upcomingList}
               showsHorizontalScrollIndicator={false}
               style={styles.upcomingScroller}
             >
-              {data.upcoming.map((item) => {
+              {data.upcoming.slice(0, 2).map((item) => {
+                const days = daysFromToday(item.anchorStart ?? selectedDate);
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => setEditor({ kind: 'event', item })}
+                    style={[styles.upcomingPill, { backgroundColor: colors.blueSoft }]}
+                  >
+                    <Text style={[styles.upcomingText, { color: colors.blue }]} numberOfLines={1}>
+                      {item.title} · {days === 1 ? 'tomorrow' : `in ${days} days`}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+              {data.goals.map((goal) => (
+                <TodayGoalPill colors={colors} goal={goal} key={goal.id} onToggle={() => void data.toggleGoal(goal)} />
+              ))}
+              {data.upcoming.slice(2).map((item) => {
                 const days = daysFromToday(item.anchorStart ?? selectedDate);
                 return (
                   <Pressable
@@ -405,10 +422,6 @@ export function TodayScreen() {
               })}
             </ScrollView>
           )}
-
-          {data.goals.map((goal) => (
-            <TodayGoalReminder colors={colors} goal={goal} key={goal.id} onToggle={() => void data.toggleGoal(goal)} />
-          ))}
 
           <View style={[styles.upNextCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.cardEyebrow, { color: colors.secondary }]}>UP NEXT</Text>
@@ -859,18 +872,12 @@ function InlineTimePicker({ value, colors, onChange }: {
   );
 }
 
-function TodayGoalReminder({ goal, colors, onToggle }: { goal: Goal; colors: AppColors; onToggle: () => void }) {
+function TodayGoalPill({ goal, colors, onToggle }: { goal: Goal; colors: AppColors; onToggle: () => void }) {
   return (
-    <View style={[styles.todayGoal, { backgroundColor: colors.amberSoft }]}>
-      <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} achieved`} hitSlop={8} onPress={onToggle} style={styles.todayGoalStar}>
-        <Text style={[styles.todayGoalStarIcon, { color: colors.amber }]}>{goal.completed ? '★' : '☆'}</Text>
-      </Pressable>
-      <View style={styles.todayGoalCopy}>
-        <Text style={[styles.todayGoalLabel, { color: colors.amber }]}>{goal.scope.toUpperCase()} GOAL</Text>
-        <Text numberOfLines={1} style={[styles.todayGoalTitle, { color: colors.text }, goal.completed && styles.completed]}>{goal.title}</Text>
-      </View>
-      <Text style={[styles.todayGoalDate, { color: colors.secondary }]}>{formatShortDate(goal.targetDate)}</Text>
-    </View>
+    <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} achieved`} onPress={onToggle} style={[styles.todayGoalPill, { backgroundColor: colors.amberSoft }]}>
+      <Text style={[styles.todayGoalPillStar, { color: colors.amber }]}>{goal.completed ? '★' : '☆'}</Text>
+      <Text numberOfLines={1} style={[styles.todayGoalPillText, { color: colors.amber }, goal.completed && styles.completed]}>{goal.title}</Text>
+    </Pressable>
   );
 }
 
@@ -1435,13 +1442,9 @@ const styles = StyleSheet.create({
   upcomingList: { paddingHorizontal: 18, gap: 7 },
   upcomingPill: { minHeight: 28, borderRadius: 14, paddingHorizontal: 11, justifyContent: 'center', maxWidth: 260 },
   upcomingText: { fontSize: 13, fontWeight: '600' },
-  todayGoal: { minHeight: 54, borderRadius: 16, paddingHorizontal: 11, paddingVertical: 8, marginBottom: 9, flexDirection: 'row', alignItems: 'center' },
-  todayGoalStar: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', marginRight: 7 },
-  todayGoalStarIcon: { fontSize: 21, lineHeight: 23, fontWeight: '600' },
-  todayGoalCopy: { flex: 1 },
-  todayGoalLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
-  todayGoalTitle: { fontSize: 14, lineHeight: 18, fontWeight: '600' },
-  todayGoalDate: { fontSize: 10, fontWeight: '600', marginLeft: 8 },
+  todayGoalPill: { minHeight: 28, maxWidth: 260, borderRadius: 14, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  todayGoalPillStar: { fontSize: 15, lineHeight: 17, fontWeight: '700' },
+  todayGoalPillText: { flexShrink: 1, fontSize: 13, fontWeight: '600' },
   upNextCard: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10 },
   cardEyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
   upNextTitle: { fontSize: 19, fontWeight: '700', marginTop: 4, letterSpacing: -0.3 },

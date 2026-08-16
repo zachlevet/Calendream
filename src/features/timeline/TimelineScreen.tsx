@@ -66,6 +66,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   const [editingItem, setEditingItem] = useState<PlanningItem | null>(null);
   const [editingSlot, setEditingSlot] = useState<string | null>(null);
   const [inlineDraft, setInlineDraft] = useState<ItemDraft | null>(null);
+  const [visibleDate, setVisibleDate] = useState(today);
   const scroll = useRef<ScrollView>(null);
   const editorView = useRef<View>(null);
   const scrollOffset = useRef(0);
@@ -78,6 +79,11 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   const periods = useMemo(() => buildTimelinePeriods(zoom, today), [today, zoom]);
   const firstDate = periods[0].start;
   const lastDate = periods[periods.length - 1].end;
+  const stickyGoals = useMemo(
+    () => zoom === 'year' ? [] : snapshot.goals.filter((goal) => goal.startsOn <= visibleDate && goal.targetDate >= visibleDate),
+    [snapshot.goals, visibleDate, zoom],
+  );
+  const timelineTopInset = TIMELINE_TOP_INSET + (stickyGoals.length > 0 ? 42 : 0);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,15 +183,25 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
       const position = [...periodPositions.current.values()].find((candidate) => focusDate.current >= candidate.start && focusDate.current <= candidate.end);
       if (!position) return;
       alignedZoom.current = zoom;
-      scroll.current?.scrollTo({ y: Math.max(0, yForDate(position, focusDate.current) - TIMELINE_TOP_INSET), animated: false });
+      scroll.current?.scrollTo({ y: Math.max(0, yForDate(position, focusDate.current) - timelineTopInset), animated: false });
     }, 40);
     return () => clearTimeout(timer);
-  }, [loading, snapshot, zoom]);
+  }, [loading, snapshot, timelineTopInset, zoom]);
 
   const goHome = useCallback(() => {
     focusDate.current = today;
-    if (currentPeriod.current) scroll.current?.scrollTo({ y: Math.max(0, yForDate(currentPeriod.current, today) - TIMELINE_TOP_INSET), animated: true });
-  }, [today]);
+    setVisibleDate(today);
+    if (currentPeriod.current) scroll.current?.scrollTo({ y: Math.max(0, yForDate(currentPeriod.current, today) - timelineTopInset), animated: true });
+  }, [timelineTopInset, today]);
+
+  const trackVisibleDate = useCallback((offset: number) => {
+    scrollOffset.current = offset;
+    const viewportY = offset + timelineTopInset;
+    const position = [...periodPositions.current.values()].find((candidate) => viewportY >= candidate.y && viewportY <= candidate.y + candidate.height);
+    if (!position) return;
+    const nextDate = dateAtPosition(position, viewportY);
+    setVisibleDate((current) => current === nextDate ? current : nextDate);
+  }, [timelineTopInset]);
 
   const pinch = Gesture.Pinch()
     .runOnJS(true)
@@ -211,7 +227,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
     <View style={styles.screen}>
       <GestureDetector gesture={timelineGesture}>
         <Animated.View style={[styles.timeline, { transform: [{ scale: pinchScale }] }]}>
-          <ScrollView directionalLockEnabled onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} ref={scroll} contentContainerStyle={styles.content} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
+          <ScrollView directionalLockEnabled onScroll={(event) => trackVisibleDate(event.nativeEvent.contentOffset.y)} ref={scroll} contentContainerStyle={[styles.content, stickyGoals.length > 0 && styles.contentWithStickyGoal]} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
             {periods.map((period) => (
               <Period
                 colors={colors}
@@ -237,6 +253,14 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
           </ScrollView>
         </Animated.View>
       </GestureDetector>
+
+      {stickyGoals.length > 0 && (
+        <View pointerEvents="box-none" style={styles.stickyGoalLayer}>
+          <ScrollView contentContainerStyle={styles.stickyGoalRail} horizontal showsHorizontalScrollIndicator={false}>
+            {stickyGoals.map((goal) => <StickyGoalPill colors={colors} goal={goal} key={goal.id} onToggle={() => void onToggleGoal(goal)} />)}
+          </ScrollView>
+        </View>
+      )}
 
       <View style={styles.dockGroup}>
         <View style={styles.homeShell}>
@@ -294,6 +318,7 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
 }) {
   const visibleItems = items.filter((item) => overlaps(item, period) && isVisibleAtZoom(item, zoom));
   const visibleGoals = goals.filter((goal) => isGoalVisibleInPeriod(goal, period));
+  const startingGoals = goals.filter((goal) => goal.startsOn >= period.start && goal.startsOn <= period.end);
   const presentStyle = period.current ? { borderTopWidth: 0 } : { borderTopColor: colors.separator };
   const shared = { colors, editingItem, editingSlot, inlineEditor, onEditItem };
 
@@ -311,7 +336,7 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
       ) : zoom === 'quarter' ? (
         <QuarterPage {...shared} goals={visibleGoals} items={visibleItems} loading={loading} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} onZoomToDate={onZoomToDate} period={period} today={today} />
       ) : (
-        <YearPage {...shared} goals={visibleGoals} items={visibleItems} loading={loading} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} onZoomToDate={onZoomToDate} period={period} today={today} />
+        <YearPage {...shared} goals={startingGoals} items={visibleItems} loading={loading} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} onZoomToDate={onZoomToDate} period={period} today={today} />
       )}
     </View>
   );
@@ -345,8 +370,6 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
         <Text style={[styles.dayTitle, { color: colors.text }]}>{period.title}</Text>
         {period.subtitle && <Text style={[styles.daySubtitle, { color: colors.secondary }]}>{period.subtitle}</Text>}
       </Pressable>
-
-      <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
 
       <TimelineSectionHeader colors={colors} onPress={() => onOpenDay(date)} title="Events" />
       {events.length ? events.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}><TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <Text style={[styles.openRow, { color: colors.tertiary }]}>No events planned</Text>}
@@ -394,7 +417,6 @@ function WeekPage({ period, items, goals, today, colors, editingItem, editingSlo
         <Text style={[styles.weekTitle, { color: colors.text }]}>Week {isoWeekNumber(period.start)}</Text>
         <Text style={[styles.periodSubtitle, { color: colors.secondary }]}>{period.title}</Text>
       </View>
-      <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
       {!days.length && <Text style={[styles.emptyWeek, { color: colors.tertiary }]}>No events or tasks yet, let’s get planning :)</Text>}
       {days.map(({ date, items: dayItems }) => {
         const parsed = dateFromISO(date);
@@ -429,11 +451,10 @@ interface EditorialPeriodProps {
 }
 
 function MonthPage({ period, items, goals, loading, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onToggleGoal, onZoomToDate }: EditorialPeriodProps) {
-  const events = items.filter((item) => item.kind === 'event' && item.anchorStart !== null && (
-    (item.anchorStart >= period.start && item.anchorStart <= period.end)
-    || (period.current && item.anchorStart <= today && (item.anchorEnd ?? item.anchorStart) >= today)
-  )).sort(compareAnchors);
+  const events = items.filter((item) => item.kind === 'event' && overlaps(item, period)).sort(compareAnchors);
   const trips = events.filter(isTrip).length;
+  const nestedEventIds = new Set(events.filter((event) => !isTrip(event) && events.some((trip) => isTrip(trip) && trip.anchorStart !== null && trip.anchorEnd !== null && event.anchorStart !== null && event.anchorStart >= trip.anchorStart && event.anchorStart <= trip.anchorEnd)).map((event) => event.id));
+  const topLevelEvents = events.filter((event) => !nestedEventIds.has(event.id));
   return (
     <>
       {period.eyebrow && <CurrentMarker colors={colors} label={period.eyebrow} />}
@@ -447,12 +468,14 @@ function MonthPage({ period, items, goals, loading, today, colors, editingItem, 
         <Text style={[styles.periodSummary, { color: colors.secondary }]}>{summaryLabel(events.length - trips, 'event')} · {summaryLabel(trips, 'trip')} · {summaryLabel(goals.length, 'goal')}</Text>
       </View>
 
-      <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
-
       {!loading && !events.length && !goals.length ? <Text style={[styles.editorialEmpty, { color: colors.tertiary }]}>An open month. Let’s make something happen.</Text> : (
         <View style={styles.monthSpine}>
-          {events.map((event) => {
+          {topLevelEvents.map((event) => {
             const slot = `${period.id}-event-${event.id}`;
+            if (isTrip(event)) {
+              const tripEvents = events.filter((candidate) => !isTrip(candidate) && candidate.anchorStart !== null && event.anchorStart !== null && event.anchorEnd !== null && candidate.anchorStart >= event.anchorStart && candidate.anchorStart <= event.anchorEnd);
+              return <MonthTripGroup colors={colors} editingItem={editingItem} editingSlot={editingSlot} event={event} events={tripEvents} inlineEditor={inlineEditor} key={event.id} onEditItem={onEditItem} period={period} today={today} />;
+            }
             return <View key={event.id}><EditorialEventRow colors={colors} event={event} onPress={() => onEditItem(event, slot)} period={period} today={today} />{editingItem?.id === event.id && editingSlot === slot && <View style={styles.spineEditor}>{inlineEditor}</View>}</View>;
           })}
         </View>
@@ -477,7 +500,6 @@ function QuarterPage({ period, items, goals, loading, today, colors, editingItem
         <Text style={[styles.periodTitle, { color: colors.text }]}>{period.title} <Text style={[styles.periodSubtitle, { color: colors.secondary }]}>{period.subtitle}</Text></Text>
         <Text style={[styles.periodSummary, { color: colors.secondary }]}>{summaryLabel(events.length, 'major event')} · {summaryLabel(goals.length, 'goal')}</Text>
       </View>
-      <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
       {!loading && !events.length && !goals.length && <Text style={[styles.editorialEmpty, { color: colors.tertiary }]}>A clear quarter. Plenty of room to plan.</Text>}
       <View style={styles.quarterMonths}>
         {months.map((month) => (
@@ -529,9 +551,9 @@ function YearPage({ period, items, goals, loading, today, colors, editingItem, e
                 return (
                   <View key={event.id}>
                     <Pressable onPress={() => onEditItem(event, slot)} style={styles.yearMoment}>
-                      <View style={[isTrip(event) ? styles.yearTripMark : styles.yearEventDot, { backgroundColor: isTrip(event) ? colors.amber : eventAccent(event, colors) }]} />
+                      <View style={[isTrip(event) ? styles.yearTripMark : styles.yearEventDot, { backgroundColor: eventAccent(event, colors) }]} />
                       <Text numberOfLines={1} style={[styles.yearEventText, { color: pastMonth ? colors.secondary : colors.text }]}>{event.title}</Text>
-                      <Text style={[styles.yearMomentDate, { color: isTrip(event) ? colors.amber : colors.secondary }]}>{isTrip(event) ? eventRange(event) : formatShortDate(event.anchorStart)}</Text>
+                      <Text style={[styles.yearMomentDate, { color: eventPhase(event) === 'past' ? colors.tertiary : isTrip(event) ? colors.amber : colors.secondary }]}>{isTrip(event) ? eventRange(event) : formatShortDate(event.anchorStart)}</Text>
                     </Pressable>
                     {editingItem?.id === event.id && editingSlot === slot && <View style={styles.yearInlineEditor}>{inlineEditor}</View>}
                   </View>
@@ -574,6 +596,42 @@ function GoalBlurb({ goal, colors, onToggle }: { goal: Goal; colors: AppColors; 
   );
 }
 
+function StickyGoalPill({ goal, colors, onToggle }: { goal: Goal; colors: AppColors; onToggle: () => void }) {
+  return (
+    <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} achieved`} onPress={onToggle} style={[styles.stickyGoalPill, { backgroundColor: colors.amberSoft }]}>
+      <Text style={[styles.stickyGoalStar, { color: colors.amber }]}>{goal.completed ? '★' : '☆'}</Text>
+      <Text numberOfLines={1} style={[styles.stickyGoalText, { color: colors.text }, goal.completed && styles.goalCompleted]}>{goal.title}</Text>
+      <Text style={[styles.stickyGoalDate, { color: colors.amber }]}>{formatShortDate(goal.targetDate)}</Text>
+    </Pressable>
+  );
+}
+
+function MonthTripGroup({ event, events, period, today, colors, editingItem, editingSlot, inlineEditor, onEditItem }: {
+  event: PlanningItem;
+  events: PlanningItem[];
+  period: TimelinePeriod;
+  today: string;
+  colors: AppColors;
+  editingItem: PlanningItem | null;
+  editingSlot: string | null;
+  inlineEditor: ReactNode;
+  onEditItem: (item: PlanningItem, slot: string) => void;
+}) {
+  const tripPast = eventPhase(event) === 'past';
+  const tripSlot = `${period.id}-event-${event.id}`;
+  return (
+    <View style={styles.monthTripGroup}>
+      <View style={[styles.monthTripContinuousRail, { backgroundColor: tripPast ? colors.tertiary : colors.amber }]} />
+      <EditorialEventRow colors={colors} event={event} onPress={() => onEditItem(event, tripSlot)} period={period} today={today} />
+      {editingItem?.id === event.id && editingSlot === tripSlot && <View style={styles.spineEditor}>{inlineEditor}</View>}
+      {events.map((child) => {
+        const slot = `${period.id}-trip-${event.id}-${child.id}`;
+        return <View key={child.id}><EditorialEventRow colors={colors} event={child} onPress={() => onEditItem(child, slot)} period={period} today={today} />{editingItem?.id === child.id && editingSlot === slot && <View style={styles.spineEditor}>{inlineEditor}</View>}</View>;
+      })}
+    </View>
+  );
+}
+
 function EditorialEventRow({ event, period, today, colors, onPress }: { event: PlanningItem; period: TimelinePeriod; today: string; colors: AppColors; onPress: () => void }) {
   const start = event.anchorStart ?? period.start;
   const date = dateFromISO(start < period.start ? period.start : start);
@@ -588,12 +646,12 @@ function EditorialEventRow({ event, period, today, colors, onPress }: { event: P
         <Text style={[styles.gutterDay, { color: subdued ? colors.tertiary : colors.text }]}>{date.getDate()}</Text>
       </View>
       <View style={styles.spineRail}>
-        <View style={[trip ? styles.tripRail : milestone ? styles.milestoneDot : styles.spineDot, { backgroundColor: trip || milestone ? colors.amber : eventAccent(event, colors) }]} />
+        <View style={[trip ? styles.tripRail : milestone ? styles.milestoneDot : styles.spineDot, { backgroundColor: subdued ? colors.tertiary : trip || milestone ? colors.amber : eventAccent(event, colors) }]} />
       </View>
-      <View style={[styles.editorialEventBody, trip && { backgroundColor: colors.amberSoft }]}>
+      <View style={styles.editorialEventBody}>
         <View style={styles.editorialEventHeading}>
           <Text numberOfLines={2} style={[styles.editorialEventTitle, { color: subdued ? colors.secondary : colors.text }]}>{event.title}</Text>
-          <Text style={[styles.editorialEventMeta, { color: trip ? colors.amber : colors.secondary }]}>{trip ? eventRange(event) : event.startTime || (milestone ? 'Milestone' : 'All day')}</Text>
+          <Text style={[styles.editorialEventMeta, { color: subdued ? colors.tertiary : trip ? colors.amber : colors.secondary }]}>{trip ? eventRange(event) : event.startTime || (milestone ? 'Milestone' : 'All day')}</Text>
         </View>
         {(event.location || event.notes) && <Text numberOfLines={1} style={[styles.editorialEventNote, { color: colors.secondary }]}>{[event.location, event.notes].filter(Boolean).join(' · ')}</Text>}
       </View>
@@ -605,7 +663,7 @@ function EditorialCompactEvent({ event, colors, onPress }: { event: PlanningItem
   const trip = isTrip(event);
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.editorialCompact, pressed && { opacity: 0.58 }]}>
-      <View style={[trip ? styles.compactTripMark : styles.compactEventMark, { backgroundColor: trip ? colors.amber : eventAccent(event, colors) }]} />
+      <View style={[trip ? styles.compactTripMark : styles.compactEventMark, { backgroundColor: eventPhase(event) === 'past' ? colors.tertiary : trip ? colors.amber : eventAccent(event, colors) }]} />
       <View style={styles.editorialCompactCopy}>
         <Text numberOfLines={1} style={[styles.editorialCompactTitle, { color: eventPhase(event) === 'past' ? colors.secondary : colors.text }]}>{event.title}</Text>
         <Text style={[styles.editorialCompactMeta, { color: colors.secondary }]}>{trip ? eventRange(event) : formatShortDate(event.anchorStart)}</Text>
@@ -662,6 +720,13 @@ function overlaps(item: PlanningItem, period: TimelinePeriod) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 }, timeline: { flex: 1 }, content: { paddingHorizontal: 18, paddingBottom: 170 },
+  contentWithStickyGoal: { paddingTop: 42 },
+  stickyGoalLayer: { position: 'absolute', zIndex: 12, top: 4, left: 0, right: 0, height: 38 },
+  stickyGoalRail: { paddingHorizontal: 18, gap: 7 },
+  stickyGoalPill: { height: 34, maxWidth: 300, borderRadius: 17, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 6, shadowColor: '#000000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  stickyGoalStar: { fontSize: 15, lineHeight: 17, fontWeight: '700' },
+  stickyGoalText: { flexShrink: 1, fontSize: 12, fontWeight: '600' },
+  stickyGoalDate: { fontSize: 9, fontWeight: '700' },
   period: { paddingTop: 18, paddingBottom: 24, borderTopWidth: 1 },
   periodTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   periodTitle: { fontSize: 29, lineHeight: 34, fontWeight: '700', letterSpacing: -0.8 },
@@ -680,15 +745,17 @@ const styles = StyleSheet.create({
   editorialHeader: { marginBottom: 12 },
   periodSummary: { fontSize: 12, fontWeight: '600', marginTop: 4 },
   editorialEmpty: { fontSize: 15, lineHeight: 21, paddingVertical: 18 },
-  goalSection: { marginBottom: 4 },
-  goalBlurb: { minHeight: 62, borderRadius: 17, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 9, marginBottom: 9 },
-  goalStar: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', marginRight: 9 },
-  goalStarIcon: { fontSize: 24, lineHeight: 26, fontWeight: '600' },
+  goalSection: { marginBottom: 2 },
+  goalBlurb: { minHeight: 42, borderRadius: 13, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 9, paddingVertical: 5, marginBottom: 5 },
+  goalStar: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center', marginRight: 6 },
+  goalStarIcon: { fontSize: 18, lineHeight: 20, fontWeight: '600' },
   goalCopy: { flex: 1 },
-  goalScope: { fontSize: 9, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 2 },
-  goalTitle: { fontSize: 16, lineHeight: 20, fontWeight: '600' },
+  goalScope: { fontSize: 7, fontWeight: '800', letterSpacing: 0.65, textTransform: 'uppercase', marginBottom: 1 },
+  goalTitle: { fontSize: 13, lineHeight: 16, fontWeight: '600' },
   goalCompleted: { textDecorationLine: 'line-through', opacity: 0.62 },
   monthSpine: { paddingTop: 2 },
+  monthTripGroup: { position: 'relative' },
+  monthTripContinuousRail: { position: 'absolute', zIndex: -1, left: 55, top: 14, bottom: 9, width: 3, borderRadius: 2 },
   editorialEvent: { minHeight: 62, flexDirection: 'row', alignItems: 'stretch' },
   dateGutter: { width: 48, alignItems: 'flex-end', paddingRight: 8, paddingTop: 8 },
   gutterWeekday: { fontSize: 8, fontWeight: '800', letterSpacing: 0.45 },
