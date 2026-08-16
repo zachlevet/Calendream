@@ -38,6 +38,7 @@ import {
   localISO,
 } from '@/shared/date';
 import { eventPhase, timeMinutes } from '@/shared/time';
+import { orderedWeekdayLabels, weekdayOffset } from '@/shared/week';
 import { openItemInMaps } from '@/services/maps';
 import { palette, type AppColors } from '@/theme/colors';
 import CalendreamMapKit from '../../../modules/calendream-mapkit/src/CalendreamMapKitModule';
@@ -1271,7 +1272,7 @@ function MiniCalendar({ colors, selected, today, visibleMonth, onChangeMonth, on
   onSelect: (date: string) => void;
 }) {
   const quickDates = Array.from({ length: 5 }, (_, index) => addLocalDays(today, index + 1));
-  const firstWeekday = visibleMonth.getDay();
+  const firstWeekday = weekdayOffset(visibleMonth.getDay());
   const daysInMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0).getDate();
   const monthTitle = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(visibleMonth);
   const cells = Array.from({ length: firstWeekday + daysInMonth }, (_, index) => index < firstWeekday ? null : index - firstWeekday + 1);
@@ -1299,7 +1300,7 @@ function MiniCalendar({ colors, selected, today, visibleMonth, onChangeMonth, on
         </View>
       </View>
       <View style={styles.calendarGrid}>
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((label, index) => <Text key={`${label}-${index}`} style={[styles.weekdayLabel, { color: colors.tertiary }]}>{label}</Text>)}
+        {orderedWeekdayLabels().map((label, index) => <Text key={`${label}-${index}`} style={[styles.weekdayLabel, { color: colors.tertiary }]}>{label}</Text>)}
         {cells.map((day, index) => {
           if (!day) return <View key={`blank-${index}`} style={styles.calendarCell} />;
           const isoDate = localISO(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), day));

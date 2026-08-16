@@ -31,6 +31,12 @@ test('week labels use ISO week numbers', () => {
   assert.equal(isoWeekNumber('2027-01-01'), 53);
 });
 
+test('week periods begin on Monday', () => {
+  const current = buildTimelinePeriods('week', '2026-08-15').find((period) => period.current);
+  assert.equal(current?.start, '2026-08-10');
+  assert.equal(current?.end, '2026-08-16');
+});
+
 test('altitude progressively removes detail while zooming out', () => {
   assert.equal(timelineAltitude('today'), 0);
   assert.equal(timelineAltitude('week'), 0);

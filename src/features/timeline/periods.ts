@@ -1,5 +1,6 @@
 import type { PlanningItem, TimelineZoom } from '../../models/planning.ts';
 import { addLocalDays, dateFromISO, localISO } from '../../shared/date.ts';
+import { weekdayOffset } from '../../shared/week.ts';
 
 export interface TimelinePeriod {
   id: string;
@@ -61,7 +62,7 @@ export function buildTimelinePeriods(zoom: TimelineZoom, today: string): Timelin
   }
 
   if (zoom === 'week') {
-    const mondayOffset = (current.getDay() + 6) % 7;
+    const mondayOffset = weekdayOffset(current.getDay());
     const firstMonday = addLocalDays(today, -mondayOffset);
     return Array.from({ length: 33 }, (_, index) => {
       const offset = index - 12;
