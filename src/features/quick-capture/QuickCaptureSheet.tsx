@@ -39,6 +39,7 @@ export function QuickCaptureSheet({ colors, date, visible, onClose, onSave }: Qu
       date: parsed.date,
       time: kind === 'task' ? undefined : parsed.time,
       altitude: kind === 'trip' ? 4 : kind === 'event' ? 1 : 0,
+      eventType: kind === 'trip' ? 'trip' : 'event',
     });
     setSaving(false);
     close();

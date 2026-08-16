@@ -26,7 +26,7 @@ import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'ex
 
 import { useTodayData, type ItemDraft } from '@/hooks/use-today';
 import { useLocalToday } from '@/hooks/use-local-today';
-import type { LocationPlace, PlanningItem, SearchResult } from '@/models/planning';
+import type { Goal, LocationPlace, PlanningItem, SearchResult } from '@/models/planning';
 import {
   addLocalDays,
   dateFromISO,
@@ -205,6 +205,10 @@ export function TodayScreen() {
       kind: item.kind,
       title: item.title,
       date: item.anchorStart ?? selectedDate,
+      endDate: item.anchorEnd ?? undefined,
+      precision: item.precision,
+      altitude: item.altitude,
+      eventType: item.eventType,
       time: item.startTime,
       notes: item.notes,
       location: item.location,
@@ -372,6 +376,10 @@ export function TodayScreen() {
             </ScrollView>
           )}
 
+          {data.goals.map((goal) => (
+            <TodayGoalReminder colors={colors} goal={goal} key={goal.id} onToggle={() => void data.toggleGoal(goal)} />
+          ))}
+
           <View style={[styles.upNextCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.cardEyebrow, { color: colors.secondary }]}>UP NEXT</Text>
             {nextEvent ? (
@@ -492,8 +500,8 @@ export function TodayScreen() {
             await data.saveItem(draft);
             setTimelineRevision((revision) => revision + 1);
           }}
-          onToggleTask={async (item) => {
-            await data.toggleTask(item);
+          onToggleGoal={async (goal) => {
+            await data.toggleGoal(goal);
             setTimelineRevision((revision) => revision + 1);
           }}
           onOpenDay={(date) => {
@@ -800,6 +808,21 @@ function InlineTimePicker({ value, colors, onChange }: {
   );
 }
 
+function TodayGoalReminder({ goal, colors, onToggle }: { goal: Goal; colors: AppColors; onToggle: () => void }) {
+  return (
+    <View style={[styles.todayGoal, { backgroundColor: colors.amberSoft }]}>
+      <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} achieved`} hitSlop={8} onPress={onToggle} style={styles.todayGoalStar}>
+        <Text style={[styles.todayGoalStarIcon, { color: colors.amber }]}>{goal.completed ? '★' : '☆'}</Text>
+      </Pressable>
+      <View style={styles.todayGoalCopy}>
+        <Text style={[styles.todayGoalLabel, { color: colors.amber }]}>{goal.scope.toUpperCase()} GOAL</Text>
+        <Text numberOfLines={1} style={[styles.todayGoalTitle, { color: colors.text }, goal.completed && styles.completed]}>{goal.title}</Text>
+      </View>
+      <Text style={[styles.todayGoalDate, { color: colors.secondary }]}>{formatShortDate(goal.targetDate)}</Text>
+    </View>
+  );
+}
+
 function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange, onReveal, onSave }: {
   kind: 'task' | 'event';
   today: string;
@@ -822,13 +845,13 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange,
 
   useEffect(() => {
     if (!onDraftChange) return;
-    onDraftChange({ id: initial?.id, kind, title, date: today, time, notes, location, locationPlace });
-  }, [initial?.id, kind, location, locationPlace, notes, onDraftChange, time, title, today]);
+    onDraftChange({ id: initial?.id, kind, title, date: today, endDate: initial?.anchorEnd ?? undefined, precision: initial?.precision, altitude: initial?.altitude, eventType: initial?.eventType, time, notes, location, locationPlace });
+  }, [initial?.altitude, initial?.anchorEnd, initial?.eventType, initial?.id, initial?.precision, kind, location, locationPlace, notes, onDraftChange, time, title, today]);
 
   async function submit() {
     if (!title.trim() || saving) return;
     setSaving(true);
-    await onSave({ id: initial?.id, kind, title, date: today, time, notes, location, locationPlace });
+    await onSave({ id: initial?.id, kind, title, date: today, endDate: initial?.anchorEnd ?? undefined, precision: initial?.precision, altitude: initial?.altitude, eventType: initial?.eventType, time, notes, location, locationPlace });
   }
 
   function focusComposer() {
@@ -932,7 +955,7 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
   async function submit() {
     if (!valid || saving) return;
     setSaving(true);
-    await onSave({ id: item?.id, kind, title, date, time, notes, location, locationPlace });
+    await onSave({ id: item?.id, kind, title, date, endDate: item?.anchorEnd ?? undefined, precision: item?.precision, altitude: item?.altitude, eventType: item?.eventType, time, notes, location, locationPlace });
   }
 
   function confirmDelete() {
@@ -1341,6 +1364,13 @@ const styles = StyleSheet.create({
   upcomingList: { paddingHorizontal: 18, gap: 7 },
   upcomingPill: { minHeight: 28, borderRadius: 14, paddingHorizontal: 11, justifyContent: 'center', maxWidth: 260 },
   upcomingText: { fontSize: 13, fontWeight: '600' },
+  todayGoal: { minHeight: 54, borderRadius: 16, paddingHorizontal: 11, paddingVertical: 8, marginBottom: 9, flexDirection: 'row', alignItems: 'center' },
+  todayGoalStar: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', marginRight: 7 },
+  todayGoalStarIcon: { fontSize: 21, lineHeight: 23, fontWeight: '600' },
+  todayGoalCopy: { flex: 1 },
+  todayGoalLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
+  todayGoalTitle: { fontSize: 14, lineHeight: 18, fontWeight: '600' },
+  todayGoalDate: { fontSize: 10, fontWeight: '600', marginLeft: 8 },
   upNextCard: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10 },
   cardEyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
   upNextTitle: { fontSize: 19, fontWeight: '700', marginTop: 4, letterSpacing: -0.3 },

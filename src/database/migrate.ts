@@ -48,6 +48,21 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS goals (
+      id TEXT PRIMARY KEY NOT NULL,
+      title TEXT NOT NULL,
+      scope TEXT NOT NULL CHECK (scope IN ('month', 'quarter', 'year')),
+      starts_on TEXT NOT NULL,
+      target_date TEXT NOT NULL,
+      notes TEXT,
+      linked_habit_id TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      FOREIGN KEY (linked_habit_id) REFERENCES habits(id) ON DELETE SET NULL
+    );
+
     CREATE TABLE IF NOT EXISTS app_meta (
       key TEXT PRIMARY KEY NOT NULL,
       value TEXT NOT NULL,
@@ -56,6 +71,7 @@ export async function migrateDatabase(db: SQLiteDatabase) {
 
     CREATE INDEX IF NOT EXISTS items_anchor_start_idx ON items(anchor_start);
     CREATE INDEX IF NOT EXISTS items_updated_at_idx ON items(updated_at);
+    CREATE INDEX IF NOT EXISTS goals_active_range_idx ON goals(starts_on, target_date);
   `);
 
   const itemColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(items)');
@@ -70,6 +86,9 @@ export async function migrateDatabase(db: SQLiteDatabase) {
   }
   if (!itemColumns.some((column) => column.name === 'location_longitude')) {
     await db.execAsync('ALTER TABLE items ADD COLUMN location_longitude REAL');
+  }
+  if (!itemColumns.some((column) => column.name === 'event_type')) {
+    await db.execAsync("ALTER TABLE items ADD COLUMN event_type TEXT NOT NULL DEFAULT 'event'");
   }
 
   const sampleMarker = await db.getFirstAsync<{ value: string }>(
@@ -206,6 +225,68 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       }
       await db.runAsync(
         "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_editorial_v2', 'seeded', ?)",
+        createdAt,
+      );
+    });
+  }
+
+  const goalModelMarker = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_meta WHERE key = 'goal_model_v1'",
+  );
+  if (!goalModelMarker) {
+    const now = new Date();
+    const createdAt = now.toISOString();
+    const today = localDate(now);
+    const year = now.getFullYear();
+    const ironmanTarget = localDate(new Date(year, now.getMonth() + 2, 30));
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `INSERT OR IGNORE INTO goals
+          (id, title, scope, starts_on, target_date, notes, created_at, updated_at)
+         SELECT 'goal-' || id, title, precision, anchor_start, COALESCE(anchor_end, anchor_start),
+                notes, created_at, updated_at
+         FROM items
+         WHERE deleted_at IS NULL AND kind = 'task'
+           AND precision IN ('month', 'quarter', 'year')
+           AND anchor_start IS NOT NULL`,
+      );
+      await db.runAsync(
+        `UPDATE items SET deleted_at = ?, updated_at = ?
+         WHERE deleted_at IS NULL AND kind = 'task'
+           AND precision IN ('month', 'quarter', 'year')`,
+        createdAt,
+        createdAt,
+      );
+      await db.runAsync(
+        `INSERT OR IGNORE INTO goals
+          (id, title, scope, starts_on, target_date, notes, created_at, updated_at)
+         VALUES ('sample-ironman-goal', 'Race my first Ironman', 'year', ?, ?,
+                 'Build steadily toward race day.', ?, ?)`,
+        today,
+        ironmanTarget,
+        createdAt,
+        createdAt,
+      );
+      await db.runAsync(
+        `INSERT OR IGNORE INTO items
+          (id, kind, title, anchor_start, anchor_end, precision, altitude,
+           event_type, notes, sort_order, created_at, updated_at)
+         VALUES ('sample-ironman-event', 'event', 'Ironman race day', ?, ?, 'day', 4,
+                 'event', 'The finish line for this year’s goal.', 0, ?, ?)`,
+        ironmanTarget,
+        ironmanTarget,
+        createdAt,
+        createdAt,
+      );
+      await db.runAsync(
+        `UPDATE items SET event_type = 'trip'
+         WHERE kind = 'event' AND (
+           anchor_end > anchor_start OR lower(title) LIKE '%trip%'
+           OR lower(title) LIKE '%travel%' OR lower(title) LIKE '%retreat%'
+         )`,
+      );
+      await db.runAsync(
+        "INSERT INTO app_meta (key, value, updated_at) VALUES ('goal_model_v1', 'migrated', ?)",
         createdAt,
       );
     });

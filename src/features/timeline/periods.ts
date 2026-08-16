@@ -1,4 +1,4 @@
-import type { PlanningItem, TimelineZoom } from '../../models/planning.ts';
+import type { Goal, PlanningItem, TimelineZoom } from '../../models/planning.ts';
 import { addLocalDays, dateFromISO, localISO } from '../../shared/date.ts';
 import { weekdayOffset } from '../../shared/week.ts';
 
@@ -33,15 +33,17 @@ export function isVisibleAtZoom(item: PlanningItem, zoom: TimelineZoom) {
   if (zoom === 'today' || zoom === 'week') return true;
 
   if (zoom === 'month') {
-    return item.kind === 'event' || (item.kind === 'task' && item.precision === 'month');
+    return item.kind === 'event';
   }
   if (zoom === 'quarter') {
-    return (item.kind === 'event' && item.altitude >= timelineAltitude(zoom))
-      || (item.kind === 'task' && item.precision === 'quarter');
+    return item.kind === 'event' && item.altitude >= timelineAltitude(zoom);
   }
 
-  return (item.kind === 'event' && item.altitude >= timelineAltitude(zoom))
-    || (item.kind === 'task' && item.precision === 'year');
+  return item.kind === 'event' && item.altitude >= timelineAltitude(zoom);
+}
+
+export function isGoalVisibleInPeriod(goal: Goal, period: Pick<TimelinePeriod, 'start' | 'end'>) {
+  return goal.startsOn <= period.end && goal.targetDate >= period.start;
 }
 
 export function buildTimelinePeriods(zoom: TimelineZoom, today: string): TimelinePeriod[] {

@@ -1,6 +1,8 @@
 export type ItemKind = 'task' | 'event';
+export type EventType = 'event' | 'trip';
 export type TimePrecision = 'time' | 'day' | 'month' | 'quarter' | 'year' | 'someday';
 export type TimelineZoom = 'today' | 'week' | 'month' | 'quarter' | 'year';
+export type GoalScope = 'month' | 'quarter' | 'year';
 
 export interface LocationPlace {
   name: string;
@@ -19,6 +21,9 @@ export interface ItemDraft {
   location?: string;
   locationPlace?: LocationPlace;
   altitude?: PlanningItem['altitude'];
+  endDate?: string;
+  precision?: TimePrecision;
+  eventType?: EventType;
 }
 
 export interface PlanningItem {
@@ -36,6 +41,18 @@ export interface PlanningItem {
   location?: string;
   locationPlace?: LocationPlace;
   sortOrder?: number;
+  eventType?: EventType;
+}
+
+export interface Goal {
+  id: string;
+  title: string;
+  scope: GoalScope;
+  startsOn: string;
+  targetDate: string;
+  completed?: boolean;
+  notes?: string;
+  linkedHabitId?: string;
 }
 
 export interface SearchResult {
@@ -48,5 +65,6 @@ export interface SearchResult {
 
 export interface TimelineSnapshot {
   items: PlanningItem[];
+  goals: Goal[];
   reflections: Record<string, string>;
 }

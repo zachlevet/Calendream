@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { PlanningItem } from '../src/models/planning.ts';
-import { buildTimelinePeriods, isoWeekNumber, isVisibleAtZoom, timelineAltitude } from '../src/features/timeline/periods.ts';
+import type { Goal, PlanningItem } from '../src/models/planning.ts';
+import { buildTimelinePeriods, isoWeekNumber, isGoalVisibleInPeriod, isVisibleAtZoom, timelineAltitude } from '../src/features/timeline/periods.ts';
 
 test('timeline surrounds today with past and future days', () => {
   const periods = buildTimelinePeriods('today', '2026-08-15');
@@ -61,7 +61,7 @@ test('ordinary tasks disappear at month scale even if their altitude is raised',
   assert.equal(isVisibleAtZoom(laundry, 'quarter'), false);
 });
 
-test('trips survive broad levels while goals appear only at their own scope', () => {
+test('major trips survive broad timeline levels', () => {
   const trip: PlanningItem = {
     id: 'trip',
     kind: 'event',
@@ -71,26 +71,20 @@ test('trips survive broad levels while goals appear only at their own scope', ()
     precision: 'day',
     altitude: 4,
   };
-  const goal: PlanningItem = {
-    id: 'goal',
-    kind: 'task',
-    title: 'Launch Calendream',
-    anchorStart: '2026-07-01',
-    anchorEnd: '2026-09-30',
-    precision: 'quarter',
-    altitude: 4,
-  };
-
   assert.equal(isVisibleAtZoom(trip, 'month'), true);
   assert.equal(isVisibleAtZoom(trip, 'year'), true);
-  assert.equal(isVisibleAtZoom(goal, 'month'), false);
-  assert.equal(isVisibleAtZoom(goal, 'quarter'), true);
-  assert.equal(isVisibleAtZoom(goal, 'year'), false);
 });
 
-test('month shows all events but never ordinary tasks', () => {
+test('month shows all events but no tasks', () => {
   const dinner: PlanningItem = { id: 'dinner', kind: 'event', title: 'Dinner', anchorStart: '2026-08-20', anchorEnd: '2026-08-20', precision: 'time', altitude: 1 };
   const monthlyGoal: PlanningItem = { id: 'monthly-goal', kind: 'task', title: 'Run 40 miles', anchorStart: '2026-08-01', anchorEnd: '2026-08-31', precision: 'month', altitude: 2 };
   assert.equal(isVisibleAtZoom(dinner, 'month'), true);
-  assert.equal(isVisibleAtZoom(monthlyGoal, 'month'), true);
+  assert.equal(isVisibleAtZoom(monthlyGoal, 'month'), false);
+});
+
+test('a year goal remains visible in nested periods until its target date', () => {
+  const goal: Goal = { id: 'ironman', title: 'Race my first Ironman', scope: 'year', startsOn: '2026-01-01', targetDate: '2026-11-15' };
+  assert.equal(isGoalVisibleInPeriod(goal, { start: '2026-08-01', end: '2026-08-31' }), true);
+  assert.equal(isGoalVisibleInPeriod(goal, { start: '2026-11-09', end: '2026-11-15' }), true);
+  assert.equal(isGoalVisibleInPeriod(goal, { start: '2026-11-16', end: '2026-11-22' }), false);
 });
