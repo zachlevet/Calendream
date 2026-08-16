@@ -31,7 +31,6 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onEditI
   const [snapshot, setSnapshot] = useState<TimelineSnapshot>({ items: [], reflections: {} });
   const [loading, setLoading] = useState(true);
   const [pinchScale] = useState(() => new Animated.Value(1));
-  const [dockScale] = useState(() => new Animated.Value(1));
   const scroll = useRef<ScrollView>(null);
   const alignedZoom = useRef<TimelineZoom | null>(null);
   const periods = useMemo(() => buildTimelinePeriods(zoom, today), [today, zoom]);
@@ -84,14 +83,8 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onEditI
   const timelineGesture = Gesture.Simultaneous(Gesture.Native(), pinch);
 
   const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
-  const fallbackGlass = colors.background === '#000000' ? 'rgba(34,34,38,0.72)' : 'rgba(248,248,250,0.72)';
-  const animateDock = (toValue: number) => Animated.spring(dockScale, {
-    toValue,
-    damping: 18,
-    stiffness: 260,
-    mass: 0.55,
-    useNativeDriver: true,
-  }).start();
+  const fallbackGlass = colors.background === '#000000' ? 'rgba(50,50,54,0.78)' : 'rgba(246,246,248,0.78)';
+  const fallbackLens = colors.background === '#000000' ? 'rgba(105,105,110,0.58)' : 'rgba(255,255,255,0.66)';
 
   return (
     <View style={styles.screen}>
@@ -117,9 +110,9 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onEditI
         </Animated.View>
       </GestureDetector>
 
-      <Animated.View style={[styles.dock, { transform: [{ scale: dockScale }] }]}>
-        <View style={[styles.dockSurface, !glassAvailable && { backgroundColor: fallbackGlass, borderColor: colors.background === '#000000' ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.82)' }]}>
-          {glassAvailable && <GlassView glassEffectStyle="regular" isInteractive style={styles.dockGlass} />}
+      <View style={styles.dock}>
+        <View style={[styles.dockSurface, !glassAvailable && { backgroundColor: fallbackGlass }]}>
+          {glassAvailable && <GlassView glassEffectStyle="regular" style={styles.dockGlass} />}
           <View style={styles.dockContent}>
             {ZOOM_LEVELS.map((level) => {
               const active = level.id === zoom;
@@ -128,17 +121,18 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onEditI
                   accessibilityLabel={`${level.label} timeline view`}
                   key={level.id}
                   onPress={() => changeZoom(level.id)}
-                  onPressIn={() => animateDock(1.045)}
-                  onPressOut={() => animateDock(1)}
-                  style={[styles.dockButton, active && { backgroundColor: colors.blue }]}
+                  style={styles.dockButton}
                 >
-                  <Text numberOfLines={1} style={[styles.dockLabel, { color: active ? '#FFFFFF' : colors.secondary }]}>{level.label}</Text>
+                  {active && (glassAvailable
+                    ? <GlassView glassEffectStyle="clear" isInteractive style={styles.activeLens} tintColor={colors.background === '#000000' ? 'rgba(95,95,100,0.42)' : 'rgba(255,255,255,0.38)'} />
+                    : <View style={[styles.activeLens, { backgroundColor: fallbackLens }]} />)}
+                  <Text numberOfLines={1} style={[styles.dockLabel, { color: active ? colors.text : colors.secondary }]}>{level.label}</Text>
                 </Pressable>
               );
             })}
           </View>
         </View>
-      </Animated.View>
+      </View>
     </View>
   );
 }
@@ -306,10 +300,11 @@ const styles = StyleSheet.create({
   reflection: { marginTop: 12 }, reflectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, marginBottom: 8 }, reflectionBox: { minHeight: 58, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, justifyContent: 'center' }, reflectionText: { fontSize: 16, lineHeight: 22 },
   weekTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }, weekTitle: { fontSize: 29, fontWeight: '700', letterSpacing: -0.8 }, weekDay: { paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth }, currentWeekDay: { borderTopWidth: 2 }, weekDayHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 3 }, weekDayName: { fontSize: 17, fontWeight: '700' }, weekDayDate: { fontSize: 13, fontWeight: '600' }, weekOpen: { fontSize: 13, paddingVertical: 6 },
   compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactDate: { width: 72, fontSize: 12, fontVariant: ['tabular-nums'] }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },
-  dock: { position: 'absolute', width: '58%', alignSelf: 'center', bottom: 92, borderRadius: 23, shadowColor: '#000000', shadowOpacity: 0.13, shadowRadius: 18, shadowOffset: { width: 0, height: 9 }, elevation: 8 },
-  dockSurface: { minHeight: 46, borderRadius: 23, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  dockGlass: { position: 'absolute', inset: 0, borderRadius: 23 },
-  dockContent: { minHeight: 46, flexDirection: 'row', alignItems: 'center', padding: 4, gap: 1 },
-  dockButton: { flex: 1, minHeight: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 },
-  dockLabel: { fontSize: 9, fontWeight: '700', letterSpacing: -0.15 },
+  dock: { position: 'absolute', width: '75%', alignSelf: 'center', bottom: 92, borderRadius: 27, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10 },
+  dockSurface: { minHeight: 54, borderRadius: 27, overflow: 'hidden' },
+  dockGlass: { position: 'absolute', inset: 0, borderRadius: 27 },
+  dockContent: { minHeight: 54, flexDirection: 'row', alignItems: 'center', padding: 5, gap: 1 },
+  dockButton: { flex: 1, minHeight: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3, overflow: 'hidden' },
+  activeLens: { position: 'absolute', inset: 0, borderRadius: 22 },
+  dockLabel: { fontSize: 11, fontWeight: '700', letterSpacing: -0.2 },
 });
