@@ -36,7 +36,7 @@ import {
   formatShortDate,
   localISO,
 } from '@/shared/date';
-import { timeMinutes } from '@/shared/time';
+import { eventPhase, timeMinutes } from '@/shared/time';
 import { openItemInMaps } from '@/services/maps';
 import { palette, type AppColors } from '@/theme/colors';
 import CalendreamMapKit from '../../../modules/calendream-mapkit/src/CalendreamMapKitModule';
@@ -48,6 +48,11 @@ import { TimelineScreen } from '@/features/timeline/TimelineScreen';
 
 type Destination = 'today' | 'timeline';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
+
+function eventAccent(event: PlanningItem, colors: AppColors) {
+  const phase = eventPhase(event);
+  return phase === 'past' ? colors.tertiary : phase === 'current' ? colors.red : colors.blue;
+}
 
 function configureEditorLayout() {
   LayoutAnimation.configureNext({
@@ -414,7 +419,7 @@ export function TodayScreen() {
                   <Text style={[styles.eventTime, { color: colors.secondary }]}>
                     {event.startTime || 'All day'}
                   </Text>
-                  <View style={[styles.eventRule, { backgroundColor: colors.blue }]} />
+                  <View style={[styles.eventRule, { backgroundColor: eventAccent(event, colors) }]} />
                   <View style={styles.rowCopy}>
                     <Text style={[styles.rowTitle, { color: colors.text }]}>{event.title}</Text>
                     {(event.notes || event.location) && (

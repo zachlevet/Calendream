@@ -5,6 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import type { PlanningItem, TimelineSnapshot, TimelineZoom } from '@/models/planning';
 import { addLocalDays, dateFromISO, formatShortDate } from '@/shared/date';
+import { eventPhase } from '@/shared/time';
 import type { AppColors } from '@/theme/colors';
 import { buildTimelinePeriods, isVisibleAtZoom, isoWeekNumber, type TimelinePeriod } from './periods';
 
@@ -275,11 +276,16 @@ function TimelineSectionHeader({ title, colors, onPress }: { title: string; colo
 }
 
 function TimelineItem({ item, colors, onPress }: { item: PlanningItem; colors: AppColors; onPress: () => void }) {
-  return <Pressable onPress={onPress} style={({ pressed }) => [styles.timelineItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>{item.kind === 'task' ? <View style={[styles.checkbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>{item.completed && <Text style={styles.checkmark}>✓</Text>}</View> : <><Text style={[styles.eventTime, { color: colors.secondary }]}>{item.startTime || 'All day'}</Text><View style={[styles.itemRule, { backgroundColor: item.altitude >= 4 ? colors.amber : colors.blue }]} /></>}<View style={styles.itemCopy}><Text style={[styles.itemTitle, { color: item.completed ? colors.tertiary : colors.text }]}>{item.title}</Text>{item.notes && <Text numberOfLines={1} style={[styles.itemNote, { color: colors.secondary }]}>{item.notes}</Text>}</View></Pressable>;
+  return <Pressable onPress={onPress} style={({ pressed }) => [styles.timelineItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>{item.kind === 'task' ? <View style={[styles.checkbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>{item.completed && <Text style={styles.checkmark}>✓</Text>}</View> : <><Text style={[styles.eventTime, { color: colors.secondary }]}>{item.startTime || 'All day'}</Text><View style={[styles.itemRule, { backgroundColor: eventAccent(item, colors) }]} /></>}<View style={styles.itemCopy}><Text style={[styles.itemTitle, { color: item.completed ? colors.tertiary : colors.text }]}>{item.title}</Text>{item.notes && <Text numberOfLines={1} style={[styles.itemNote, { color: colors.secondary }]}>{item.notes}</Text>}</View></Pressable>;
 }
 
 function CompactItem({ item, colors, onPress }: { item: PlanningItem; colors: AppColors; onPress: () => void }) {
-  return <Pressable onPress={onPress} style={({ pressed }) => [styles.compactItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}><Text style={[styles.compactDate, { color: colors.secondary }]}>{item.startTime ?? formatShortDate(item.anchorStart)}</Text><View style={[styles.itemRule, { backgroundColor: item.altitude >= 4 ? colors.amber : item.kind === 'event' ? colors.blue : colors.tertiary }]} /><Text numberOfLines={1} style={[styles.compactTitle, { color: item.completed ? colors.tertiary : colors.text }]}>{item.title}</Text></Pressable>;
+  return <Pressable onPress={onPress} style={({ pressed }) => [styles.compactItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}><Text style={[styles.compactDate, { color: colors.secondary }]}>{item.startTime ?? formatShortDate(item.anchorStart)}</Text><View style={[styles.itemRule, { backgroundColor: item.kind === 'event' ? eventAccent(item, colors) : colors.tertiary }]} /><Text numberOfLines={1} style={[styles.compactTitle, { color: item.completed ? colors.tertiary : colors.text }]}>{item.title}</Text></Pressable>;
+}
+
+function eventAccent(event: PlanningItem, colors: AppColors) {
+  const phase = eventPhase(event);
+  return phase === 'past' ? colors.tertiary : phase === 'current' ? colors.red : colors.blue;
 }
 
 function overlaps(item: PlanningItem, period: TimelinePeriod) {
