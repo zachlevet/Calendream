@@ -842,6 +842,9 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange,
   const [saving, setSaving] = useState(false);
   const composerLayout = useRef({ y: 0, height: 0 });
   const composerFocused = useRef(false);
+  const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
+  const fallbackGlass = colors.background === '#000000' ? 'rgba(38,38,42,0.88)' : 'rgba(246,246,250,0.84)';
+  const glassTint = colors.background === '#000000' ? 'rgba(44,44,48,0.48)' : 'rgba(255,255,255,0.22)';
 
   useEffect(() => {
     if (!onDraftChange) return;
@@ -868,8 +871,13 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange,
         };
         if (composerFocused.current) setTimeout(() => onReveal(composerLayout.current.y, composerLayout.current.height), 20);
       }}
-      style={[styles.inlineComposer, { backgroundColor: colors.card }]}
+      style={[
+        styles.inlineComposer,
+        { borderColor: colors.background === '#000000' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.72)' },
+        !glassAvailable && { backgroundColor: fallbackGlass },
+      ]}
     >
+      {glassAvailable && <GlassView glassEffectStyle="regular" isInteractive style={styles.inlineComposerGlass} tintColor={glassTint} />}
       <TextInput
         autoFocus
         onChangeText={setTitle}
@@ -905,6 +913,7 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange,
       {kind === 'event' && (
         <LocationInput
           colors={colors}
+          integrated
           onFocus={focusComposer}
           onPlaceChange={(place) => {
             setLocationPlace(place);
@@ -1065,9 +1074,10 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
   );
 }
 
-function LocationInput({ value, colors, labeled, onFocus, onTextChange, onPlaceChange }: {
+function LocationInput({ value, colors, integrated, labeled, onFocus, onTextChange, onPlaceChange }: {
   value: string;
   colors: AppColors;
+  integrated?: boolean;
   labeled?: boolean;
   onFocus?: () => void;
   onTextChange: (value: string) => void;
@@ -1077,7 +1087,12 @@ function LocationInput({ value, colors, labeled, onFocus, onTextChange, onPlaceC
   const [resolving, setResolving] = useState(false);
   const [selectionCommitted, setSelectionCommitted] = useState(false);
   const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
-  const fallbackGlass = colors.background === '#000000' ? 'rgba(36,36,40,0.88)' : 'rgba(250,250,252,0.88)';
+  const fallbackGlass = integrated
+    ? colors.background === '#000000' ? 'rgba(38,38,42,0.88)' : 'rgba(246,246,250,0.84)'
+    : colors.background === '#000000' ? 'rgba(36,36,40,0.88)' : 'rgba(250,250,252,0.88)';
+  const suggestionTint = integrated
+    ? colors.background === '#000000' ? 'rgba(44,44,48,0.48)' : 'rgba(255,255,255,0.22)'
+    : colors.background === '#000000' ? 'rgba(44,44,48,0.55)' : 'rgba(255,255,255,0.36)';
 
   useEffect(() => {
     const query = value.trim();
@@ -1129,8 +1144,12 @@ function LocationInput({ value, colors, labeled, onFocus, onTextChange, onPlaceC
         />
       </View>
       {suggestions.length > 0 && (
-        <View style={[styles.locationSuggestions, labeled ? styles.locationSuggestionsLabeled : styles.locationSuggestionsInline, !glassAvailable && { backgroundColor: fallbackGlass }]}>
-          {glassAvailable && <GlassView glassEffectStyle="regular" style={styles.locationSuggestionsGlass} tintColor={colors.background === '#000000' ? 'rgba(44,44,48,0.55)' : 'rgba(255,255,255,0.36)'} />}
+        <View style={[
+          styles.locationSuggestions,
+          labeled ? styles.locationSuggestionsLabeled : integrated ? styles.locationSuggestionsIntegrated : styles.locationSuggestionsInline,
+          !glassAvailable && { backgroundColor: fallbackGlass },
+        ]}>
+          {glassAvailable && <GlassView glassEffectStyle="regular" style={[styles.locationSuggestionsGlass, integrated && styles.locationSuggestionsGlassIntegrated]} tintColor={suggestionTint} />}
           <View style={styles.locationSuggestionsContent}>
             {suggestions.map((suggestion, index) => (
               <Pressable
@@ -1401,7 +1420,8 @@ const styles = StyleSheet.create({
   editorBar: { height: 48, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   editorHeading: { fontSize: 16, fontWeight: '700' },
   editorButton: { fontSize: 16 },
-  inlineComposer: { borderRadius: 14, paddingHorizontal: 13, paddingBottom: 11, marginTop: 8, zIndex: 20 },
+  inlineComposer: { borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, paddingBottom: 11, marginTop: 8, zIndex: 20, shadowColor: '#000000', shadowOpacity: 0.09, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
+  inlineComposerGlass: { position: 'absolute', inset: 0, borderRadius: 18 },
   inlineTitle: { height: 48, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 17, fontWeight: '600' },
   inlineField: { height: 42, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 15 },
   locationInputRow: { minHeight: 42, borderBottomWidth: StyleSheet.hairlineWidth, justifyContent: 'center' },
@@ -1409,8 +1429,10 @@ const styles = StyleSheet.create({
   locationLayerActive: { zIndex: 100 },
   locationSuggestions: { position: 'absolute', left: 0, right: 0, borderRadius: 16, overflow: 'hidden', zIndex: 100, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 14 },
   locationSuggestionsInline: { top: 48 },
+  locationSuggestionsIntegrated: { top: 41, left: -13, right: -13, borderTopLeftRadius: 0, borderTopRightRadius: 0, borderBottomLeftRadius: 18, borderBottomRightRadius: 18, shadowOpacity: 0.09, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } },
   locationSuggestionsLabeled: { top: 54 },
   locationSuggestionsGlass: { position: 'absolute', inset: 0, borderRadius: 16 },
+  locationSuggestionsGlassIntegrated: { borderTopLeftRadius: 0, borderTopRightRadius: 0, borderBottomLeftRadius: 18, borderBottomRightRadius: 18 },
   locationSuggestionsContent: { paddingHorizontal: 5, paddingVertical: 5 },
   locationSuggestion: { minHeight: 48, paddingHorizontal: 11, paddingVertical: 7, justifyContent: 'center' },
   locationSuggestionTitle: { fontSize: 14, fontWeight: '600' },
