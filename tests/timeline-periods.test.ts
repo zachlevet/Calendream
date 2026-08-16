@@ -2,25 +2,33 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { PlanningItem } from '../src/models/planning.ts';
-import { buildTimelinePeriods, isVisibleAtZoom, timelineAltitude } from '../src/features/timeline/periods.ts';
+import { buildTimelinePeriods, isoWeekNumber, isVisibleAtZoom, timelineAltitude } from '../src/features/timeline/periods.ts';
 
-test('timeline begins at today at the closest level', () => {
+test('timeline surrounds today with past and future days', () => {
   const periods = buildTimelinePeriods('today', '2026-08-15');
-  assert.equal(periods[0].start, '2026-08-15');
-  assert.equal(periods[0].eyebrow, 'Today');
-  assert.equal(periods[1].start, '2026-08-16');
+  const currentIndex = periods.findIndex((period) => period.current);
+  assert.equal(periods[currentIndex].start, '2026-08-15');
+  assert.equal(periods[currentIndex].eyebrow, 'Today');
+  assert.equal(periods[currentIndex - 1].start, '2026-08-14');
+  assert.equal(periods[currentIndex + 1].start, '2026-08-16');
 });
 
 test('quarter periods use complete calendar-quarter ranges', () => {
   const periods = buildTimelinePeriods('quarter', '2026-08-15');
-  assert.deepEqual(periods[0], {
+  assert.deepEqual(periods.find((period) => period.current), {
     id: '2026-Q3',
     start: '2026-07-01',
     end: '2026-09-30',
+    current: true,
     eyebrow: 'This quarter',
     title: 'Q3',
     subtitle: '2026',
   });
+});
+
+test('week labels use ISO week numbers', () => {
+  assert.equal(isoWeekNumber('2026-08-15'), 33);
+  assert.equal(isoWeekNumber('2027-01-01'), 53);
 });
 
 test('altitude progressively removes detail while zooming out', () => {

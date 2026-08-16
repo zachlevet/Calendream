@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 
-import type { ItemDraft, PlanningItem, SearchResult } from '../models/planning';
+import type { ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
 import { matchingSnippet } from '../shared/search';
 
 export type { ItemDraft } from '../models/planning';
@@ -235,8 +235,8 @@ export function useTodayData(date: string, reviewDate = date) {
     ];
   }, [db]);
 
-  const loadRange = useCallback(async (startDate: string, endDate: string) => {
-    const rows = await db.getAllAsync<ItemRow>(
+  const loadRange = useCallback(async (startDate: string, endDate: string): Promise<TimelineSnapshot> => {
+    const [rows, pages] = await Promise.all([db.getAllAsync<ItemRow>(
       `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
               start_time, completed_at, notes, location, sort_order,
               location_name, location_latitude, location_longitude
@@ -249,8 +249,16 @@ export function useTodayData(date: string, reviewDate = date) {
        LIMIT 500`,
       endDate,
       startDate,
-    );
-    return rows.map(toItem);
+    ), db.getAllAsync<{ date: string; reflection: string }>(
+      `SELECT date, reflection FROM daily_pages
+       WHERE date >= ? AND date <= ? AND reflection != ''`,
+      startDate,
+      endDate,
+    )]);
+    return {
+      items: rows.map(toItem),
+      reflections: Object.fromEntries(pages.map((page) => [page.date, page.reflection])),
+    };
   }, [db]);
 
   const toggleTask = useCallback(async (item: PlanningItem) => {

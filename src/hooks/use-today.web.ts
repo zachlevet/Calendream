@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import type { ItemDraft, PlanningItem, SearchResult } from '../models/planning';
+import type { ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
 import { matchingSnippet } from '../shared/search';
 
 export type { ItemDraft } from '../models/planning';
@@ -22,6 +22,17 @@ function sampleItems(today: string): PlanningItem[] {
     { id: 'web-flight', kind: 'event', title: 'Flight to Denver', anchorStart: addDays(today, 3), anchorEnd: addDays(today, 3), precision: 'time', altitude: 2, startTime: '9:15 AM' },
     { id: 'web-hike', kind: 'event', title: 'Weekend hike', anchorStart: addDays(today, 6), anchorEnd: addDays(today, 6), precision: 'time', altitude: 1, startTime: '8:00 AM' },
     { id: 'web-trip', kind: 'event', title: 'Colorado trip', anchorStart: addDays(today, 43), anchorEnd: addDays(today, 43), precision: 'day', altitude: 4 },
+    { id: 'web-spring-race', kind: 'event', title: 'Spring 10K', anchorStart: addDays(today, -150), anchorEnd: addDays(today, -150), precision: 'day', altitude: 4 },
+    { id: 'web-california', kind: 'event', title: 'California road trip', anchorStart: addDays(today, -100), anchorEnd: addDays(today, -93), precision: 'day', altitude: 4 },
+    { id: 'web-workshop', kind: 'event', title: 'Design workshop', anchorStart: addDays(today, -45), anchorEnd: addDays(today, -45), precision: 'day', altitude: 2 },
+    { id: 'web-family', kind: 'event', title: 'Family weekend', anchorStart: addDays(today, -16), anchorEnd: addDays(today, -14), precision: 'day', altitude: 3 },
+    { id: 'web-concert', kind: 'event', title: 'Concert downtown', anchorStart: addDays(today, 12), anchorEnd: addDays(today, 12), precision: 'time', altitude: 2, startTime: '8:00 PM' },
+    { id: 'web-launch', kind: 'event', title: 'Calendream alpha launch', anchorStart: addDays(today, 25), anchorEnd: addDays(today, 25), precision: 'day', altitude: 4 },
+    { id: 'web-fall-trip', kind: 'event', title: 'Fall cabin trip', anchorStart: addDays(today, 48), anchorEnd: addDays(today, 52), precision: 'day', altitude: 4 },
+    { id: 'web-marathon', kind: 'event', title: 'Half marathon', anchorStart: addDays(today, 75), anchorEnd: addDays(today, 75), precision: 'day', altitude: 4 },
+    { id: 'web-holiday', kind: 'event', title: 'Holiday travel', anchorStart: addDays(today, 110), anchorEnd: addDays(today, 118), precision: 'day', altitude: 4 },
+    { id: 'web-ski', kind: 'event', title: 'Ski weekend', anchorStart: addDays(today, 160), anchorEnd: addDays(today, 163), precision: 'day', altitude: 4 },
+    { id: 'web-europe', kind: 'event', title: 'Europe trip', anchorStart: addDays(today, 240), anchorEnd: addDays(today, 252), precision: 'day', altitude: 4 },
   ];
 }
 
@@ -112,10 +123,13 @@ export function useTodayData(date: string, _reviewDate = date) {
         }));
       return [...itemResults, ...noteResults];
     },
-    loadRange: async (startDate: string, endDate: string) => allItems.filter((item) => (
-      item.anchorStart !== null
-      && item.anchorStart <= endDate
-      && (item.anchorEnd ?? item.anchorStart) >= startDate
-    )),
+    loadRange: async (startDate: string, endDate: string): Promise<TimelineSnapshot> => ({
+      items: allItems.filter((item) => (
+        item.anchorStart !== null
+        && item.anchorStart <= endDate
+        && (item.anchorEnd ?? item.anchorStart) >= startDate
+      )),
+      reflections: Object.fromEntries(Object.entries(journals).filter(([noteDate]) => noteDate >= startDate && noteDate <= endDate)),
+    }),
   }), [allItems, date, items, journal, journals, libraryDates, upcoming]);
 }

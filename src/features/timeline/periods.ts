@@ -8,10 +8,20 @@ export interface TimelinePeriod {
   eyebrow?: string;
   title: string;
   subtitle?: string;
+  current: boolean;
 }
 
 function monthEnd(year: number, month: number) {
   return localISO(new Date(year, month + 1, 0));
+}
+
+export function isoWeekNumber(isoDate: string) {
+  const date = dateFromISO(isoDate);
+  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = utcDate.getUTCDay() || 7;
+  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(utcDate.getUTCFullYear(), 0, 1));
+  return Math.ceil((((utcDate.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7);
 }
 
 export function timelineAltitude(zoom: TimelineZoom) {
@@ -34,16 +44,18 @@ export function buildTimelinePeriods(zoom: TimelineZoom, today: string): Timelin
   const current = dateFromISO(today);
 
   if (zoom === 'today') {
-    return Array.from({ length: 46 }, (_, index) => {
-      const date = addLocalDays(today, index);
+    return Array.from({ length: 91 }, (_, index) => {
+      const offset = index - 30;
+      const date = addLocalDays(today, offset);
       const parsed = dateFromISO(date);
       return {
         id: date,
         start: date,
         end: date,
-        eyebrow: index === 0 ? 'Today' : new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(parsed),
+        current: offset === 0,
+        eyebrow: offset === 0 ? 'Today' : new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(parsed),
         title: new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(parsed),
-        subtitle: index === 1 ? 'Tomorrow' : index > 1 ? `In ${index} days` : undefined,
+        subtitle: offset === 1 ? 'Tomorrow' : offset === -1 ? 'Yesterday' : offset > 1 ? `In ${offset} days` : offset < -1 ? `${Math.abs(offset)} days ago` : undefined,
       };
     });
   }
@@ -51,8 +63,9 @@ export function buildTimelinePeriods(zoom: TimelineZoom, today: string): Timelin
   if (zoom === 'week') {
     const mondayOffset = (current.getDay() + 6) % 7;
     const firstMonday = addLocalDays(today, -mondayOffset);
-    return Array.from({ length: 20 }, (_, index) => {
-      const start = addLocalDays(firstMonday, index * 7);
+    return Array.from({ length: 33 }, (_, index) => {
+      const offset = index - 12;
+      const start = addLocalDays(firstMonday, offset * 7);
       const end = addLocalDays(start, 6);
       const startDate = dateFromISO(start);
       const endDate = dateFromISO(end);
@@ -60,21 +73,24 @@ export function buildTimelinePeriods(zoom: TimelineZoom, today: string): Timelin
         id: start,
         start,
         end,
-        eyebrow: index === 0 ? 'This week' : `Week ${index + 1}`,
+        current: offset === 0,
+        eyebrow: offset === 0 ? 'This week' : undefined,
         title: `${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(startDate)} – ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(endDate)}`,
       };
     });
   }
 
   if (zoom === 'month') {
-    return Array.from({ length: 24 }, (_, index) => {
-      const date = new Date(current.getFullYear(), current.getMonth() + index, 1);
+    return Array.from({ length: 43 }, (_, index) => {
+      const offset = index - 18;
+      const date = new Date(current.getFullYear(), current.getMonth() + offset, 1);
       const start = localISO(date);
       return {
         id: start,
         start,
         end: monthEnd(date.getFullYear(), date.getMonth()),
-        eyebrow: index === 0 ? 'This month' : undefined,
+        current: offset === 0,
+        eyebrow: offset === 0 ? 'This month' : undefined,
         title: new Intl.DateTimeFormat('en-US', { month: 'long' }).format(date),
         subtitle: String(date.getFullYear()),
       };
@@ -83,8 +99,9 @@ export function buildTimelinePeriods(zoom: TimelineZoom, today: string): Timelin
 
   if (zoom === 'quarter') {
     const firstQuarter = Math.floor(current.getMonth() / 3);
-    return Array.from({ length: 12 }, (_, index) => {
-      const quarterIndex = firstQuarter + index;
+    return Array.from({ length: 21 }, (_, index) => {
+      const offset = index - 8;
+      const quarterIndex = firstQuarter + offset;
       const year = current.getFullYear() + Math.floor(quarterIndex / 4);
       const quarter = ((quarterIndex % 4) + 4) % 4;
       const startMonth = quarter * 3;
@@ -92,20 +109,23 @@ export function buildTimelinePeriods(zoom: TimelineZoom, today: string): Timelin
         id: `${year}-Q${quarter + 1}`,
         start: localISO(new Date(year, startMonth, 1)),
         end: monthEnd(year, startMonth + 2),
-        eyebrow: index === 0 ? 'This quarter' : undefined,
+        current: offset === 0,
+        eyebrow: offset === 0 ? 'This quarter' : undefined,
         title: `Q${quarter + 1}`,
         subtitle: String(year),
       };
     });
   }
 
-  return Array.from({ length: 7 }, (_, index) => {
-    const year = current.getFullYear() + index;
+  return Array.from({ length: 12 }, (_, index) => {
+    const offset = index - 4;
+    const year = current.getFullYear() + offset;
     return {
       id: String(year),
       start: `${year}-01-01`,
       end: `${year}-12-31`,
-      eyebrow: index === 0 ? 'This year' : undefined,
+      current: offset === 0,
+      eyebrow: offset === 0 ? 'This year' : undefined,
       title: String(year),
     };
   });

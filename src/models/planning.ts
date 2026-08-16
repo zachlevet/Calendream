@@ -45,3 +45,8 @@ export interface SearchResult {
   title: string;
   snippet?: string;
 }
+
+export interface TimelineSnapshot {
+  items: PlanningItem[];
+  reflections: Record<string, string>;
+}
