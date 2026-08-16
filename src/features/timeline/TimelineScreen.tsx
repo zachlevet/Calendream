@@ -9,7 +9,7 @@ import type { Goal, ItemDraft, PlanningItem, TimelineSnapshot, TimelineZoom } fr
 import { addLocalDays, dateFromISO, formatShortDate, localISO } from '@/shared/date';
 import { eventPhase, timeMinutes } from '@/shared/time';
 import type { AppColors } from '@/theme/colors';
-import { buildTimelinePeriods, dateAtPeriodProgress, isGoalRelevantAtZoom, isGoalVisibleInPeriod, isVisibleAtZoom, isoWeekNumber, progressThroughPeriod, type TimelinePeriod } from './periods';
+import { buildTimelinePeriods, dateAtPeriodProgress, isGoalRelevantAtZoom, isGoalVisibleInPeriod, isVisibleAtZoom, monthWeekLabel, progressThroughPeriod, type TimelinePeriod } from './periods';
 
 interface TimelineScreenProps {
   colors: AppColors;
@@ -393,7 +393,7 @@ function WeekPage({ period, items, goals, today, colors, editingItem, editingSlo
     <>
       {period.current && <CurrentMarker colors={colors} label="This week" />}
       <View style={styles.weekTitleRow}>
-        <Text style={[styles.weekTitle, { color: colors.text }]}>Week {isoWeekNumber(period.start)}</Text>
+        <Text style={[styles.weekTitle, { color: colors.text }]}>{monthWeekLabel(period.start)}</Text>
         <Text style={[styles.periodSubtitle, { color: colors.secondary }]}>{period.title}</Text>
       </View>
       <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
@@ -534,9 +534,9 @@ function YearPage({ period, items, goals, loading, today, colors, editingItem, e
                 return (
                   <View key={event.id}>
                     <Pressable onPress={() => onEditItem(event, slot)} style={styles.yearMoment}>
-                      <View style={[isTrip(event) ? styles.yearTripMark : styles.yearEventDot, { backgroundColor: isTrip(event) ? (eventPhase(event) === 'past' ? colors.tertiary : colors.amber) : eventAccent(event, colors) }]} />
+                      <View style={[isTrip(event) ? styles.yearTripMark : styles.yearEventDot, { backgroundColor: isTrip(event) ? (eventPhase(event) === 'past' ? colors.tertiary : colors.orange) : eventAccent(event, colors) }]} />
                       <Text numberOfLines={1} style={[styles.yearEventText, { color: pastMonth ? colors.secondary : colors.text }]}>{event.title}</Text>
-                      <Text style={[styles.yearMomentDate, { color: eventPhase(event) === 'past' ? colors.tertiary : isTrip(event) ? colors.amber : colors.secondary }]}>{isTrip(event) ? eventRange(event) : formatShortDate(event.anchorStart)}</Text>
+                      <Text style={[styles.yearMomentDate, { color: eventPhase(event) === 'past' ? colors.tertiary : isTrip(event) ? colors.orange : colors.secondary }]}>{isTrip(event) ? eventRange(event) : formatShortDate(event.anchorStart)}</Text>
                     </Pressable>
                     {editingItem?.id === event.id && editingSlot === slot && <View style={styles.yearInlineEditor}>{inlineEditor}</View>}
                   </View>
@@ -567,12 +567,12 @@ function GoalSection({ goals, colors, onToggle }: { goals: Goal[]; colors: AppCo
 function GoalBlurb({ goal, colors, onToggle }: { goal: Goal; colors: AppColors; onToggle: () => void }) {
   const scope = `${goal.scope[0].toUpperCase()}${goal.scope.slice(1)} goal · through ${formatShortDate(goal.targetDate)}`;
   return (
-    <View style={[styles.goalBlurb, { backgroundColor: colors.amberSoft }]}>
+    <View style={[styles.goalBlurb, { backgroundColor: colors.yellowSoft }]}>
       <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} achieved`} hitSlop={8} onPress={onToggle} style={styles.goalStar}>
-        <Text style={[styles.goalStarIcon, { color: colors.amber }]}>{goal.completed ? '★' : '☆'}</Text>
+        <Text style={[styles.goalStarIcon, { color: colors.yellow }]}>{goal.completed ? '★' : '☆'}</Text>
       </Pressable>
       <View style={styles.goalCopy}>
-        <Text style={[styles.goalScope, { color: colors.amber }]}>{scope}</Text>
+        <Text style={[styles.goalScope, { color: colors.yellow }]}>{scope}</Text>
         <Text style={[styles.goalTitle, { color: colors.text }, goal.completed && styles.goalCompleted]}>{goal.title}</Text>
       </View>
     </View>
@@ -618,21 +618,21 @@ function EditorialEventRow({ event, period, today, colors, onPress, tripRailMode
       </View>
       <View style={styles.spineRail}>
         {tripRailMode === 'start' ? (
-          <View style={[styles.tripStartSegment, { backgroundColor: subdued ? colors.tertiary : colors.amber }]} />
+          <View style={[styles.tripStartSegment, { backgroundColor: subdued ? colors.tertiary : colors.orange }]} />
         ) : tripRailMode === 'event' ? (
           <>
-            <View style={[styles.tripSegmentTop, { backgroundColor: tripSubdued ? colors.tertiary : colors.amber }]} />
+            <View style={[styles.tripSegmentTop, { backgroundColor: tripSubdued ? colors.tertiary : colors.orange }]} />
             <View style={[styles.tripEventDot, { backgroundColor: eventAccent(event, colors) }]} />
-            <View style={[styles.tripSegmentBottom, { backgroundColor: tripSubdued ? colors.tertiary : colors.amber }]} />
+            <View style={[styles.tripSegmentBottom, { backgroundColor: tripSubdued ? colors.tertiary : colors.orange }]} />
           </>
         ) : (
-          <View style={[trip ? styles.tripRail : styles.spineDot, { backgroundColor: subdued ? colors.tertiary : trip ? colors.amber : eventAccent(event, colors) }]} />
+          <View style={[trip ? styles.tripRail : styles.spineDot, { backgroundColor: subdued ? colors.tertiary : trip ? colors.orange : eventAccent(event, colors) }]} />
         )}
       </View>
       <View style={styles.editorialEventBody}>
         <View style={styles.editorialEventHeading}>
           <Text numberOfLines={2} style={[styles.editorialEventTitle, { color: subdued ? colors.secondary : colors.text }]}>{event.title}</Text>
-          <Text style={[styles.editorialEventMeta, { color: subdued ? colors.tertiary : trip ? colors.amber : colors.secondary }]}>{trip ? eventRange(event) : event.startTime || 'All day'}</Text>
+          <Text style={[styles.editorialEventMeta, { color: subdued ? colors.tertiary : trip ? colors.orange : colors.secondary }]}>{trip ? eventRange(event) : event.startTime || 'All day'}</Text>
         </View>
         {(event.location || event.notes) && <Text numberOfLines={1} style={[styles.editorialEventNote, { color: colors.secondary }]}>{[event.location, event.notes].filter(Boolean).join(' · ')}</Text>}
       </View>
@@ -644,7 +644,7 @@ function EditorialCompactEvent({ event, colors, onPress }: { event: PlanningItem
   const trip = isTrip(event);
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.editorialCompact, pressed && { opacity: 0.58 }]}>
-      <View style={[trip ? styles.compactTripMark : styles.compactEventMark, { backgroundColor: eventPhase(event) === 'past' ? colors.tertiary : trip ? colors.amber : eventAccent(event, colors) }]} />
+      <View style={[trip ? styles.compactTripMark : styles.compactEventMark, { backgroundColor: eventPhase(event) === 'past' ? colors.tertiary : trip ? colors.orange : eventAccent(event, colors) }]} />
       <View style={styles.editorialCompactCopy}>
         <Text numberOfLines={1} style={[styles.editorialCompactTitle, { color: eventPhase(event) === 'past' ? colors.secondary : colors.text }]}>{event.title}</Text>
         <Text style={[styles.editorialCompactMeta, { color: colors.secondary }]}>{trip ? eventRange(event) : formatShortDate(event.anchorStart)}</Text>

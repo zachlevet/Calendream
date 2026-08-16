@@ -25,6 +25,13 @@ export function isoWeekNumber(isoDate: string) {
   return Math.ceil((((utcDate.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7);
 }
 
+export function monthWeekLabel(weekStart: string) {
+  const representativeDate = dateFromISO(addLocalDays(weekStart, 3));
+  const month = new Intl.DateTimeFormat('en-US', { month: 'long' }).format(representativeDate);
+  const week = Math.floor((representativeDate.getDate() - 1) / 7) + 1;
+  return `${month} · Week ${week}`;
+}
+
 export function timelineAltitude(zoom: TimelineZoom) {
   return { today: 0, week: 0, month: 2, quarter: 3, year: 4 }[zoom];
 }

@@ -98,9 +98,9 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
                   LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                   setChoosingKind((open) => !open);
                 }}
-                style={[styles.kindOrb, { backgroundColor: kind === 'trip' ? colors.amberSoft : kind === 'event' ? colors.blueSoft : colors.card }]}
+                style={[styles.kindOrb, { backgroundColor: kind === 'trip' ? colors.orangeSoft : kind === 'event' ? colors.blueSoft : colors.card }]}
               >
-                <Text style={[styles.kindText, { color: kind === 'trip' ? colors.amber : kind === 'event' ? colors.blue : colors.secondary }]}>{kind}</Text>
+                <Text style={[styles.kindText, { color: kind === 'trip' ? colors.orange : kind === 'event' ? colors.blue : colors.secondary }]}>{kind}</Text>
               </Pressable>
               {choosingKind && KINDS.filter((option) => option !== kind).map((option) => (
                 <Pressable
@@ -112,11 +112,11 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
                     setChoosingKind(false);
                   }}
                   style={[styles.kindOrb, {
-                    backgroundColor: option === 'trip' ? colors.amberSoft : option === 'event' ? colors.blueSoft : colors.card,
+                    backgroundColor: option === 'trip' ? colors.orangeSoft : option === 'event' ? colors.blueSoft : colors.card,
                   }]}
                 >
                   <Text style={[styles.kindText, {
-                    color: option === 'trip' ? colors.amber : option === 'event' ? colors.blue : colors.secondary,
+                    color: option === 'trip' ? colors.orange : option === 'event' ? colors.blue : colors.secondary,
                   }]}>{option}</Text>
                 </Pressable>
               ))}

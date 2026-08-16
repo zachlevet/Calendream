@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { Goal, PlanningItem } from '../src/models/planning.ts';
-import { buildTimelinePeriods, dateAtPeriodProgress, isoWeekNumber, isGoalRelevantAtZoom, isGoalVisibleInPeriod, isVisibleAtZoom, progressThroughPeriod, timelineAltitude } from '../src/features/timeline/periods.ts';
+import { buildTimelinePeriods, dateAtPeriodProgress, isoWeekNumber, isGoalRelevantAtZoom, isGoalVisibleInPeriod, isVisibleAtZoom, monthWeekLabel, progressThroughPeriod, timelineAltitude } from '../src/features/timeline/periods.ts';
 
 test('timeline surrounds today with past and future days', () => {
   const periods = buildTimelinePeriods('today', '2026-08-15');
@@ -29,6 +29,12 @@ test('quarter periods use complete calendar-quarter ranges', () => {
 test('week labels use ISO week numbers', () => {
   assert.equal(isoWeekNumber('2026-08-15'), 33);
   assert.equal(isoWeekNumber('2027-01-01'), 53);
+});
+
+test('week labels use the month containing most of the week', () => {
+  assert.equal(monthWeekLabel('2026-08-17'), 'August · Week 3');
+  assert.equal(monthWeekLabel('2026-08-31'), 'September · Week 1');
+  assert.equal(monthWeekLabel('2026-07-27'), 'July · Week 5');
 });
 
 test('week periods begin on Monday', () => {

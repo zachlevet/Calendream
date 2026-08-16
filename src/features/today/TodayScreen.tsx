@@ -403,9 +403,9 @@ export function TodayScreen() {
                   <Pressable
                     key={item.id}
                     onPress={() => setEditor({ kind: 'event', item })}
-                    style={[styles.upcomingPill, { backgroundColor: trip ? colors.amberSoft : colors.blueSoft }]}
+                    style={[styles.upcomingPill, { backgroundColor: trip ? colors.orangeSoft : colors.blueSoft }]}
                   >
-                    <Text style={[styles.upcomingText, { color: trip ? colors.amber : colors.blue }]} numberOfLines={1}>{label}</Text>
+                    <Text style={[styles.upcomingText, { color: trip ? colors.orange : colors.blue }]} numberOfLines={1}>{label}</Text>
                   </Pressable>
                 );
               })}
@@ -869,9 +869,9 @@ function InlineTimePicker({ value, colors, onChange }: {
 
 function TodayGoalPill({ goal, colors, onToggle }: { goal: Goal; colors: AppColors; onToggle: () => void }) {
   return (
-    <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} achieved`} onPress={onToggle} style={[styles.todayGoalPill, { backgroundColor: colors.amberSoft }]}>
-      <Text style={[styles.todayGoalPillStar, { color: colors.amber }]}>{goal.completed ? '★' : '☆'}</Text>
-      <Text numberOfLines={1} style={[styles.todayGoalPillText, { color: colors.amber }, goal.completed && styles.completed]}>{goal.title}</Text>
+    <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} achieved`} onPress={onToggle} style={[styles.todayGoalPill, { backgroundColor: colors.yellowSoft }]}>
+      <Text style={[styles.todayGoalPillStar, { color: colors.yellow }]}>{goal.completed ? '★' : '☆'}</Text>
+      <Text numberOfLines={1} style={[styles.todayGoalPillText, { color: colors.text }, goal.completed && styles.completed]}>{goal.title}</Text>
     </Pressable>
   );
 }
