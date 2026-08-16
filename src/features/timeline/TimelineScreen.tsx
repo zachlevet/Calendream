@@ -78,6 +78,9 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onEditI
       Animated.timing(pinchScale, { toValue: 1, duration: 220, useNativeDriver: true }).start();
     })
     .onFinalize(() => Animated.timing(pinchScale, { toValue: 1, duration: 220, useNativeDriver: true }).start());
+  // The native gesture represents the vertical ScrollView. Composing it with
+  // pinch keeps one-finger scrolling and two-finger zoom active at the same time.
+  const timelineGesture = Gesture.Simultaneous(Gesture.Native(), pinch);
 
   const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
   const fallbackGlass = colors.background === '#000000' ? 'rgba(34,34,38,0.72)' : 'rgba(248,248,250,0.72)';
@@ -91,9 +94,9 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onEditI
 
   return (
     <View style={styles.screen}>
-      <GestureDetector gesture={pinch}>
+      <GestureDetector gesture={timelineGesture}>
         <Animated.View style={[styles.timeline, { transform: [{ scale: pinchScale }] }]}>
-          <ScrollView ref={scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView directionalLockEnabled ref={scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             {periods.map((period) => (
               <Period
                 colors={colors}
