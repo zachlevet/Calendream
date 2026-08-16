@@ -399,14 +399,14 @@ function WeekPage({ period, items, goals, today, colors, editingItem, editingSlo
       <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
       {!days.length && <Text style={[styles.emptyWeek, { color: colors.tertiary }]}>No events or tasks yet, let’s get planning :)</Text>}
       {days.map(({ date, items: dayItems }) => {
-        const parsed = dateFromISO(date);
         return (
           <View key={date} style={[styles.weekDay, { borderColor: colors.separator }]}>
-            <Pressable onPress={() => onOpenDay(date)} style={styles.weekDayHeader}>
-              <Text style={[styles.weekDayName, { color: date === today ? colors.red : colors.text }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(parsed)}</Text>
-              <Text style={[styles.weekDayDate, { color: colors.secondary }]}>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)}</Text>
+            <Pressable accessibilityLabel={`Open ${date}`} onPress={() => onOpenDay(date)} style={styles.weekDateButton}>
+              <TimelineDateGutter colors={colors} date={date} today={today} />
             </Pressable>
-            {dayItems.map((item) => { const slot = `week-${date}-${item.id}`; return <View key={`${date}-${item.id}`}><CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
+            <View style={styles.weekDayItems}>
+              {dayItems.map((item) => { const slot = `week-${date}-${item.id}`; return <View key={`${date}-${item.id}`}><CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
+            </View>
           </View>
         );
       })}
@@ -600,22 +600,42 @@ function MonthTripGroup({ event, events, period, today, colors, editingItem, edi
         const slot = `${period.id}-trip-${event.id}-${child.id}`;
         return <View key={child.id}><EditorialEventRow colors={colors} event={child} onPress={() => onEditItem(child, slot)} period={period} today={today} tripRailMode="event" tripSubdued={tripPast} />{editingItem?.id === child.id && editingSlot === slot && <View style={styles.spineEditor}>{inlineEditor}</View>}</View>;
       })}
+      {event.anchorStart && event.anchorEnd && event.anchorEnd > event.anchorStart && <TripEndRow colors={colors} date={event.anchorEnd} subdued={tripPast} today={today} />}
+    </View>
+  );
+}
+
+function TripEndRow({ date, today, colors, subdued }: { date: string; today: string; colors: AppColors; subdued: boolean }) {
+  return (
+    <View accessibilityLabel={`Trip ends ${date}`} style={styles.tripEndRow}>
+      <TimelineDateGutter colors={colors} date={date} subdued={subdued} today={today} />
+      <View style={styles.spineRail}>
+        <View style={[styles.tripEndSegment, { backgroundColor: subdued ? colors.tertiary : colors.orange }]} />
+      </View>
+      <View style={styles.tripEndBody} />
+    </View>
+  );
+}
+
+function TimelineDateGutter({ date, today, colors, subdued = false }: { date: string; today: string; colors: AppColors; subdued?: boolean }) {
+  const parsed = dateFromISO(date);
+  return (
+    <View style={styles.dateGutter}>
+      <Text style={[styles.gutterWeekday, { color: date === today ? colors.red : subdued ? colors.tertiary : colors.secondary }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(parsed).toUpperCase()}</Text>
+      <Text style={[styles.gutterDay, { color: subdued ? colors.tertiary : colors.text }]}>{parsed.getDate()}</Text>
     </View>
   );
 }
 
 function EditorialEventRow({ event, period, today, colors, onPress, tripRailMode, tripSubdued = false }: { event: PlanningItem; period: TimelinePeriod; today: string; colors: AppColors; onPress: () => void; tripRailMode?: 'start' | 'event'; tripSubdued?: boolean }) {
   const start = event.anchorStart ?? period.start;
-  const date = dateFromISO(start < period.start ? period.start : start);
+  const visibleDate = start < period.start ? period.start : start;
   const trip = isTrip(event);
   const phase = eventPhase(event);
   const subdued = phase === 'past';
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.editorialEvent, pressed && { opacity: 0.58 }]}>
-      <View style={styles.dateGutter}>
-        <Text style={[styles.gutterWeekday, { color: start === today ? colors.red : subdued ? colors.tertiary : colors.secondary }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(date).toUpperCase()}</Text>
-        <Text style={[styles.gutterDay, { color: subdued ? colors.tertiary : colors.text }]}>{date.getDate()}</Text>
-      </View>
+      <TimelineDateGutter colors={colors} date={visibleDate} subdued={subdued} today={today} />
       <View style={styles.spineRail}>
         {tripRailMode === 'start' ? (
           <View style={[styles.tripStartSegment, { backgroundColor: subdued ? colors.tertiary : colors.orange }]} />
@@ -658,6 +678,8 @@ function TimelineItem({ item, colors, onPress, onToggleTask }: { item: PlanningI
 }
 
 function CompactItem({ item, colors, onPress, onToggleTask }: { item: PlanningItem; colors: AppColors; onPress: () => void; onToggleTask: () => void }) {
+  const trip = isTrip(item);
+  const eventColor = eventPhase(item) === 'past' ? colors.tertiary : trip ? colors.orange : eventAccent(item, colors);
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.compactItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>
       {item.kind === 'task' ? (
@@ -665,7 +687,7 @@ function CompactItem({ item, colors, onPress, onToggleTask }: { item: PlanningIt
           {item.completed && <Text style={styles.checkmark}>✓</Text>}
         </Pressable>
       ) : (
-        <><Text style={[styles.compactDate, { color: colors.secondary }]}>{item.startTime ?? formatShortDate(item.anchorStart)}</Text><View style={[styles.itemRule, { backgroundColor: eventAccent(item, colors) }]} /></>
+        <><Text style={[styles.compactDate, { color: trip ? eventColor : colors.secondary }]}>{item.startTime ?? 'All day'}</Text><View style={[styles.itemRule, { backgroundColor: eventColor }]} /></>
       )}
       <Text numberOfLines={1} style={[styles.compactTitle, { color: item.completed ? colors.tertiary : colors.text }, item.completed && styles.taskCompleted]}>{item.title}</Text>
     </Pressable>
@@ -713,7 +735,7 @@ const styles = StyleSheet.create({
   taskCompleted: { textDecorationLine: 'line-through' },
   checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' }, openRow: { height: 42, fontSize: 14, paddingTop: 10 },
   reflection: { marginTop: 12 }, reflectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, marginBottom: 8 }, reflectionBox: { minHeight: 58, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, justifyContent: 'center' }, reflectionText: { fontSize: 16, lineHeight: 22 },
-  weekTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }, weekTitle: { fontSize: 29, fontWeight: '700', letterSpacing: -0.8 }, weekDay: { paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth }, weekDayHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 3 }, weekDayName: { fontSize: 17, fontWeight: '700' }, weekDayDate: { fontSize: 13, fontWeight: '600' }, weekOpen: { fontSize: 13, paddingVertical: 6 },
+  weekTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }, weekTitle: { fontSize: 29, fontWeight: '700', letterSpacing: -0.8 }, weekDay: { minHeight: 58, flexDirection: 'row', alignItems: 'stretch', paddingVertical: 4, borderTopWidth: StyleSheet.hairlineWidth }, weekDateButton: { width: 48, alignSelf: 'stretch', justifyContent: 'center' }, weekDayItems: { flex: 1, justifyContent: 'center' }, weekOpen: { fontSize: 13, paddingVertical: 6 },
   emptyWeek: { fontSize: 15, lineHeight: 21, paddingVertical: 12 },
   compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactDate: { width: 72, fontSize: 12, fontVariant: ['tabular-nums'] }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, weekTaskCheckbox: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },
   editorialHeader: { marginBottom: 12 },
@@ -730,9 +752,9 @@ const styles = StyleSheet.create({
   monthSpine: { paddingTop: 2 },
   monthTripGroup: { position: 'relative' },
   editorialEvent: { minHeight: 62, flexDirection: 'row', alignItems: 'stretch' },
-  dateGutter: { width: 48, alignItems: 'flex-end', justifyContent: 'center', paddingRight: 8, paddingBottom: 4 },
-  gutterWeekday: { fontSize: 8, fontWeight: '800', letterSpacing: 0.45 },
-  gutterDay: { fontSize: 18, lineHeight: 21, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  dateGutter: { width: 48, alignItems: 'center', justifyContent: 'center', paddingBottom: 4 },
+  gutterWeekday: { width: 48, textAlign: 'center', fontSize: 8, fontWeight: '800', letterSpacing: 0.45 },
+  gutterDay: { width: 48, textAlign: 'center', fontSize: 18, lineHeight: 21, fontWeight: '700', fontVariant: ['tabular-nums'] },
   spineRail: { width: 18, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   spineDot: { width: 7, height: 7, borderRadius: 4 },
   tripRail: { width: 4, minHeight: 36, borderRadius: 2 },
@@ -740,6 +762,9 @@ const styles = StyleSheet.create({
   tripSegmentTop: { position: 'absolute', top: 0, height: 22, width: 4 },
   tripEventDot: { position: 'absolute', top: 27, width: 7, height: 7, borderRadius: 4 },
   tripSegmentBottom: { position: 'absolute', top: 39, bottom: 0, width: 4 },
+  tripEndRow: { minHeight: 62, flexDirection: 'row', alignItems: 'stretch' },
+  tripEndSegment: { position: 'absolute', top: 0, bottom: 14, width: 4, borderBottomLeftRadius: 2, borderBottomRightRadius: 2 },
+  tripEndBody: { flex: 1 },
   editorialEventBody: { flex: 1, minHeight: 62, justifyContent: 'center', borderRadius: 14, paddingHorizontal: 11, paddingVertical: 8 },
   editorialEventHeading: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   editorialEventTitle: { flex: 1, fontSize: 15, lineHeight: 19, fontWeight: '600' },
