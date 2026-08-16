@@ -181,30 +181,34 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
         </Animated.View>
       </GestureDetector>
 
-      <View style={styles.dock}>
-        <Pressable accessibilityLabel={`Return to the current ${zoom}`} onPress={goHome} style={[styles.homeButton, !glassAvailable && { backgroundColor: fallbackGlass }]}>
-          {glassAvailable && <GlassView glassEffectStyle="regular" isInteractive style={styles.homeGlass} />}
-          <SymbolView name="house.fill" size={18} tintColor={colors.text} weight="semibold" />
-        </Pressable>
-        <View style={[styles.dockSurface, !glassAvailable && { backgroundColor: fallbackGlass }]}>
-          {glassAvailable && <GlassView glassEffectStyle="regular" style={styles.dockGlass} tintColor={colors.background === '#000000' ? 'rgba(70,70,74,0.5)' : 'rgba(118,118,128,0.25)'} />}
-          <View style={styles.dockContent}>
-            {ZOOM_LEVELS.map((level) => {
-              const active = level.id === zoom;
-              return (
-                <Pressable
-                  accessibilityLabel={`${level.label} timeline view`}
-                  key={level.id}
-                  onPress={() => changeZoom(level.id)}
-                  style={styles.dockButton}
-                >
-                  {active && (glassAvailable
-                    ? <GlassView glassEffectStyle="regular" isInteractive style={styles.activeLens} tintColor={colors.blue} />
-                    : <View style={[styles.activeLens, { backgroundColor: fallbackLens }]} />)}
-                  <Text numberOfLines={1} style={[styles.dockLabel, { color: active ? '#FFFFFF' : colors.text }]}>{level.label}</Text>
-                </Pressable>
-              );
-            })}
+      <View style={styles.dockGroup}>
+        <View style={styles.homeShell}>
+          <Pressable accessibilityLabel={`Return to the current ${zoom}`} onPress={goHome} style={[styles.homeButton, !glassAvailable && { backgroundColor: fallbackGlass }]}>
+            {glassAvailable && <GlassView glassEffectStyle="regular" isInteractive style={styles.homeGlass} tintColor={colors.background === '#000000' ? 'rgba(70,70,74,0.5)' : 'rgba(118,118,128,0.25)'} />}
+            <SymbolView name="house.fill" size={18} tintColor={colors.text} weight="semibold" />
+          </Pressable>
+        </View>
+        <View style={styles.dock}>
+          <View style={[styles.dockSurface, !glassAvailable && { backgroundColor: fallbackGlass }]}>
+            {glassAvailable && <GlassView glassEffectStyle="regular" style={styles.dockGlass} tintColor={colors.background === '#000000' ? 'rgba(70,70,74,0.5)' : 'rgba(118,118,128,0.25)'} />}
+            <View style={styles.dockContent}>
+              {ZOOM_LEVELS.map((level) => {
+                const active = level.id === zoom;
+                return (
+                  <Pressable
+                    accessibilityLabel={`${level.label} timeline view`}
+                    key={level.id}
+                    onPress={() => changeZoom(level.id)}
+                    style={styles.dockButton}
+                  >
+                    {active && (glassAvailable
+                      ? <GlassView glassEffectStyle="regular" isInteractive style={styles.activeLens} tintColor={colors.blue} />
+                      : <View style={[styles.activeLens, { backgroundColor: fallbackLens }]} />)}
+                    <Text numberOfLines={1} style={[styles.dockLabel, { color: active ? '#FFFFFF' : colors.text }]}>{level.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         </View>
       </View>
@@ -394,9 +398,11 @@ const styles = StyleSheet.create({
   weekTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }, weekTitle: { fontSize: 29, fontWeight: '700', letterSpacing: -0.8 }, weekDay: { paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth }, currentWeekDay: { borderTopWidth: 2 }, weekDayHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 3 }, weekDayName: { fontSize: 17, fontWeight: '700' }, weekDayDate: { fontSize: 13, fontWeight: '600' }, weekOpen: { fontSize: 13, paddingVertical: 6 },
   emptyWeek: { fontSize: 15, lineHeight: 21, paddingVertical: 12 },
   compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactDate: { width: 72, fontSize: 12, fontVariant: ['tabular-nums'] }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },
-  dock: { position: 'absolute', width: '75%', alignSelf: 'center', bottom: 92, borderRadius: 27, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10 },
-  homeButton: { position: 'absolute', left: -58, top: 2, width: 50, height: 50, borderRadius: 25, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 9 },
-  homeGlass: { position: 'absolute', inset: 0, borderRadius: 25 },
+  dockGroup: { position: 'absolute', width: '90%', alignSelf: 'center', bottom: 92, minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dock: { flex: 1, borderRadius: 27, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10 },
+  homeShell: { width: 54, height: 54, borderRadius: 27, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10 },
+  homeButton: { width: 54, height: 54, borderRadius: 27, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  homeGlass: { position: 'absolute', inset: 0, borderRadius: 27 },
   dockSurface: { minHeight: 54, borderRadius: 27, overflow: 'hidden' },
   dockGlass: { position: 'absolute', inset: 0, borderRadius: 27 },
   dockContent: { minHeight: 54, flexDirection: 'row', alignItems: 'center', padding: 5, gap: 1 },
