@@ -262,9 +262,10 @@ function DayPage({ date, period, items, reflection, today, colors, editingItem, 
 }) {
   const events = items.filter((item) => item.kind === 'event');
   const tasks = items.filter((item) => item.kind === 'task');
+  const dayAccent = date < today ? colors.tertiary : date === today ? colors.red : colors.blue;
   return (
     <>
-      <Text style={[styles.dayEyebrow, { color: period.current ? colors.red : colors.secondary }]}>{period.eyebrow}</Text>
+      <Text style={[styles.dayEyebrow, { color: dayAccent }]}>{period.eyebrow}</Text>
       <Pressable onPress={() => onOpenDay(date)}>
         <Text style={[styles.dayTitle, { color: colors.text }]}>{period.title}</Text>
         {period.subtitle && <Text style={[styles.daySubtitle, { color: colors.secondary }]}>{period.subtitle}</Text>}
@@ -375,7 +376,7 @@ function overlaps(item: PlanningItem, period: TimelinePeriod) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 }, timeline: { flex: 1 }, content: { paddingHorizontal: 18, paddingBottom: 170 },
-  period: { paddingTop: 16, paddingBottom: 20, borderTopWidth: StyleSheet.hairlineWidth },
+  period: { paddingTop: 18, paddingBottom: 24, borderTopWidth: 1 },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 2 },
   periodTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   periodTitle: { fontSize: 29, lineHeight: 34, fontWeight: '700', letterSpacing: -0.8 },
