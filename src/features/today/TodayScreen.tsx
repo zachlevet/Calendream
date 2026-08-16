@@ -44,6 +44,7 @@ import type { MapSuggestion } from '../../../modules/calendream-mapkit/src/Calen
 import { DailyReflection } from './components/DailyReflection';
 import { QuickCaptureSheet } from '@/features/quick-capture/QuickCaptureSheet';
 import { SearchOverlay } from '@/features/search/SearchResults';
+import { TimelineScreen } from '@/features/timeline/TimelineScreen';
 
 type Destination = 'today' | 'timeline';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
@@ -80,6 +81,7 @@ export function TodayScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [timelineRevision, setTimelineRevision] = useState(0);
   const [journal, setJournal] = useState('');
   const [briefingSessionActive, setBriefingSessionActive] = useState(false);
   const [inlineEditor, setInlineEditor] = useState<EditorState>(null);
@@ -164,16 +166,19 @@ export function TodayScreen() {
 
   async function saveDraft(draft: ItemDraft) {
     await data.saveItem(draft);
+    setTimelineRevision((revision) => revision + 1);
     setEditor(null);
   }
 
   async function removeItem(id: string) {
     await data.deleteItem(id);
+    setTimelineRevision((revision) => revision + 1);
     setEditor(null);
   }
 
   async function saveInline(draft: ItemDraft) {
     await data.saveItem(draft);
+    setTimelineRevision((revision) => revision + 1);
     configureEditorClose();
     setInlineDraft(null);
     setInlineEditor(null);
@@ -476,11 +481,17 @@ export function TodayScreen() {
         </ScrollView>
         </View>
       ) : (
-        <View style={styles.timelinePlaceholder}>
-          <Text style={[styles.eyebrow, { color: colors.red }]}>YOUR LIFE, IN TIME</Text>
-          <Text style={[styles.timelineTitle, { color: colors.text }]}>The timeline comes next.</Text>
-          <Text style={[styles.timelineBody, { color: colors.secondary }]}>Month, quarter, and year will compress the same life data without turning Today into a calendar grid.</Text>
-        </View>
+        <TimelineScreen
+          colors={colors}
+          dataRevision={timelineRevision}
+          loadRange={data.loadRange}
+          onEditItem={(item) => setEditor({ kind: item.kind, item })}
+          onOpenDay={(date) => {
+            setSelectedDate(date);
+            setDestination('today');
+          }}
+          today={today}
+        />
       )}
 
       {searchOpen && Boolean(searchQuery.trim()) && (
@@ -505,7 +516,10 @@ export function TodayScreen() {
         colors={colors}
         date={selectedDate}
         onClose={() => setQuickCaptureOpen(false)}
-        onSave={data.saveItem}
+        onSave={async (draft) => {
+          await data.saveItem(draft);
+          setTimelineRevision((revision) => revision + 1);
+        }}
         visible={quickCaptureOpen}
       />
       <MorningBriefing
@@ -1331,9 +1345,6 @@ const styles = StyleSheet.create({
   tabButton: { flex: 1, alignItems: 'center', gap: 4 },
   tabGlyph: { width: 23, height: 16, borderRadius: 6 },
   tabLabel: { fontSize: 11, fontWeight: '600' },
-  timelinePlaceholder: { flex: 1, paddingHorizontal: 24, paddingTop: 72 },
-  timelineTitle: { fontSize: 34, fontWeight: '700', letterSpacing: -1, marginTop: 8 },
-  timelineBody: { fontSize: 17, lineHeight: 25, marginTop: 14, maxWidth: 420 },
   editor: { flex: 1 },
   editorSafe: { flex: 1 },
   editorBar: { height: 48, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

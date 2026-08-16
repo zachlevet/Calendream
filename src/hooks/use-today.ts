@@ -235,6 +235,24 @@ export function useTodayData(date: string, reviewDate = date) {
     ];
   }, [db]);
 
+  const loadRange = useCallback(async (startDate: string, endDate: string) => {
+    const rows = await db.getAllAsync<ItemRow>(
+      `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
+              start_time, completed_at, notes, location, sort_order,
+              location_name, location_latitude, location_longitude
+       FROM items
+       WHERE deleted_at IS NULL
+         AND anchor_start IS NOT NULL
+         AND anchor_start <= ?
+         AND COALESCE(anchor_end, anchor_start) >= ?
+       ORDER BY anchor_start, start_time IS NULL, start_time, sort_order, created_at
+       LIMIT 500`,
+      endDate,
+      startDate,
+    );
+    return rows.map(toItem);
+  }, [db]);
+
   const toggleTask = useCallback(async (item: PlanningItem) => {
     const now = new Date().toISOString();
     await db.runAsync(
@@ -349,5 +367,6 @@ export function useTodayData(date: string, reviewDate = date) {
     skipMorningReview,
     reorderTasks,
     searchAll,
+    loadRange,
   };
 }

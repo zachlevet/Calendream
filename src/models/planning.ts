@@ -1,5 +1,6 @@
 export type ItemKind = 'task' | 'event';
 export type TimePrecision = 'time' | 'day' | 'month' | 'quarter' | 'year' | 'someday';
+export type TimelineZoom = 'today' | 'week' | 'month' | 'quarter' | 'year';
 
 export interface LocationPlace {
   name: string;

@@ -112,5 +112,10 @@ export function useTodayData(date: string, _reviewDate = date) {
         }));
       return [...itemResults, ...noteResults];
     },
+    loadRange: async (startDate: string, endDate: string) => allItems.filter((item) => (
+      item.anchorStart !== null
+      && item.anchorStart <= endDate
+      && (item.anchorEnd ?? item.anchorStart) >= startDate
+    )),
   }), [allItems, date, items, journal, journals, libraryDates, upcoming]);
 }
