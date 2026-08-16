@@ -74,24 +74,16 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   const periodPositions = useRef(new Map<string, PeriodPosition>());
   const keyboardTop = useRef(Dimensions.get('window').height);
   const alignedZoom = useRef<TimelineZoom | null>(null);
-  const loadedRange = useRef('');
   const periods = useMemo(() => buildTimelinePeriods(zoom, today), [today, zoom]);
   const firstDate = periods[0].start;
   const lastDate = periods[periods.length - 1].end;
 
   useEffect(() => {
     let cancelled = false;
-    const rangeKey = `${firstDate}:${lastDate}`;
-    const rangeChanged = loadedRange.current !== rangeKey;
-    loadedRange.current = rangeKey;
     const timer = setTimeout(() => {
       setLoading(true);
       void loadRange(firstDate, lastDate).then((nextSnapshot) => {
         if (cancelled) return;
-        if (rangeChanged) {
-          periodPositions.current.clear();
-          alignedZoom.current = null;
-        }
         setSnapshot(nextSnapshot);
         setLoading(false);
       });
@@ -171,16 +163,18 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
     if (period.current) currentPeriod.current = position;
   }, []);
 
-  useEffect(() => {
+  const alignToFocus = useCallback(() => {
     if (loading || alignedZoom.current === zoom) return;
-    const timer = setTimeout(() => {
-      const position = [...periodPositions.current.values()].find((candidate) => focusDate.current >= candidate.start && focusDate.current <= candidate.end);
-      if (!position) return;
-      alignedZoom.current = zoom;
-      scroll.current?.scrollTo({ y: Math.max(0, yForDate(position, focusDate.current) - TIMELINE_TOP_INSET), animated: false });
-    }, 40);
+    const position = [...periodPositions.current.values()].find((candidate) => focusDate.current >= candidate.start && focusDate.current <= candidate.end);
+    if (!position) return;
+    alignedZoom.current = zoom;
+    scroll.current?.scrollTo({ y: Math.max(0, yForDate(position, focusDate.current) - TIMELINE_TOP_INSET), animated: false });
+  }, [loading, zoom]);
+
+  useEffect(() => {
+    const timer = setTimeout(alignToFocus, 40);
     return () => clearTimeout(timer);
-  }, [loading, snapshot, zoom]);
+  }, [alignToFocus, snapshot]);
 
   const goHome = useCallback(() => {
     focusDate.current = today;
@@ -211,7 +205,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
     <View style={styles.screen}>
       <GestureDetector gesture={timelineGesture}>
         <Animated.View style={[styles.timeline, { transform: [{ scale: pinchScale }] }]}>
-          <ScrollView directionalLockEnabled onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} ref={scroll} contentContainerStyle={styles.content} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
+          <ScrollView directionalLockEnabled onContentSizeChange={() => setTimeout(alignToFocus, 0)} onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} ref={scroll} contentContainerStyle={styles.content} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
             {periods.map((period) => (
               <Period
                 colors={colors}
