@@ -409,13 +409,14 @@ function WeekPage({ period, items, goals, today, colors, editingItem, editingSlo
       <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
       {!days.length && <Text style={[styles.emptyWeek, { color: colors.tertiary }]}>No events or tasks yet, let’s get planning :)</Text>}
       {days.map(({ date, items: dayItems }) => {
+        const boundaryAtStart = weekBoundary?.date === date && weekBoundary.item.id === dayItems[0]?.id;
         return (
-          <View key={date} style={[styles.weekDay, { borderColor: colors.separator }]}>
+          <View key={date} style={[styles.weekDay, { borderColor: colors.separator }, boundaryAtStart && styles.weekDayAtMoment]}>
             <Pressable accessibilityLabel={`Open ${date}`} onPress={() => onOpenDay(date)} style={styles.weekDateButton}>
               <TimelineDateGutter colors={colors} date={date} today={today} />
             </Pressable>
             <View style={styles.weekDayItems}>
-              {dayItems.map((item) => { const slot = `week-${date}-${item.id}`; const boundary = weekBoundary?.date === date && weekBoundary.item.id === item.id; return <View key={`${date}-${item.id}`}>{boundary && <CurrentMomentDivider colors={colors} week />}<CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
+              {dayItems.map((item) => { const slot = `week-${date}-${item.id}`; const boundary = weekBoundary?.date === date && weekBoundary.item.id === item.id; return <View key={`${date}-${item.id}`}>{boundary && <CurrentMomentDivider colors={colors} week />}<CompactItem colors={colors} hideTopBorder={boundary} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
             </View>
           </View>
         );
@@ -553,7 +554,7 @@ function YearPage({ period, items, goals, loading, today, colors, editingItem, e
                     {event.id === yearBoundaryId && <CurrentMomentDivider colors={colors} />}
                     <Pressable onPress={() => onEditItem(event, slot)} style={styles.yearMoment}>
                       <View style={[isTrip(event) ? styles.yearTripMark : styles.yearEventDot, { backgroundColor: isTrip(event) ? (eventPhase(event) === 'past' ? colors.tertiary : colors.orange) : eventAccent(event, colors) }]} />
-                      <Text numberOfLines={1} style={[styles.yearEventText, { color: pastMonth ? colors.secondary : colors.text }]}>{event.title}</Text>
+                      <Text numberOfLines={1} style={[styles.yearEventText, { color: eventPhase(event) === 'past' || pastMonth ? colors.secondary : colors.text }]}>{event.title}</Text>
                       <Text style={[styles.yearMomentDate, { color: eventPhase(event) === 'past' ? colors.tertiary : isTrip(event) ? colors.orange : colors.secondary }]}>{isTrip(event) ? eventRange(event) : formatShortDate(event.anchorStart)}</Text>
                     </Pressable>
                     {editingItem?.id === event.id && editingSlot === slot && <View style={styles.yearInlineEditor}>{inlineEditor}</View>}
@@ -684,14 +685,16 @@ function EditorialCompactEvent({ event, colors, onPress }: { event: PlanningItem
 }
 
 function TimelineItem({ item, colors, onPress, onToggleTask }: { item: PlanningItem; colors: AppColors; onPress: () => void; onToggleTask: () => void }) {
-  return <Pressable onPress={onPress} style={({ pressed }) => [styles.timelineItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>{item.kind === 'task' ? <Pressable accessibilityLabel={item.completed ? `Mark ${item.title} incomplete` : `Complete ${item.title}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); onToggleTask(); }} style={[styles.checkbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>{item.completed && <Text style={styles.checkmark}>✓</Text>}</Pressable> : <><Text style={[styles.eventTime, { color: colors.secondary }]}>{item.startTime || 'All day'}</Text><View style={[styles.itemRule, { backgroundColor: eventAccent(item, colors) }]} /></>}<View style={styles.itemCopy}><Text style={[styles.itemTitle, { color: item.completed ? colors.tertiary : colors.text }, item.completed && styles.taskCompleted]}>{item.title}</Text>{item.notes && <Text numberOfLines={1} style={[styles.itemNote, { color: colors.secondary }]}>{item.notes}</Text>}</View></Pressable>;
+  const recessed = Boolean(item.completed) || (item.kind === 'event' && eventPhase(item) === 'past');
+  return <Pressable onPress={onPress} style={({ pressed }) => [styles.timelineItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>{item.kind === 'task' ? <Pressable accessibilityLabel={item.completed ? `Mark ${item.title} incomplete` : `Complete ${item.title}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); onToggleTask(); }} style={[styles.checkbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>{item.completed && <Text style={styles.checkmark}>✓</Text>}</Pressable> : <><Text style={[styles.eventTime, { color: recessed ? colors.tertiary : colors.secondary }]}>{item.startTime || 'All day'}</Text><View style={[styles.itemRule, { backgroundColor: eventAccent(item, colors) }]} /></>}<View style={styles.itemCopy}><Text style={[styles.itemTitle, { color: recessed ? colors.tertiary : colors.text }, item.completed && styles.taskCompleted]}>{item.title}</Text>{item.notes && <Text numberOfLines={1} style={[styles.itemNote, { color: recessed ? colors.tertiary : colors.secondary }]}>{item.notes}</Text>}</View></Pressable>;
 }
 
-function CompactItem({ item, colors, onPress, onToggleTask }: { item: PlanningItem; colors: AppColors; onPress: () => void; onToggleTask: () => void }) {
+function CompactItem({ item, colors, hideTopBorder = false, onPress, onToggleTask }: { item: PlanningItem; colors: AppColors; hideTopBorder?: boolean; onPress: () => void; onToggleTask: () => void }) {
   const trip = isTrip(item);
-  const eventColor = eventPhase(item) === 'past' ? colors.tertiary : trip ? colors.orange : eventAccent(item, colors);
+  const past = item.kind === 'event' && eventPhase(item) === 'past';
+  const eventColor = past ? colors.tertiary : trip ? colors.orange : eventAccent(item, colors);
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.compactItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.compactItem, { borderColor: colors.separator }, hideTopBorder && styles.compactItemAtMoment, pressed && { opacity: 0.55 }]}>
       {item.kind === 'task' ? (
         <>
           <Pressable accessibilityLabel={item.completed ? `Mark ${item.title} incomplete` : `Complete ${item.title}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); onToggleTask(); }} style={[styles.weekTaskCheckbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>
@@ -702,8 +705,8 @@ function CompactItem({ item, colors, onPress, onToggleTask }: { item: PlanningIt
       ) : (
         <>
           <View style={[styles.itemRule, { backgroundColor: eventColor }]} />
-          <Text numberOfLines={1} style={[styles.compactTitle, { color: colors.text }]}>{item.title}</Text>
-          <Text style={[styles.compactMeta, { color: trip ? eventColor : colors.secondary }]}>{item.startTime ?? 'All day'}</Text>
+          <Text numberOfLines={1} style={[styles.compactTitle, { color: past ? colors.secondary : colors.text }]}>{item.title}</Text>
+          <Text style={[styles.compactMeta, { color: past ? colors.tertiary : trip ? eventColor : colors.secondary }]}>{item.startTime ?? 'All day'}</Text>
         </>
       )}
     </Pressable>
@@ -758,9 +761,9 @@ const styles = StyleSheet.create({
   taskCompleted: { textDecorationLine: 'line-through' },
   checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' }, openRow: { height: 42, fontSize: 14, paddingTop: 10 },
   reflection: { marginTop: 12 }, reflectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, marginBottom: 8 }, reflectionBox: { minHeight: 58, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, justifyContent: 'center' }, reflectionText: { fontSize: 16, lineHeight: 22 },
-  weekTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }, weekTitle: { fontSize: 29, fontWeight: '700', letterSpacing: -0.8 }, weekDay: { minHeight: 58, flexDirection: 'row', alignItems: 'stretch', paddingVertical: 4, borderTopWidth: StyleSheet.hairlineWidth }, weekDateButton: { width: 48, alignSelf: 'stretch', justifyContent: 'center' }, weekDayItems: { flex: 1, justifyContent: 'center' }, weekOpen: { fontSize: 13, paddingVertical: 6 },
+  weekTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }, weekTitle: { fontSize: 29, fontWeight: '700', letterSpacing: -0.8 }, weekDay: { minHeight: 58, flexDirection: 'row', alignItems: 'stretch', paddingVertical: 4, borderTopWidth: StyleSheet.hairlineWidth }, weekDayAtMoment: { borderTopWidth: 0 }, weekDateButton: { width: 48, alignSelf: 'stretch', justifyContent: 'center' }, weekDayItems: { flex: 1, justifyContent: 'center' }, weekOpen: { fontSize: 13, paddingVertical: 6 },
   emptyWeek: { fontSize: 15, lineHeight: 21, paddingVertical: 12 },
-  compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, compactMeta: { flexShrink: 0, marginLeft: 10, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] }, weekTaskCheckbox: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },
+  compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactItemAtMoment: { borderTopWidth: 0 }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, compactMeta: { flexShrink: 0, marginLeft: 10, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] }, weekTaskCheckbox: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },
   editorialHeader: { marginBottom: 12 },
   periodSummary: { fontSize: 12, fontWeight: '600', marginTop: 4 },
   editorialEmpty: { fontSize: 15, lineHeight: 21, paddingVertical: 18 },
