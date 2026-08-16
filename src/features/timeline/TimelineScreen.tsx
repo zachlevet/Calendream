@@ -664,13 +664,19 @@ function CompactItem({ item, colors, onPress, onToggleTask }: { item: PlanningIt
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.compactItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>
       {item.kind === 'task' ? (
-        <Pressable accessibilityLabel={item.completed ? `Mark ${item.title} incomplete` : `Complete ${item.title}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); onToggleTask(); }} style={[styles.weekTaskCheckbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>
-          {item.completed && <Text style={styles.checkmark}>✓</Text>}
-        </Pressable>
+        <>
+          <Pressable accessibilityLabel={item.completed ? `Mark ${item.title} incomplete` : `Complete ${item.title}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); onToggleTask(); }} style={[styles.weekTaskCheckbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>
+            {item.completed && <Text style={styles.checkmark}>✓</Text>}
+          </Pressable>
+          <Text numberOfLines={1} style={[styles.compactTitle, { color: item.completed ? colors.tertiary : colors.text }, item.completed && styles.taskCompleted]}>{item.title}</Text>
+        </>
       ) : (
-        <><Text style={[styles.compactDate, { color: trip ? eventColor : colors.secondary }]}>{item.startTime ?? 'All day'}</Text><View style={[styles.itemRule, { backgroundColor: eventColor }]} /></>
+        <>
+          <View style={[styles.itemRule, { backgroundColor: eventColor }]} />
+          <Text numberOfLines={1} style={[styles.compactTitle, { color: colors.text }]}>{item.title}</Text>
+          <Text style={[styles.compactMeta, { color: trip ? eventColor : colors.secondary }]}>{item.startTime ?? 'All day'}</Text>
+        </>
       )}
-      <Text numberOfLines={1} style={[styles.compactTitle, { color: item.completed ? colors.tertiary : colors.text }, item.completed && styles.taskCompleted]}>{item.title}</Text>
     </Pressable>
   );
 }
@@ -718,7 +724,7 @@ const styles = StyleSheet.create({
   reflection: { marginTop: 12 }, reflectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, marginBottom: 8 }, reflectionBox: { minHeight: 58, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, justifyContent: 'center' }, reflectionText: { fontSize: 16, lineHeight: 22 },
   weekTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }, weekTitle: { fontSize: 29, fontWeight: '700', letterSpacing: -0.8 }, weekDay: { minHeight: 58, flexDirection: 'row', alignItems: 'stretch', paddingVertical: 4, borderTopWidth: StyleSheet.hairlineWidth }, weekDateButton: { width: 48, alignSelf: 'stretch', justifyContent: 'center' }, weekDayItems: { flex: 1, justifyContent: 'center' }, weekOpen: { fontSize: 13, paddingVertical: 6 },
   emptyWeek: { fontSize: 15, lineHeight: 21, paddingVertical: 12 },
-  compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactDate: { width: 72, fontSize: 12, fontVariant: ['tabular-nums'] }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, weekTaskCheckbox: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },
+  compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, compactMeta: { flexShrink: 0, marginLeft: 10, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] }, weekTaskCheckbox: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },
   editorialHeader: { marginBottom: 12 },
   periodSummary: { fontSize: 12, fontWeight: '600', marginTop: 4 },
   editorialEmpty: { fontSize: 15, lineHeight: 21, paddingVertical: 18 },
