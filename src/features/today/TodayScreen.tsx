@@ -491,11 +491,27 @@ export function TodayScreen() {
           colors={colors}
           dataRevision={timelineRevision}
           loadRange={data.loadRange}
-          onEditItem={(item) => setEditor({ kind: item.kind, item })}
+          onSaveItem={async (draft) => {
+            await data.saveItem(draft);
+            setTimelineRevision((revision) => revision + 1);
+          }}
           onOpenDay={(date) => {
             setSelectedDate(date);
             setDestination('today');
           }}
+          renderInlineEditor={({ item, date, onCancel, onDraftChange, onReveal, onSave }) => (
+            <InlineComposer
+              colors={colors}
+              initial={item}
+              key={`timeline-${item.id}`}
+              kind={item.kind}
+              onCancel={onCancel}
+              onDraftChange={onDraftChange}
+              onReveal={() => onReveal()}
+              onSave={onSave}
+              today={date}
+            />
+          )}
           today={today}
         />
       )}

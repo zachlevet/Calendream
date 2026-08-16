@@ -1,9 +1,10 @@
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, Keyboard, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
-import type { PlanningItem, TimelineSnapshot, TimelineZoom } from '@/models/planning';
+import type { ItemDraft, PlanningItem, TimelineSnapshot, TimelineZoom } from '@/models/planning';
 import { addLocalDays, dateFromISO, formatShortDate } from '@/shared/date';
 import { eventPhase } from '@/shared/time';
 import type { AppColors } from '@/theme/colors';
@@ -14,8 +15,18 @@ interface TimelineScreenProps {
   dataRevision: number;
   today: string;
   loadRange: (startDate: string, endDate: string) => Promise<TimelineSnapshot>;
-  onEditItem: (item: PlanningItem) => void;
+  onSaveItem: (draft: ItemDraft) => Promise<void>;
   onOpenDay: (date: string) => void;
+  renderInlineEditor: (options: TimelineInlineEditorOptions) => ReactNode;
+}
+
+export interface TimelineInlineEditorOptions {
+  item: PlanningItem;
+  date: string;
+  onCancel: () => void;
+  onDraftChange: (draft: ItemDraft) => void;
+  onReveal: () => void;
+  onSave: (draft: ItemDraft) => Promise<void>;
 }
 
 const ZOOM_LEVELS: { id: TimelineZoom; label: string }[] = [
@@ -26,12 +37,18 @@ const ZOOM_LEVELS: { id: TimelineZoom; label: string }[] = [
   { id: 'year', label: 'Year' },
 ];
 
-export function TimelineScreen({ colors, dataRevision, today, loadRange, onEditItem, onOpenDay }: TimelineScreenProps) {
+export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveItem, onOpenDay, renderInlineEditor }: TimelineScreenProps) {
   const [zoom, setZoom] = useState<TimelineZoom>('today');
   const [snapshot, setSnapshot] = useState<TimelineSnapshot>({ items: [], reflections: {} });
   const [loading, setLoading] = useState(true);
   const [pinchScale] = useState(() => new Animated.Value(1));
+  const [editingItem, setEditingItem] = useState<PlanningItem | null>(null);
+  const [editingSlot, setEditingSlot] = useState<string | null>(null);
+  const [inlineDraft, setInlineDraft] = useState<ItemDraft | null>(null);
   const scroll = useRef<ScrollView>(null);
+  const editorView = useRef<View>(null);
+  const scrollOffset = useRef(0);
+  const keyboardTop = useRef(Dimensions.get('window').height);
   const alignedZoom = useRef<TimelineZoom | null>(null);
   const periods = useMemo(() => buildTimelinePeriods(zoom, today), [today, zoom]);
   const firstDate = periods[0].start;
@@ -52,6 +69,50 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onEditI
       clearTimeout(timer);
     };
   }, [dataRevision, firstDate, lastDate, loadRange]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, (event) => { keyboardTop.current = event.endCoordinates.screenY; });
+    const hide = Keyboard.addListener(hideEvent, () => { keyboardTop.current = Dimensions.get('window').height; });
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+
+  const closeInlineEditor = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setEditingItem(null);
+    setEditingSlot(null);
+    setInlineDraft(null);
+    Keyboard.dismiss();
+  }, []);
+
+  const editInline = useCallback(async (item: PlanningItem, slot: string) => {
+    if (editingItem && inlineDraft?.title.trim()) await onSaveItem(inlineDraft);
+    if (editingItem?.id === item.id && editingSlot === slot) {
+      closeInlineEditor();
+      return;
+    }
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setInlineDraft({ id: item.id, kind: item.kind, title: item.title, date: item.anchorStart ?? today, time: item.startTime, notes: item.notes, location: item.location, locationPlace: item.locationPlace });
+    setEditingItem(item);
+    setEditingSlot(slot);
+  }, [closeInlineEditor, editingItem, editingSlot, inlineDraft, onSaveItem, today]);
+
+  const saveInline = useCallback(async (draft: ItemDraft) => {
+    await onSaveItem(draft);
+    closeInlineEditor();
+  }, [closeInlineEditor, onSaveItem]);
+
+  const revealInline = useCallback(() => {
+    setTimeout(() => editorView.current?.measureInWindow((_x, y, _width, height) => {
+      const overlap = y + height + 12 - keyboardTop.current;
+      if (overlap > 0) scroll.current?.scrollTo({ y: scrollOffset.current + overlap, animated: true });
+    }), Platform.OS === 'ios' ? 90 : 140);
+  }, []);
+
+  // The callbacks read layout refs only after focus/keyboard events.
+  // eslint-disable-next-line react-hooks/refs
+  const inlineEditor = editingItem ? <View ref={editorView}>{renderInlineEditor({ item: editingItem, date: editingItem.anchorStart ?? today, onCancel: closeInlineEditor, onDraftChange: setInlineDraft, onReveal: revealInline, onSave: saveInline })}</View> : null;
 
   const changeZoom = useCallback((nextZoom: TimelineZoom) => {
     if (nextZoom === zoom) return;
@@ -90,7 +151,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onEditI
     <View style={styles.screen}>
       <GestureDetector gesture={timelineGesture}>
         <Animated.View style={[styles.timeline, { transform: [{ scale: pinchScale }] }]}>
-          <ScrollView directionalLockEnabled ref={scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView directionalLockEnabled onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} ref={scroll} contentContainerStyle={styles.content} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
             {periods.map((period) => (
               <Period
                 colors={colors}
@@ -98,7 +159,10 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onEditI
                 key={period.id}
                 loading={loading}
                 onCurrentLayout={alignCurrentPeriod}
-                onEditItem={onEditItem}
+                editingItem={editingItem}
+                editingSlot={editingSlot}
+                inlineEditor={inlineEditor}
+                onEditItem={(item, slot) => void editInline(item, slot)}
                 onOpenDay={onOpenDay}
                 period={period}
                 reflection={snapshot.reflections[period.start]}
@@ -137,7 +201,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onEditI
   );
 }
 
-function Period({ period, zoom, items, loading, reflection, today, colors, onCurrentLayout, onEditItem, onOpenDay }: {
+function Period({ period, zoom, items, loading, reflection, today, colors, editingItem, editingSlot, inlineEditor, onCurrentLayout, onEditItem, onOpenDay }: {
   period: TimelinePeriod;
   zoom: TimelineZoom;
   items: PlanningItem[];
@@ -145,13 +209,16 @@ function Period({ period, zoom, items, loading, reflection, today, colors, onCur
   reflection?: string;
   today: string;
   colors: AppColors;
+  editingItem: PlanningItem | null;
+  editingSlot: string | null;
+  inlineEditor: ReactNode;
   onCurrentLayout: (y: number) => void;
-  onEditItem: (item: PlanningItem) => void;
+  onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
 }) {
   const visibleItems = items.filter((item) => overlaps(item, period) && isVisibleAtZoom(item, zoom));
   const presentStyle = period.current ? { borderTopColor: colors.red, borderTopWidth: 2 } : { borderTopColor: colors.separator };
-  const shared = { colors, onEditItem };
+  const shared = { colors, editingItem, editingSlot, inlineEditor, onEditItem };
 
   return (
     <View
@@ -169,14 +236,17 @@ function Period({ period, zoom, items, loading, reflection, today, colors, onCur
   );
 }
 
-function DayPage({ date, period, items, reflection, today, colors, onEditItem, onOpenDay }: {
+function DayPage({ date, period, items, reflection, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay }: {
   date: string;
   period: TimelinePeriod;
   items: PlanningItem[];
   reflection?: string;
   today: string;
   colors: AppColors;
-  onEditItem: (item: PlanningItem) => void;
+  editingItem: PlanningItem | null;
+  editingSlot: string | null;
+  inlineEditor: ReactNode;
+  onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
 }) {
   const events = items.filter((item) => item.kind === 'event');
@@ -190,9 +260,9 @@ function DayPage({ date, period, items, reflection, today, colors, onEditItem, o
       </Pressable>
 
       <TimelineSectionHeader colors={colors} onPress={() => onOpenDay(date)} title="Events" />
-      {events.length ? events.map((item) => <TimelineItem colors={colors} item={item} key={item.id} onPress={() => onEditItem(item)} />) : <Text style={[styles.openRow, { color: colors.tertiary }]}>No events planned</Text>}
+      {events.length ? events.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}><TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <Text style={[styles.openRow, { color: colors.tertiary }]}>No events planned</Text>}
       <TimelineSectionHeader colors={colors} onPress={() => onOpenDay(date)} title="Tasks" />
-      {tasks.length ? tasks.map((item) => <TimelineItem colors={colors} item={item} key={item.id} onPress={() => onEditItem(item)} />) : <Text style={[styles.openRow, { color: colors.tertiary }]}>No tasks yet</Text>}
+      {tasks.length ? tasks.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}><TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <Text style={[styles.openRow, { color: colors.tertiary }]}>No tasks yet</Text>}
 
       {(reflection || date <= today) && (
         <View style={styles.reflection}>
@@ -206,12 +276,15 @@ function DayPage({ date, period, items, reflection, today, colors, onEditItem, o
   );
 }
 
-function WeekPage({ period, items, today, colors, onEditItem, onOpenDay }: {
+function WeekPage({ period, items, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay }: {
   period: TimelinePeriod;
   items: PlanningItem[];
   today: string;
   colors: AppColors;
-  onEditItem: (item: PlanningItem) => void;
+  editingItem: PlanningItem | null;
+  editingSlot: string | null;
+  inlineEditor: ReactNode;
+  onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
 }) {
   const days = Array.from({ length: 7 }, (_, index) => addLocalDays(period.start, index));
@@ -231,7 +304,7 @@ function WeekPage({ period, items, today, colors, onEditItem, onOpenDay }: {
               <Text style={[styles.weekDayName, { color: date === today ? colors.red : colors.text }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(parsed)}</Text>
               <Text style={[styles.weekDayDate, { color: colors.secondary }]}>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)}</Text>
             </Pressable>
-            {dayItems.length ? dayItems.map((item) => <CompactItem colors={colors} item={item} key={`${date}-${item.id}`} onPress={() => onEditItem(item)} />) : <Text style={[styles.weekOpen, { color: colors.tertiary }]}>Open</Text>}
+            {dayItems.length ? dayItems.map((item) => { const slot = `week-${date}-${item.id}`; return <View key={`${date}-${item.id}`}><CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <Text style={[styles.weekOpen, { color: colors.tertiary }]}>Open</Text>}
           </View>
         );
       })}
@@ -239,13 +312,16 @@ function WeekPage({ period, items, today, colors, onEditItem, onOpenDay }: {
   );
 }
 
-function CoarsePeriod({ period, zoom, items, loading, colors, onEditItem, onOpenDay }: {
+function CoarsePeriod({ period, zoom, items, loading, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay }: {
   period: TimelinePeriod;
   zoom: TimelineZoom;
   items: PlanningItem[];
   loading: boolean;
   colors: AppColors;
-  onEditItem: (item: PlanningItem) => void;
+  editingItem: PlanningItem | null;
+  editingSlot: string | null;
+  inlineEditor: ReactNode;
+  onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
 }) {
   const limit = { month: 9, quarter: 9, year: 12 }[zoom as 'month' | 'quarter' | 'year'];
@@ -259,7 +335,7 @@ function CoarsePeriod({ period, zoom, items, loading, colors, onEditItem, onOpen
           {period.subtitle && <Text style={[styles.periodSubtitle, { color: colors.secondary }]}>{period.subtitle}</Text>}
         </View>
       </Pressable>
-      {!loading && !shownItems.length ? <Text style={[styles.empty, { color: colors.tertiary }]}>Open</Text> : shownItems.map((item) => <CompactItem colors={colors} item={item} key={item.id} onPress={() => onEditItem(item)} />)}
+      {!loading && !shownItems.length ? <Text style={[styles.empty, { color: colors.tertiary }]}>Open</Text> : shownItems.map((item) => { const slot = `${period.id}-${item.id}`; return <View key={item.id}><CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
       {items.length > shownItems.length && <Text style={[styles.more, { color: colors.secondary }]}>+{items.length - shownItems.length} more</Text>}
     </>
   );
