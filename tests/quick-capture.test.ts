@@ -29,3 +29,13 @@ test('trip language becomes a high-level trip and tomorrow changes the date', ()
     time: '9:15 AM',
   });
 });
+
+test('a written date range anchors a multi-day trip', () => {
+  assert.deepEqual(parseQuickCapture('August 20-23 Colorado Trip', '2026-08-16'), {
+    kind: 'trip',
+    title: 'Colorado Trip',
+    date: '2026-08-20',
+    endDate: '2026-08-23',
+    time: undefined,
+  });
+});

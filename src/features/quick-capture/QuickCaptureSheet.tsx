@@ -26,9 +26,11 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
   const [saving, setSaving] = useState(false);
   const parsed = useMemo(() => parseQuickCapture(text, date), [date, text]);
   const kind = override ?? parsed.kind;
-  const dateLabel = endDate && endDate !== date
-    ? `${formatShortDate(date)}–${formatShortDate(endDate)}`
-    : formatDestination(date);
+  const captureDate = dateLocked ? date : parsed.date;
+  const captureEndDate = endDate ?? parsed.endDate;
+  const dateLabel = captureEndDate && captureEndDate !== captureDate
+    ? `${formatShortDate(captureDate)}–${formatShortDate(captureEndDate)}`
+    : formatDestination(captureDate);
 
   function close() {
     setText('');
@@ -44,8 +46,8 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
     await onSave({
       kind: kind === 'task' ? 'task' : 'event',
       title: parsed.title,
-      date: dateLocked ? date : parsed.date,
-      endDate: kind === 'task' ? undefined : endDate,
+      date: captureDate,
+      endDate: kind === 'task' ? undefined : captureEndDate,
       time: kind === 'task' ? undefined : parsed.time,
       altitude: kind === 'trip' ? 4 : kind === 'event' ? 1 : 0,
       eventType: kind === 'trip' ? 'trip' : 'event',
@@ -80,7 +82,7 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
 
           <View style={styles.footer}>
             <View style={styles.metadata}>
-              {dateLocked && (
+              {(dateLocked || parsed.endDate) && (
                 <View style={[styles.datePill, { backgroundColor: colors.card }]}>
                   <Text style={[styles.dateText, { color: colors.secondary }]}>{dateLabel}</Text>
                 </View>
