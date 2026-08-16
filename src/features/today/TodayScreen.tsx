@@ -55,6 +55,13 @@ function configureEditorLayout() {
   });
 }
 
+function configureEditorClose() {
+  LayoutAnimation.configureNext({
+    duration: 340,
+    update: { type: LayoutAnimation.Types.easeInEaseOut },
+  });
+}
+
 function countLabel(count: number, singular: string) {
   return `${count} ${singular}${count === 1 ? '' : 's'}`;
 }
@@ -167,7 +174,7 @@ export function TodayScreen() {
 
   async function saveInline(draft: ItemDraft) {
     await data.saveItem(draft);
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    configureEditorClose();
     setInlineDraft(null);
     setInlineEditor(null);
   }
@@ -177,7 +184,7 @@ export function TodayScreen() {
     if (editingItem && inlineDraft?.title.trim()) await data.saveItem(inlineDraft);
 
     if (editingItem?.id === item.id) {
-      configureEditorLayout();
+      configureEditorClose();
       setInlineDraft(null);
       setInlineEditor(null);
       Keyboard.dismiss();
@@ -199,7 +206,7 @@ export function TodayScreen() {
   }
 
   function closeInlineEditor() {
-    configureEditorLayout();
+    configureEditorClose();
     setInlineDraft(null);
     setInlineEditor(null);
     Keyboard.dismiss();
