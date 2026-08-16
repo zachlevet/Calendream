@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Dimensions, Keyboard, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { SymbolView } from 'expo-symbols';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import type { ItemDraft, PlanningItem, TimelineSnapshot, TimelineZoom } from '@/models/planning';
@@ -48,6 +49,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   const scroll = useRef<ScrollView>(null);
   const editorView = useRef<View>(null);
   const scrollOffset = useRef(0);
+  const currentPeriodY = useRef(0);
   const keyboardTop = useRef(Dimensions.get('window').height);
   const alignedZoom = useRef<TimelineZoom | null>(null);
   const periods = useMemo(() => buildTimelinePeriods(zoom, today), [today, zoom]);
@@ -122,10 +124,15 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   }, [zoom]);
 
   const alignCurrentPeriod = useCallback((y: number) => {
+    currentPeriodY.current = y;
     if (alignedZoom.current === zoom) return;
     alignedZoom.current = zoom;
     setTimeout(() => scroll.current?.scrollTo({ y: Math.max(0, y - 2), animated: false }), 20);
   }, [zoom]);
+
+  const goHome = useCallback(() => {
+    scroll.current?.scrollTo({ y: Math.max(0, currentPeriodY.current - 2), animated: true });
+  }, []);
 
   const pinch = Gesture.Pinch()
     .runOnJS(true)
@@ -175,6 +182,10 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
       </GestureDetector>
 
       <View style={styles.dock}>
+        <Pressable accessibilityLabel={`Return to the current ${zoom}`} onPress={goHome} style={[styles.homeButton, !glassAvailable && { backgroundColor: fallbackGlass }]}>
+          {glassAvailable && <GlassView glassEffectStyle="regular" isInteractive style={styles.homeGlass} />}
+          <SymbolView name="house.fill" size={18} tintColor={colors.text} weight="semibold" />
+        </Pressable>
         <View style={[styles.dockSurface, !glassAvailable && { backgroundColor: fallbackGlass }]}>
           {glassAvailable && <GlassView glassEffectStyle="regular" style={styles.dockGlass} />}
           <View style={styles.dockContent}>
@@ -377,6 +388,8 @@ const styles = StyleSheet.create({
   weekTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }, weekTitle: { fontSize: 29, fontWeight: '700', letterSpacing: -0.8 }, weekDay: { paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth }, currentWeekDay: { borderTopWidth: 2 }, weekDayHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 3 }, weekDayName: { fontSize: 17, fontWeight: '700' }, weekDayDate: { fontSize: 13, fontWeight: '600' }, weekOpen: { fontSize: 13, paddingVertical: 6 },
   compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactDate: { width: 72, fontSize: 12, fontVariant: ['tabular-nums'] }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },
   dock: { position: 'absolute', width: '75%', alignSelf: 'center', bottom: 92, borderRadius: 27, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10 },
+  homeButton: { position: 'absolute', left: -58, top: 2, width: 50, height: 50, borderRadius: 25, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 9 },
+  homeGlass: { position: 'absolute', inset: 0, borderRadius: 25 },
   dockSurface: { minHeight: 54, borderRadius: 27, overflow: 'hidden' },
   dockGlass: { position: 'absolute', inset: 0, borderRadius: 27 },
   dockContent: { minHeight: 54, flexDirection: 'row', alignItems: 'center', padding: 5, gap: 1 },
