@@ -299,7 +299,12 @@ function WeekPage({ period, items, today, colors, editingItem, editingSlot, inli
   onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
 }) {
-  const days = Array.from({ length: 7 }, (_, index) => addLocalDays(period.start, index));
+  const days = Array.from({ length: 7 }, (_, index) => addLocalDays(period.start, index))
+    .map((date) => ({
+      date,
+      events: items.filter((item) => item.kind === 'event' && item.anchorStart !== null && item.anchorStart <= date && (item.anchorEnd ?? item.anchorStart) >= date),
+    }))
+    .filter((day) => day.events.length > 0);
   return (
     <>
       {period.current && <Text style={[styles.eyebrow, { color: colors.red }]}>This week</Text>}
@@ -307,8 +312,8 @@ function WeekPage({ period, items, today, colors, editingItem, editingSlot, inli
         <Text style={[styles.weekTitle, { color: colors.text }]}>Week {isoWeekNumber(period.start)}</Text>
         <Text style={[styles.periodSubtitle, { color: colors.secondary }]}>{period.title}</Text>
       </View>
-      {days.map((date) => {
-        const dayItems = items.filter((item) => item.anchorStart !== null && item.anchorStart <= date && (item.anchorEnd ?? item.anchorStart) >= date);
+      {!days.length && <Text style={[styles.emptyWeek, { color: colors.tertiary }]}>No events yet, let’s get planning :)</Text>}
+      {days.map(({ date, events }) => {
         const parsed = dateFromISO(date);
         return (
           <View key={date} style={[styles.weekDay, { borderColor: date === today ? colors.red : colors.separator }, date === today && styles.currentWeekDay]}>
@@ -316,7 +321,7 @@ function WeekPage({ period, items, today, colors, editingItem, editingSlot, inli
               <Text style={[styles.weekDayName, { color: date === today ? colors.red : colors.text }]}>{new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(parsed)}</Text>
               <Text style={[styles.weekDayDate, { color: colors.secondary }]}>{new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(parsed)}</Text>
             </Pressable>
-            {dayItems.length ? dayItems.map((item) => { const slot = `week-${date}-${item.id}`; return <View key={`${date}-${item.id}`}><CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <Text style={[styles.weekOpen, { color: colors.tertiary }]}>Open</Text>}
+            {events.map((item) => { const slot = `week-${date}-${item.id}`; return <View key={`${date}-${item.id}`}><CompactItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
           </View>
         );
       })}
@@ -387,6 +392,7 @@ const styles = StyleSheet.create({
   checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' }, openRow: { height: 42, fontSize: 14, paddingTop: 10 },
   reflection: { marginTop: 12 }, reflectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, marginBottom: 8 }, reflectionBox: { minHeight: 58, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, justifyContent: 'center' }, reflectionText: { fontSize: 16, lineHeight: 22 },
   weekTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }, weekTitle: { fontSize: 29, fontWeight: '700', letterSpacing: -0.8 }, weekDay: { paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth }, currentWeekDay: { borderTopWidth: 2 }, weekDayHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 3 }, weekDayName: { fontSize: 17, fontWeight: '700' }, weekDayDate: { fontSize: 13, fontWeight: '600' }, weekOpen: { fontSize: 13, paddingVertical: 6 },
+  emptyWeek: { fontSize: 15, lineHeight: 21, paddingVertical: 12 },
   compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactDate: { width: 72, fontSize: 12, fontVariant: ['tabular-nums'] }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },
   dock: { position: 'absolute', width: '75%', alignSelf: 'center', bottom: 92, borderRadius: 27, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10 },
   homeButton: { position: 'absolute', left: -58, top: 2, width: 50, height: 50, borderRadius: 25, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', shadowColor: '#000000', shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 9 },
