@@ -1057,6 +1057,8 @@ function LocationInput({ value, colors, labeled, onFocus, onTextChange, onPlaceC
   const [suggestions, setSuggestions] = useState<MapSuggestion[]>([]);
   const [resolving, setResolving] = useState(false);
   const [selectionCommitted, setSelectionCommitted] = useState(false);
+  const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
+  const fallbackGlass = colors.background === '#000000' ? 'rgba(36,36,40,0.88)' : 'rgba(250,250,252,0.88)';
 
   useEffect(() => {
     const query = value.trim();
@@ -1090,7 +1092,7 @@ function LocationInput({ value, colors, labeled, onFocus, onTextChange, onPlaceC
   }
 
   return (
-    <View>
+    <View style={suggestions.length > 0 && styles.locationLayerActive}>
       <View style={[labeled ? styles.inputRow : styles.locationInputRow, { borderColor: colors.separator }]}>
         {labeled && <Text style={[styles.inputLabel, { color: colors.secondary }]}>PLACE</Text>}
         <TextInput
@@ -1108,17 +1110,20 @@ function LocationInput({ value, colors, labeled, onFocus, onTextChange, onPlaceC
         />
       </View>
       {suggestions.length > 0 && (
-        <View style={[styles.locationSuggestions, { backgroundColor: colors.background, borderColor: colors.separator }]}>
-          {suggestions.map((suggestion, index) => (
-            <Pressable
-              key={`${suggestion.title}-${suggestion.subtitle}-${index}`}
-              onPress={() => void selectSuggestion(suggestion)}
-              style={[styles.locationSuggestion, index > 0 && { borderColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }]}
-            >
-              <Text style={[styles.locationSuggestionTitle, { color: colors.text }]} numberOfLines={1}>{suggestion.title}</Text>
-              {!!suggestion.subtitle && <Text style={[styles.locationSuggestionSubtitle, { color: colors.secondary }]} numberOfLines={1}>{suggestion.subtitle}</Text>}
-            </Pressable>
-          ))}
+        <View style={[styles.locationSuggestions, labeled ? styles.locationSuggestionsLabeled : styles.locationSuggestionsInline, !glassAvailable && { backgroundColor: fallbackGlass }]}>
+          {glassAvailable && <GlassView glassEffectStyle="regular" style={styles.locationSuggestionsGlass} tintColor={colors.background === '#000000' ? 'rgba(44,44,48,0.55)' : 'rgba(255,255,255,0.36)'} />}
+          <View style={styles.locationSuggestionsContent}>
+            {suggestions.map((suggestion, index) => (
+              <Pressable
+                key={`${suggestion.title}-${suggestion.subtitle}-${index}`}
+                onPress={() => void selectSuggestion(suggestion)}
+                style={[styles.locationSuggestion, index > 0 && { borderColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }]}
+              >
+                <Text style={[styles.locationSuggestionTitle, { color: colors.text }]} numberOfLines={1}>{suggestion.title}</Text>
+                {!!suggestion.subtitle && <Text style={[styles.locationSuggestionSubtitle, { color: colors.secondary }]} numberOfLines={1}>{suggestion.subtitle}</Text>}
+              </Pressable>
+            ))}
+          </View>
         </View>
       )}
     </View>
@@ -1382,12 +1387,17 @@ const styles = StyleSheet.create({
   editorBar: { height: 48, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   editorHeading: { fontSize: 16, fontWeight: '700' },
   editorButton: { fontSize: 16 },
-  inlineComposer: { borderRadius: 14, paddingHorizontal: 13, paddingBottom: 11, marginTop: 8 },
+  inlineComposer: { borderRadius: 14, paddingHorizontal: 13, paddingBottom: 11, marginTop: 8, zIndex: 20 },
   inlineTitle: { height: 48, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 17, fontWeight: '600' },
   inlineField: { height: 42, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 15 },
   locationInputRow: { minHeight: 42, borderBottomWidth: StyleSheet.hairlineWidth, justifyContent: 'center' },
   locationInput: { minHeight: 42, fontSize: 15 },
-  locationSuggestions: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, overflow: 'hidden', marginTop: 6 },
+  locationLayerActive: { zIndex: 100 },
+  locationSuggestions: { position: 'absolute', left: 0, right: 0, borderRadius: 16, overflow: 'hidden', zIndex: 100, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 14 },
+  locationSuggestionsInline: { top: 48 },
+  locationSuggestionsLabeled: { top: 54 },
+  locationSuggestionsGlass: { position: 'absolute', inset: 0, borderRadius: 16 },
+  locationSuggestionsContent: { paddingHorizontal: 5, paddingVertical: 5 },
   locationSuggestion: { minHeight: 48, paddingHorizontal: 11, paddingVertical: 7, justifyContent: 'center' },
   locationSuggestionTitle: { fontSize: 14, fontWeight: '600' },
   locationSuggestionSubtitle: { fontSize: 11, marginTop: 2 },
