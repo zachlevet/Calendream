@@ -474,14 +474,35 @@ function YearPage({ period, items, goals, loading, today, colors, editingItem, e
       </View>
       <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
       {!loading && !events.length && !goals.length && <Text style={[styles.editorialEmpty, { color: colors.tertiary }]}>An unwritten year.</Text>}
-      <View style={styles.yearGrid}>
-        {months.flatMap((month) => {
-          const cell = <View key={month.start} style={[styles.yearMonth, { backgroundColor: colors.card }]}>
-            <Pressable onPress={() => onZoomToDate(month.start, 'month')} style={styles.yearMonthHeader}><Text style={[styles.yearMonthTitle, { color: month.start <= today && month.end >= today ? colors.red : colors.text }]}>{month.title}</Text><Text style={[styles.yearMonthCount, { color: colors.secondary }]}>{month.events.length || ''}</Text></Pressable>
-            {month.events.slice(0, 2).map((event) => { const slot = `${period.id}-${month.start}-${event.id}`; return <Pressable key={event.id} onPress={() => onEditItem(event, slot)} style={styles.yearEvent}><View style={[styles.yearEventDot, { backgroundColor: isTrip(event) ? colors.amber : eventAccent(event, colors) }]} /><Text numberOfLines={1} style={[styles.yearEventText, { color: colors.secondary }]}>{event.title}</Text></Pressable>; })}
-          </View>;
-          const selected = month.events.find((event) => editingItem?.id === event.id && editingSlot === `${period.id}-${month.start}-${event.id}`);
-          return selected ? [cell, <View key={`${month.start}-editor`} style={styles.yearInlineEditor}>{inlineEditor}</View>] : [cell];
+      <View style={styles.yearIndex}>
+        {months.map((month) => {
+          const currentMonth = month.start <= today && month.end >= today;
+          const pastMonth = month.end < today;
+          return (
+            <View key={month.start} style={styles.yearMonthSection}>
+              <Pressable onPress={() => onZoomToDate(month.start, 'month')} style={styles.yearMonthSeparator}>
+                <Text style={[styles.yearMonthLabel, { color: currentMonth ? colors.red : pastMonth ? colors.tertiary : colors.secondary }]}>{month.title.toUpperCase()}</Text>
+                <View style={[styles.yearMonthLine, { backgroundColor: currentMonth ? colors.red : colors.separator }]} />
+                <Text style={[styles.yearMonthCount, { color: colors.tertiary }]}>{month.events.length || ''}</Text>
+              </Pressable>
+              {!month.events.length ? (
+                <Text style={[styles.yearMonthOpen, { color: colors.tertiary }]}>Open</Text>
+              ) : month.events.slice(0, 3).map((event) => {
+                const slot = `${period.id}-${month.start}-${event.id}`;
+                return (
+                  <View key={event.id}>
+                    <Pressable onPress={() => onEditItem(event, slot)} style={styles.yearMoment}>
+                      <View style={[isTrip(event) ? styles.yearTripMark : styles.yearEventDot, { backgroundColor: isTrip(event) ? colors.amber : eventAccent(event, colors) }]} />
+                      <Text numberOfLines={1} style={[styles.yearEventText, { color: pastMonth ? colors.secondary : colors.text }]}>{event.title}</Text>
+                      <Text style={[styles.yearMomentDate, { color: isTrip(event) ? colors.amber : colors.secondary }]}>{isTrip(event) ? eventRange(event) : formatShortDate(event.anchorStart)}</Text>
+                    </Pressable>
+                    {editingItem?.id === event.id && editingSlot === slot && <View style={styles.yearInlineEditor}>{inlineEditor}</View>}
+                  </View>
+                );
+              })}
+              {month.events.length > 3 && <Text style={[styles.yearMore, { color: colors.secondary }]}>+{month.events.length - 3} more</Text>}
+            </View>
+          );
         })}
       </View>
     </>
@@ -643,15 +664,20 @@ const styles = StyleSheet.create({
   editorialCompactCopy: { flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   editorialCompactTitle: { flex: 1, fontSize: 14, fontWeight: '600' },
   editorialCompactMeta: { fontSize: 10, fontWeight: '600' },
-  yearGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  yearMonth: { width: '48.7%', minHeight: 86, borderRadius: 15, paddingHorizontal: 10, paddingVertical: 9 },
-  yearMonthHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5 },
-  yearMonthTitle: { fontSize: 15, fontWeight: '700' },
-  yearMonthCount: { fontSize: 10, fontWeight: '700' },
-  yearEvent: { minHeight: 24, flexDirection: 'row', alignItems: 'center' },
-  yearEventDot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
-  yearEventText: { flex: 1, fontSize: 10, fontWeight: '600' },
-  yearInlineEditor: { width: '100%', marginBottom: 8 },
+  yearIndex: { gap: 2 },
+  yearMonthSection: { minHeight: 54, paddingBottom: 8 },
+  yearMonthSeparator: { height: 24, flexDirection: 'row', alignItems: 'center' },
+  yearMonthLabel: { width: 34, fontSize: 9, fontWeight: '800', letterSpacing: 0.65 },
+  yearMonthLine: { flex: 1, height: StyleSheet.hairlineWidth, marginHorizontal: 8 },
+  yearMonthCount: { width: 12, textAlign: 'right', fontSize: 9, fontWeight: '700' },
+  yearMonthOpen: { fontSize: 11, marginLeft: 42, paddingVertical: 4 },
+  yearMoment: { minHeight: 32, marginLeft: 39, flexDirection: 'row', alignItems: 'center' },
+  yearEventDot: { width: 6, height: 6, borderRadius: 3, marginRight: 8 },
+  yearTripMark: { width: 3, height: 22, borderRadius: 2, marginLeft: 1, marginRight: 10 },
+  yearEventText: { flex: 1, fontSize: 12, fontWeight: '600' },
+  yearMomentDate: { marginLeft: 7, fontSize: 9, fontWeight: '600' },
+  yearMore: { marginLeft: 53, fontSize: 10, fontWeight: '600', paddingTop: 2 },
+  yearInlineEditor: { marginLeft: 39, marginBottom: 8 },
   dockGroup: { position: 'absolute', width: '90%', alignSelf: 'center', bottom: 92, minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 8 },
   dock: { flex: 1, borderRadius: 27, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10 },
   homeShell: { width: 54, height: 54, borderRadius: 27, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 22, shadowOffset: { width: 0, height: 10 }, elevation: 10 },
