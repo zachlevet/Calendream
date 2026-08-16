@@ -871,7 +871,7 @@ function TodayGoalPill({ goal, colors, onToggle }: { goal: Goal; colors: AppColo
   return (
     <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} achieved`} onPress={onToggle} style={[styles.todayGoalPill, { backgroundColor: colors.yellowSoft }]}>
       <Text style={[styles.todayGoalPillStar, { color: colors.yellow }]}>{goal.completed ? '★' : '☆'}</Text>
-      <Text numberOfLines={1} style={[styles.todayGoalPillText, { color: colors.text }, goal.completed && styles.completed]}>{goal.title}</Text>
+      <Text numberOfLines={1} style={[styles.todayGoalPillText, { color: colors.yellow }, goal.completed && styles.completed]}>{goal.title}</Text>
     </Pressable>
   );
 }

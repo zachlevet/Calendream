@@ -573,7 +573,7 @@ function GoalBlurb({ goal, colors, onToggle }: { goal: Goal; colors: AppColors; 
       </Pressable>
       <View style={styles.goalCopy}>
         <Text style={[styles.goalScope, { color: colors.yellow }]}>{scope}</Text>
-        <Text style={[styles.goalTitle, { color: colors.text }, goal.completed && styles.goalCompleted]}>{goal.title}</Text>
+        <Text style={[styles.goalTitle, { color: colors.yellow }, goal.completed && styles.goalCompleted]}>{goal.title}</Text>
       </View>
     </View>
   );
