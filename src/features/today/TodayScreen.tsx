@@ -22,6 +22,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SymbolView } from 'expo-symbols';
+import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
 
 import { useTodayData, type ItemDraft } from '@/hooks/use-today';
 import { useLocalToday } from '@/hooks/use-local-today';
@@ -1161,9 +1162,16 @@ function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissT
     ]);
   }
 
+  const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
+  const fallbackGlass = colors.background === '#000000' ? 'rgba(24,24,27,0.85)' : 'rgba(250,250,252,0.85)';
+
   return (
-    <Modal animationType="slide" onRequestClose={() => void onSkip()} presentationStyle="pageSheet" visible={visible}>
-      <SafeAreaView style={[styles.briefing, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
+    <Modal animationType="fade" onRequestClose={() => void onSkip()} presentationStyle="overFullScreen" statusBarTranslucent transparent visible={visible}>
+      <View style={styles.briefingOverlay}>
+        <Pressable accessibilityLabel="Close morning review" onPress={() => void onSkip()} style={StyleSheet.absoluteFill} />
+        <View style={[styles.briefingSheet, choosingDate && styles.briefingSheetExpanded, !glassAvailable && { backgroundColor: fallbackGlass, borderColor: colors.background === '#000000' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.9)' }]}>
+          {glassAvailable && <GlassView glassEffectStyle="regular" style={StyleSheet.absoluteFill} />}
+          <SafeAreaView style={styles.briefing} edges={['bottom']}>
         <View style={styles.briefingHeader}>
           <View style={styles.briefingTitleRow}>
             <View>
@@ -1231,7 +1239,9 @@ function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onDismissT
             </Pressable>
           </ScrollView>
         )}
-      </SafeAreaView>
+          </SafeAreaView>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -1387,15 +1397,18 @@ const styles = StyleSheet.create({
   notesField: { minHeight: 72, textAlignVertical: 'top', paddingTop: 0 },
   deleteButton: { height: 50, marginHorizontal: 18, marginTop: 18, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   deleteText: { fontSize: 16, fontWeight: '600' },
-  briefing: { flex: 1 },
-  briefingHeader: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 14 },
+  briefingOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.08)' },
+  briefingSheet: { maxHeight: '60%', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderBottomWidth: 0, overflow: 'hidden', shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: -8 }, elevation: 16 },
+  briefingSheetExpanded: { height: '88%', maxHeight: '88%' },
+  briefing: { flexShrink: 1 },
+  briefingHeader: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 10 },
   briefingTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   briefingEyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  briefingTitle: { fontSize: 32, fontWeight: '700', letterSpacing: -0.9, marginTop: 4 },
-  briefingBody: { fontSize: 16, lineHeight: 22, marginTop: 9, maxWidth: 360 },
+  briefingTitle: { fontSize: 28, fontWeight: '700', letterSpacing: -0.8, marginTop: 3 },
+  briefingBody: { fontSize: 14, lineHeight: 19, marginTop: 6, maxWidth: 360 },
   reviewClose: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   reviewCloseText: { fontSize: 25, lineHeight: 27, fontWeight: '400' },
-  briefingContent: { paddingHorizontal: 18, paddingBottom: 30 },
+  briefingContent: { paddingHorizontal: 18, paddingBottom: 12 },
   reviewProgress: { marginBottom: 12 },
   reviewCount: { fontSize: 13, fontWeight: '600', marginBottom: 7 },
   progressTrack: { height: 3, borderRadius: 2, overflow: 'hidden' },
