@@ -232,7 +232,9 @@ function Period({ period, zoom, items, loading, reflection, today, colors, editi
   onOpenDay: (date: string) => void;
 }) {
   const visibleItems = items.filter((item) => overlaps(item, period) && isVisibleAtZoom(item, zoom));
-  const presentStyle = period.current ? { borderTopColor: colors.red, borderTopWidth: 2 } : { borderTopColor: colors.separator };
+  const presentStyle = period.current
+    ? zoom === 'today' ? { borderTopWidth: 0 } : { borderTopColor: colors.red, borderTopWidth: 2 }
+    : { borderTopColor: colors.separator };
   const shared = { colors, editingItem, editingSlot, inlineEditor, onEditItem };
 
   return (
@@ -269,7 +271,12 @@ function DayPage({ date, period, items, reflection, today, colors, editingItem, 
   const dayAccent = date < today ? colors.tertiary : date === today ? colors.red : colors.blue;
   return (
     <>
-      <Text style={[styles.dayEyebrow, { color: dayAccent }]}>{period.eyebrow}</Text>
+      {period.current ? (
+        <View style={styles.todayMarker}>
+          <Text style={[styles.dayEyebrow, { color: dayAccent }]}>{period.eyebrow}</Text>
+          <View style={[styles.todayMarkerLine, { backgroundColor: colors.red }]} />
+        </View>
+      ) : <Text style={[styles.dayEyebrow, { color: dayAccent }]}>{period.eyebrow}</Text>}
       <Pressable onPress={() => onOpenDay(date)}>
         <Text style={[styles.dayTitle, { color: colors.text }]}>{period.title}</Text>
         {period.subtitle && <Text style={[styles.daySubtitle, { color: colors.secondary }]}>{period.subtitle}</Text>}
@@ -393,6 +400,8 @@ const styles = StyleSheet.create({
   periodTitle: { fontSize: 29, lineHeight: 34, fontWeight: '700', letterSpacing: -0.8 },
   yearTitle: { fontSize: 42, lineHeight: 47, fontWeight: '700', letterSpacing: -1.3 }, periodSubtitle: { fontSize: 14, fontWeight: '600' },
   dayEyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' }, dayTitle: { fontSize: 31, fontWeight: '700', letterSpacing: -1, marginTop: 3 }, daySubtitle: { fontSize: 14, marginTop: 3 },
+  todayMarker: { minHeight: 14, flexDirection: 'row', alignItems: 'center' },
+  todayMarkerLine: { flex: 1, height: 1, marginLeft: 9, borderRadius: 1 },
   sectionHeader: { marginTop: 10, height: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, sectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4 }, sectionAction: { fontSize: 14, fontWeight: '600' },
   timelineItem: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, eventTime: { width: 68, fontSize: 13, fontVariant: ['tabular-nums'] }, itemRule: { width: 3, height: 25, borderRadius: 2, marginRight: 10 }, itemCopy: { flex: 1, paddingVertical: 6 }, itemTitle: { fontSize: 16, fontWeight: '500' }, itemNote: { fontSize: 12, marginTop: 2 },
   checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' }, openRow: { height: 42, fontSize: 14, paddingTop: 10 },
