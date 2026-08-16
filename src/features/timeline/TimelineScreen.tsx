@@ -6,7 +6,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import type { PlanningItem, TimelineZoom } from '@/models/planning';
 import { formatShortDate } from '@/shared/date';
 import type { AppColors } from '@/theme/colors';
-import { buildTimelinePeriods, timelineAltitude, type TimelinePeriod } from './periods';
+import { buildTimelinePeriods, isVisibleAtZoom, type TimelinePeriod } from './periods';
 
 interface TimelineScreenProps {
   colors: AppColors;
@@ -121,12 +121,11 @@ function Period({ period, zoom, items, loading, colors, onEditItem, onOpenDay }:
   onEditItem: (item: PlanningItem) => void;
   onOpenDay: (date: string) => void;
 }) {
-  const threshold = timelineAltitude(zoom);
   const visibleItems = items.filter((item) => (
     item.anchorStart !== null
     && item.anchorStart <= period.end
     && (item.anchorEnd ?? item.anchorStart) >= period.start
-    && item.altitude >= threshold
+    && isVisibleAtZoom(item, zoom)
   ));
   const limit = { today: 12, week: 10, month: 7, quarter: 6, year: 8 }[zoom];
   const shownItems = visibleItems.slice(0, limit);

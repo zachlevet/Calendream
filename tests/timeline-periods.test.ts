@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildTimelinePeriods, timelineAltitude } from '../src/features/timeline/periods.ts';
+import type { PlanningItem } from '../src/models/planning.ts';
+import { buildTimelinePeriods, isVisibleAtZoom, timelineAltitude } from '../src/features/timeline/periods.ts';
 
 test('timeline begins at today at the closest level', () => {
   const periods = buildTimelinePeriods('today', '2026-08-15');
@@ -28,4 +29,47 @@ test('altitude progressively removes detail while zooming out', () => {
   assert.equal(timelineAltitude('month'), 2);
   assert.equal(timelineAltitude('quarter'), 3);
   assert.equal(timelineAltitude('year'), 4);
+});
+
+test('ordinary tasks disappear at month scale even if their altitude is raised', () => {
+  const laundry: PlanningItem = {
+    id: 'laundry',
+    kind: 'task',
+    title: 'Do laundry',
+    anchorStart: '2026-08-16',
+    anchorEnd: '2026-08-16',
+    precision: 'day',
+    altitude: 4,
+  };
+
+  assert.equal(isVisibleAtZoom(laundry, 'week'), true);
+  assert.equal(isVisibleAtZoom(laundry, 'month'), false);
+  assert.equal(isVisibleAtZoom(laundry, 'quarter'), false);
+});
+
+test('trips and coarse goals survive broader timeline levels', () => {
+  const trip: PlanningItem = {
+    id: 'trip',
+    kind: 'event',
+    title: 'Colorado trip',
+    anchorStart: '2026-09-01',
+    anchorEnd: '2026-09-05',
+    precision: 'day',
+    altitude: 4,
+  };
+  const goal: PlanningItem = {
+    id: 'goal',
+    kind: 'task',
+    title: 'Launch Calendream',
+    anchorStart: '2026-07-01',
+    anchorEnd: '2026-09-30',
+    precision: 'quarter',
+    altitude: 4,
+  };
+
+  assert.equal(isVisibleAtZoom(trip, 'month'), true);
+  assert.equal(isVisibleAtZoom(trip, 'year'), true);
+  assert.equal(isVisibleAtZoom(goal, 'month'), true);
+  assert.equal(isVisibleAtZoom(goal, 'quarter'), true);
+  assert.equal(isVisibleAtZoom(goal, 'year'), true);
 });

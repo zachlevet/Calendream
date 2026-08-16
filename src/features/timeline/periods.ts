@@ -1,4 +1,4 @@
-import type { TimelineZoom } from '../../models/planning.ts';
+import type { PlanningItem, TimelineZoom } from '../../models/planning.ts';
 import { addLocalDays, dateFromISO, localISO } from '../../shared/date.ts';
 
 export interface TimelinePeriod {
@@ -16,6 +16,18 @@ function monthEnd(year: number, month: number) {
 
 export function timelineAltitude(zoom: TimelineZoom) {
   return { today: 0, week: 0, month: 2, quarter: 3, year: 4 }[zoom];
+}
+
+export function isVisibleAtZoom(item: PlanningItem, zoom: TimelineZoom) {
+  if (zoom === 'today' || zoom === 'week') return true;
+
+  const coarsePlanningItem = item.precision === 'month' || item.precision === 'quarter' || item.precision === 'year';
+  if (item.kind === 'task' && !coarsePlanningItem) return false;
+  if (zoom === 'month') {
+    return item.altitude >= timelineAltitude(zoom) && (item.kind === 'event' || coarsePlanningItem);
+  }
+
+  return item.altitude >= timelineAltitude(zoom);
 }
 
 export function buildTimelinePeriods(zoom: TimelineZoom, today: string): TimelinePeriod[] {
