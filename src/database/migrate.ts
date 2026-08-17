@@ -291,6 +291,37 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       );
     });
   }
+
+  const habitSampleMarker = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_meta WHERE key = 'sample_habits_v1'",
+  );
+  if (!habitSampleMarker) {
+    const now = new Date();
+    const createdAt = now.toISOString();
+    const today = localDate(now);
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `INSERT OR IGNORE INTO habits
+          (id, name, schedule_json, start_date, created_at, updated_at)
+         VALUES ('sample-habit-run', 'Morning run', '[1,3,5]', ?, ?, ?)`,
+        today,
+        createdAt,
+        createdAt,
+      );
+      await db.runAsync(
+        `INSERT OR IGNORE INTO habits
+          (id, name, schedule_json, start_date, created_at, updated_at)
+         VALUES ('sample-habit-read', 'Read for 20 minutes', '[1,2,3,4,5,6,7]', ?, ?, ?)`,
+        today,
+        createdAt,
+        createdAt,
+      );
+      await db.runAsync(
+        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_habits_v1', 'seeded', ?)",
+        createdAt,
+      );
+    });
+  }
 }
 
 function localDate(date: Date) {

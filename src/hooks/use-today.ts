@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 
-import type { Goal, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
+import type { Goal, GoalDraft, Habit, HabitDraft, ISOWeekday, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
 import { matchingSnippet } from '../shared/search';
 
 export type { ItemDraft } from '../models/planning';
@@ -34,6 +34,15 @@ interface GoalRow {
   completed_at: string | null;
   notes: string | null;
   linked_habit_id: string | null;
+}
+
+interface HabitRow {
+  id: string;
+  name: string;
+  schedule_json: string;
+  start_date: string;
+  end_date: string | null;
+  completed_on_date: number;
 }
 
 function toItem(row: ItemRow): PlanningItem {
@@ -73,6 +82,23 @@ function toGoal(row: GoalRow): Goal {
   };
 }
 
+function toHabit(row: HabitRow): Habit {
+  let weekdays: ISOWeekday[] = [];
+  try {
+    weekdays = JSON.parse(row.schedule_json) as ISOWeekday[];
+  } catch {
+    weekdays = [];
+  }
+  return {
+    id: row.id,
+    name: row.name,
+    weekdays,
+    startDate: row.start_date,
+    endDate: row.end_date ?? undefined,
+    completedOnDate: Boolean(row.completed_on_date),
+  };
+}
+
 function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -83,19 +109,56 @@ function addDays(isoDate: string, amount: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function isoWeekday(isoDate: string): ISOWeekday {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const weekday = new Date(year, month - 1, day).getDay();
+  return (weekday === 0 ? 7 : weekday) as ISOWeekday;
+}
+
 export function useTodayData(date: string, reviewDate = date) {
   const db = useSQLiteContext();
   const [items, setItems] = useState<PlanningItem[]>([]);
   const [upcoming, setUpcoming] = useState<PlanningItem[]>([]);
   const [overdueTasks, setOverdueTasks] = useState<PlanningItem[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [allGoals, setAllGoals] = useState<Goal[]>([]);
+  const [habits, setHabits] = useState<Habit[]>([]);
   const [morningReviewed, setMorningReviewed] = useState(false);
   const [journal, setJournal] = useState('');
   const [journalInLibrary, setJournalInLibrary] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const [todayRows, upcomingRows, overdueRows, goalRows, page, morningReview, libraryEntry] = await Promise.all([
+    const scheduledHabits = await db.getAllAsync<{ id: string; name: string; schedule_json: string }>(
+      `SELECT id, name, schedule_json FROM habits
+       WHERE archived_at IS NULL AND start_date <= ? AND (end_date IS NULL OR end_date >= ?)`,
+      date,
+      date,
+    );
+    const weekday = isoWeekday(date);
+    const now = new Date().toISOString();
+    for (const habit of scheduledHabits) {
+      let weekdays: ISOWeekday[] = [];
+      try { weekdays = JSON.parse(habit.schedule_json) as ISOWeekday[]; } catch { weekdays = []; }
+      if (!weekdays.includes(weekday)) continue;
+      const existing = await db.getFirstAsync<{ id: string }>(
+        `SELECT id FROM items WHERE deleted_at IS NULL AND habit_id = ? AND anchor_start = ?`,
+        habit.id,
+        date,
+      );
+      if (!existing) {
+        await db.runAsync(
+          `INSERT INTO items
+            (id, kind, title, anchor_start, anchor_end, precision, altitude, habit_id,
+             sort_order, created_at, updated_at)
+           VALUES (?, 'task', ?, ?, ?, 'day', 0, ?,
+             COALESCE((SELECT MAX(sort_order) + 1 FROM items WHERE kind = 'task' AND anchor_start = ?), 0), ?, ?)`,
+          makeId(), habit.name, date, date, habit.id, date, now, now,
+        );
+      }
+    }
+
+    const [todayRows, upcomingRows, overdueRows, goalRows, habitRows, page, morningReview, libraryEntry] = await Promise.all([
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
                 start_time, completed_at, notes, location, sort_order,
@@ -133,9 +196,19 @@ export function useTodayData(date: string, reviewDate = date) {
       db.getAllAsync<GoalRow>(
         `SELECT id, title, scope, starts_on, target_date, completed_at, notes, linked_habit_id
          FROM goals
-         WHERE deleted_at IS NULL AND starts_on <= ? AND target_date >= ?
-         ORDER BY target_date, created_at`,
-        date,
+         WHERE deleted_at IS NULL
+         ORDER BY completed_at IS NOT NULL, target_date, created_at`,
+      ),
+      db.getAllAsync<HabitRow>(
+        `SELECT h.id, h.name, h.schedule_json, h.start_date, h.end_date,
+                EXISTS(
+                  SELECT 1 FROM items i
+                  WHERE i.deleted_at IS NULL AND i.habit_id = h.id
+                    AND i.anchor_start = ? AND i.completed_at IS NOT NULL
+                ) AS completed_on_date
+         FROM habits h
+         WHERE h.archived_at IS NULL
+         ORDER BY h.created_at`,
         date,
       ),
       db.getFirstAsync<{ reflection: string }>(
@@ -151,7 +224,10 @@ export function useTodayData(date: string, reviewDate = date) {
     setItems(todayRows.map(toItem));
     setUpcoming(upcomingRows.map(toItem));
     setOverdueTasks(overdueRows.map(toItem));
-    setGoals(goalRows.map(toGoal));
+    const mappedGoals = goalRows.map(toGoal);
+    setAllGoals(mappedGoals);
+    setGoals(mappedGoals.filter((goal) => goal.startsOn <= date && goal.targetDate >= date));
+    setHabits(habitRows.map(toHabit));
     setMorningReviewed(morningReview?.value === reviewDate);
     setJournal(page?.reflection ?? '');
     setJournalInLibrary(Boolean(libraryEntry));
@@ -318,6 +394,86 @@ export function useTodayData(date: string, reviewDate = date) {
     await refresh();
   }, [db, refresh]);
 
+  const saveGoal = useCallback(async (draft: GoalDraft) => {
+    const now = new Date().toISOString();
+    if (draft.id) {
+      await db.runAsync(
+        `UPDATE goals SET title = ?, scope = ?, starts_on = ?, target_date = ?, notes = ?, updated_at = ?
+         WHERE id = ?`,
+        draft.title.trim(), draft.scope, draft.startsOn, draft.targetDate, draft.notes?.trim() || null, now, draft.id,
+      );
+    } else {
+      await db.runAsync(
+        `INSERT INTO goals
+          (id, title, scope, starts_on, target_date, notes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        makeId(), draft.title.trim(), draft.scope, draft.startsOn, draft.targetDate,
+        draft.notes?.trim() || null, now, now,
+      );
+    }
+    await refresh();
+  }, [db, refresh]);
+
+  const deleteGoal = useCallback(async (id: string) => {
+    const now = new Date().toISOString();
+    await db.runAsync('UPDATE goals SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, id);
+    await refresh();
+  }, [db, refresh]);
+
+  const saveHabit = useCallback(async (draft: HabitDraft) => {
+    const now = new Date().toISOString();
+    const schedule = JSON.stringify([...draft.weekdays].sort((a, b) => a - b));
+    if (draft.id) {
+      await db.runAsync(
+        `UPDATE habits SET name = ?, schedule_json = ?, start_date = ?, end_date = ?, updated_at = ?
+         WHERE id = ?`,
+        draft.name.trim(), schedule, draft.startDate, draft.endDate ?? null, now, draft.id,
+      );
+      await db.runAsync(
+        `UPDATE items SET title = ?, updated_at = ?
+         WHERE habit_id = ? AND completed_at IS NULL AND deleted_at IS NULL`,
+        draft.name.trim(), now, draft.id,
+      );
+    } else {
+      await db.runAsync(
+        `INSERT INTO habits
+          (id, name, schedule_json, start_date, end_date, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        makeId(), draft.name.trim(), schedule, draft.startDate, draft.endDate ?? null, now, now,
+      );
+    }
+    await refresh();
+  }, [db, refresh]);
+
+  const toggleHabit = useCallback(async (habit: Habit) => {
+    const now = new Date().toISOString();
+    const item = await db.getFirstAsync<{ id: string; completed_at: string | null }>(
+      `SELECT id, completed_at FROM items
+       WHERE deleted_at IS NULL AND habit_id = ? AND anchor_start = ?`,
+      habit.id,
+      date,
+    );
+    if (item) {
+      await db.runAsync('UPDATE items SET completed_at = ?, updated_at = ? WHERE id = ?', item.completed_at ? null : now, now, item.id);
+    } else {
+      await db.runAsync(
+        `INSERT INTO items
+          (id, kind, title, anchor_start, anchor_end, precision, altitude, habit_id,
+           completed_at, sort_order, created_at, updated_at)
+         VALUES (?, 'task', ?, ?, ?, 'day', 0, ?, ?,
+           COALESCE((SELECT MAX(sort_order) + 1 FROM items WHERE kind = 'task' AND anchor_start = ?), 0), ?, ?)`,
+        makeId(), habit.name, date, date, habit.id, now, date, now, now,
+      );
+    }
+    await refresh();
+  }, [date, db, refresh]);
+
+  const archiveHabit = useCallback(async (id: string) => {
+    const now = new Date().toISOString();
+    await db.runAsync('UPDATE habits SET archived_at = ?, updated_at = ? WHERE id = ?', now, now, id);
+    await refresh();
+  }, [db, refresh]);
+
   const toggleTask = useCallback(async (item: PlanningItem) => {
     const now = new Date().toISOString();
     await db.runAsync(
@@ -419,6 +575,8 @@ export function useTodayData(date: string, reviewDate = date) {
     upcoming,
     overdueTasks,
     goals,
+    allGoals,
+    habits,
     morningReviewDue: overdueTasks.length > 0 && !morningReviewed,
     journal,
     journalInLibrary,
@@ -426,6 +584,11 @@ export function useTodayData(date: string, reviewDate = date) {
     saveItem,
     toggleTask,
     toggleGoal,
+    saveGoal,
+    deleteGoal,
+    saveHabit,
+    toggleHabit,
+    archiveHabit,
     deleteItem,
     saveJournal,
     saveJournalToLibrary,

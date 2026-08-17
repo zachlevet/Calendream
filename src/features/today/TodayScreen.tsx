@@ -49,8 +49,9 @@ import { QuickCaptureSheet } from '@/features/quick-capture/QuickCaptureSheet';
 import type { CaptureKind } from '@/features/quick-capture/parseQuickCapture';
 import { SearchOverlay } from '@/features/search/SearchResults';
 import { TimelineScreen } from '@/features/timeline/TimelineScreen';
+import { GoalsHabitsScreen } from '@/features/goals/GoalsHabitsScreen';
 
-type Destination = 'today' | 'timeline';
+type Destination = 'today' | 'timeline' | 'goals';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
 type CapturePreset = { date: string; endDate?: string; kind?: CaptureKind; dateLocked?: boolean };
 
@@ -297,6 +298,15 @@ export function TodayScreen() {
     setDestination('timeline');
   }
 
+  function openGoalsAndHabits() {
+    setSelectedDate(today);
+    setCalendarOpen(false);
+    setSearchOpen(false);
+    setInlineEditor(null);
+    setEditor(null);
+    setDestination('goals');
+  }
+
   function closeSearch() {
     Keyboard.dismiss();
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -538,7 +548,7 @@ export function TodayScreen() {
           )}
         </ScrollView>
         </View>
-      ) : (
+      ) : destination === 'timeline' ? (
         <TimelineScreen
           colors={colors}
           dataRevision={timelineRevision}
@@ -575,6 +585,19 @@ export function TodayScreen() {
           )}
           today={today}
         />
+      ) : (
+        <GoalsHabitsScreen
+          colors={colors}
+          goals={data.allGoals}
+          habits={data.habits}
+          onArchiveHabit={data.archiveHabit}
+          onDeleteGoal={data.deleteGoal}
+          onSaveGoal={data.saveGoal}
+          onSaveHabit={data.saveHabit}
+          onToggleGoal={data.toggleGoal}
+          onToggleHabit={data.toggleHabit}
+          today={today}
+        />
       )}
 
       {searchOpen && Boolean(searchQuery.trim()) && (
@@ -606,6 +629,7 @@ export function TodayScreen() {
       <View style={[styles.tabBar, { backgroundColor: colors.chrome, borderColor: colors.separator }]}>
         <TabButton active={destination === 'today'} colors={colors} label="Today" onPress={() => setDestination('today')} />
         <TabButton active={destination === 'timeline'} colors={colors} label="Timeline" onPress={openTimelineHome} />
+        <TabButton accent={colors.yellow} active={destination === 'goals'} colors={colors} label="Goals" onPress={openGoalsAndHabits} />
       </View>
 
       <ItemEditor
@@ -774,16 +798,18 @@ function SectionHeader({ title, action, onAction, colors }: {
   );
 }
 
-function TabButton({ active, label, onPress, colors }: {
+function TabButton({ active, label, onPress, colors, accent }: {
   active: boolean;
   label: string;
   onPress: () => void;
   colors: AppColors;
+  accent?: string;
 }) {
+  const activeColor = accent ?? colors.blue;
   return (
     <Pressable onPress={onPress} style={styles.tabButton}>
-      <View style={[styles.tabGlyph, { backgroundColor: active ? colors.blue : colors.card }]} />
-      <Text style={[styles.tabLabel, { color: active ? colors.blue : colors.secondary }]}>{label}</Text>
+      <View style={[styles.tabGlyph, { backgroundColor: active ? activeColor : colors.card }]} />
+      <Text style={[styles.tabLabel, { color: active ? activeColor : colors.secondary }]}>{label}</Text>
     </Pressable>
   );
 }

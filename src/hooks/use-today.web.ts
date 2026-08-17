@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import type { Goal, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
+import type { Goal, GoalDraft, Habit, HabitDraft, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
 import { matchingSnippet } from '../shared/search';
 
 export type { ItemDraft } from '../models/planning';
@@ -53,9 +53,17 @@ function sampleGoals(today: string): Goal[] {
   ];
 }
 
+function sampleHabits(today: string): Habit[] {
+  return [
+    { id: 'web-habit-run', name: 'Morning run', weekdays: [1, 3, 5], startDate: today, completedOnDate: false },
+    { id: 'web-habit-read', name: 'Read for 20 minutes', weekdays: [1, 2, 3, 4, 5, 6, 7], startDate: today, completedOnDate: true },
+  ];
+}
+
 export function useTodayData(date: string, _reviewDate = date) {
   const [allItems, setAllItems] = useState<PlanningItem[]>(() => sampleItems(_reviewDate));
   const [allGoals, setAllGoals] = useState<Goal[]>(() => sampleGoals(_reviewDate));
+  const [allHabits, setAllHabits] = useState<Habit[]>(() => sampleHabits(_reviewDate));
   const [journals, setJournals] = useState<Record<string, string>>(() => ({
     [_reviewDate]: 'Today feels open. I want to protect time for the work and people that matter.',
   }));
@@ -71,6 +79,8 @@ export function useTodayData(date: string, _reviewDate = date) {
     upcoming,
     overdueTasks: [] as PlanningItem[],
     goals: allGoals.filter((goal) => goal.startsOn <= date && goal.targetDate >= date),
+    allGoals,
+    habits: allHabits,
     morningReviewDue: false,
     journal,
     journalInLibrary: libraryDates.has(date),
@@ -104,6 +114,25 @@ export function useTodayData(date: string, _reviewDate = date) {
     toggleGoal: async (goal: Goal) => {
       setAllGoals((current) => current.map((existing) => existing.id === goal.id ? { ...existing, completed: !existing.completed } : existing));
     },
+    saveGoal: async (draft: GoalDraft) => {
+      const goal: Goal = { ...draft, id: draft.id ?? `${Date.now()}-goal` };
+      setAllGoals((current) => draft.id
+        ? current.map((existing) => existing.id === draft.id ? { ...existing, ...goal } : existing)
+        : [...current, goal]);
+    },
+    deleteGoal: async (id: string) => setAllGoals((current) => current.filter((goal) => goal.id !== id)),
+    saveHabit: async (draft: HabitDraft) => {
+      const habit: Habit = { ...draft, id: draft.id ?? `${Date.now()}-habit`, completedOnDate: false };
+      setAllHabits((current) => draft.id
+        ? current.map((existing) => existing.id === draft.id ? { ...existing, ...habit } : existing)
+        : [...current, habit]);
+    },
+    toggleHabit: async (habit: Habit) => {
+      setAllHabits((current) => current.map((existing) => existing.id === habit.id
+        ? { ...existing, completedOnDate: !existing.completedOnDate }
+        : existing));
+    },
+    archiveHabit: async (id: string) => setAllHabits((current) => current.filter((habit) => habit.id !== id)),
     deleteItem: async (id: string) => {
       setAllItems((current) => current.filter((item) => item.id !== id));
     },
@@ -155,5 +184,5 @@ export function useTodayData(date: string, _reviewDate = date) {
       goals: allGoals.filter((goal) => goal.startsOn <= endDate && goal.targetDate >= startDate),
       reflections: Object.fromEntries(Object.entries(journals).filter(([noteDate]) => noteDate >= startDate && noteDate <= endDate)),
     }),
-  }), [allGoals, allItems, date, items, journal, journals, libraryDates, upcoming]);
+  }), [allGoals, allHabits, allItems, date, items, journal, journals, libraryDates, upcoming]);
 }

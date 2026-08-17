@@ -3,6 +3,7 @@ export type EventType = 'event' | 'trip';
 export type TimePrecision = 'time' | 'day' | 'month' | 'quarter' | 'year' | 'someday';
 export type TimelineZoom = 'today' | 'week' | 'month' | 'quarter' | 'year';
 export type GoalScope = 'month' | 'quarter' | 'year';
+export type ISOWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export interface LocationPlace {
   name: string;
@@ -53,6 +54,32 @@ export interface Goal {
   completed?: boolean;
   notes?: string;
   linkedHabitId?: string;
+}
+
+export interface GoalDraft {
+  id?: string;
+  title: string;
+  scope: GoalScope;
+  startsOn: string;
+  targetDate: string;
+  notes?: string;
+}
+
+export interface Habit {
+  id: string;
+  name: string;
+  weekdays: ISOWeekday[];
+  startDate: string;
+  endDate?: string;
+  completedOnDate?: boolean;
+}
+
+export interface HabitDraft {
+  id?: string;
+  name: string;
+  weekdays: ISOWeekday[];
+  startDate: string;
+  endDate?: string;
 }
 
 export interface SearchResult {
