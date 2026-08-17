@@ -6,6 +6,7 @@ import type { ItemDraft } from '@/models/planning';
 import { formatDestination, formatShortDate } from '@/shared/date';
 import type { AppColors } from '@/theme/colors';
 import { type CaptureKind, parseQuickCapture } from './parseQuickCapture';
+import { findAmbiguousTime, resolveAmbiguousTime, type TimePeriod } from './timePeriod';
 
 interface QuickCaptureSheetProps {
   colors: AppColors;
@@ -24,9 +25,13 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
   const [text, setText] = useState('');
   const [override, setOverride] = useState<CaptureKind | null>(initialKind ?? null);
   const [choosingKind, setChoosingKind] = useState(false);
+  const [choosingPeriod, setChoosingPeriod] = useState(false);
+  const [timePeriod, setTimePeriod] = useState<TimePeriod | null>(null);
   const [saving, setSaving] = useState(false);
-  const parsed = useMemo(() => parseQuickCapture(text, date), [date, text]);
-  const kind = override ?? parsed.kind;
+  const ambiguousTime = useMemo(() => findAmbiguousTime(text), [text]);
+  const resolvedText = useMemo(() => timePeriod && ambiguousTime ? resolveAmbiguousTime(text, timePeriod) : text, [ambiguousTime, text, timePeriod]);
+  const parsed = useMemo(() => parseQuickCapture(resolvedText, date), [date, resolvedText]);
+  const kind = override ?? (ambiguousTime ? 'event' : parsed.kind);
   const captureDate = dateLocked ? date : parsed.date;
   const captureEndDate = endDate ?? parsed.endDate;
   const dateLabel = captureEndDate && captureEndDate !== captureDate
@@ -39,12 +44,14 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
     setText('');
     setOverride(null);
     setChoosingKind(false);
+    setChoosingPeriod(false);
+    setTimePeriod(null);
     setSaving(false);
     onClose();
   }
 
   async function submit() {
-    if (!parsed.title || saving) return;
+    if (!parsed.title || saving || (ambiguousTime && !timePeriod)) return;
     setSaving(true);
     await onSave({
       kind: kind === 'task' ? 'task' : 'event',
@@ -67,22 +74,48 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
           {glassAvailable && <GlassView glassEffectStyle="regular" isInteractive style={styles.sheetGlass} tintColor={colors.background === '#000000' ? 'rgba(36,36,40,0.78)' : 'rgba(255,255,255,0.78)'} />}
           <View style={styles.handle} />
           <Text style={[styles.heading, { color: colors.text }]}>New item</Text>
-          <TextInput
-            autoFocus
-            multiline
-            onChangeText={(value) => {
-              setText(value);
-              if (!dateLocked) setOverride(null);
-            }}
-            onSubmitEditing={() => void submit()}
-            placeholder={endDate && endDate !== date
-              ? `Event from ${formatShortDate(date)}–${formatShortDate(endDate)}`
-              : dateLocked ? `Add something on ${formatShortDate(date)}` : 'Morning run at 7 a.m.'}
-            placeholderTextColor={colors.tertiary}
-            returnKeyType="done"
-            style={[styles.input, { color: colors.text }]}
-            value={text}
-          />
+          <View style={styles.inputArea}>
+            <TextInput
+              autoFocus
+              multiline
+              onChangeText={(value) => {
+                setText(value);
+                setTimePeriod(null);
+                setChoosingPeriod(false);
+                if (!dateLocked) setOverride(null);
+              }}
+              onSubmitEditing={() => void submit()}
+              placeholder={endDate && endDate !== date
+                ? `Event from ${formatShortDate(date)}–${formatShortDate(endDate)}`
+                : dateLocked ? `Add something on ${formatShortDate(date)}` : 'Morning run at 7 a.m.'}
+              placeholderTextColor={colors.tertiary}
+              returnKeyType="done"
+              style={[styles.input, { color: colors.text }, ambiguousTime && styles.inputWithPeriod]}
+              value={text}
+            />
+            {ambiguousTime && (
+              <View style={styles.periodResolver}>
+                {choosingPeriod ? (['AM', 'PM'] as TimePeriod[]).map((period) => (
+                  <Pressable
+                    accessibilityLabel={`Use ${period} for ${ambiguousTime.display}`}
+                    key={period}
+                    onPress={() => { setTimePeriod(period); setChoosingPeriod(false); }}
+                    style={[styles.periodChoice, { backgroundColor: colors.blue }]}
+                  >
+                    <Text style={styles.periodChoiceText}>{period}</Text>
+                  </Pressable>
+                )) : (
+                  <Pressable
+                    accessibilityLabel={`Choose AM or PM for ${ambiguousTime.display}`}
+                    onPress={() => setChoosingPeriod(true)}
+                    style={[styles.periodPrompt, { backgroundColor: timePeriod ? colors.blueSoft : colors.card }]}
+                  >
+                    <Text style={[styles.periodPromptText, { color: timePeriod ? colors.blue : colors.secondary }]}>{timePeriod ?? 'AM or PM?'}</Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+          </View>
 
           <View style={styles.footer}>
             <View style={styles.metadata}>
@@ -123,9 +156,9 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
             </View>
             <Pressable
               accessibilityLabel="Save new item"
-              disabled={!parsed.title || saving}
+              disabled={!parsed.title || saving || Boolean(ambiguousTime && !timePeriod)}
               onPress={() => void submit()}
-              style={[styles.addButton, { backgroundColor: parsed.title ? colors.red : colors.tertiary }]}
+              style={[styles.addButton, { backgroundColor: parsed.title && !(ambiguousTime && !timePeriod) ? colors.red : colors.tertiary }]}
             >
               <Text style={styles.addButtonText}>{saving ? '…' : '↑'}</Text>
             </Pressable>
@@ -143,7 +176,14 @@ const styles = StyleSheet.create({
   sheetGlass: { position: 'absolute', inset: 0 },
   handle: { width: 34, height: 4, borderRadius: 2, backgroundColor: '#C7C7CC', alignSelf: 'center', marginBottom: 13 },
   heading: { fontSize: 15, fontWeight: '700' },
+  inputArea: { position: 'relative' },
   input: { minHeight: 70, maxHeight: 150, paddingTop: 10, paddingBottom: 8, fontSize: 22, lineHeight: 29, fontWeight: '500', textAlignVertical: 'top' },
+  inputWithPeriod: { paddingRight: 94 },
+  periodResolver: { position: 'absolute', right: 0, bottom: 8, flexDirection: 'row', gap: 5 },
+  periodPrompt: { minHeight: 30, borderRadius: 9, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  periodPromptText: { fontSize: 12, fontWeight: '800' },
+  periodChoice: { minWidth: 38, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  periodChoiceText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
   footer: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   metadata: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
   datePill: { minHeight: 29, borderRadius: 15, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },

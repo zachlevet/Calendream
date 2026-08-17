@@ -619,6 +619,10 @@ export function TodayScreen() {
           onSaveGoal={data.saveGoal}
           onSaveGoalStep={data.saveGoalStep}
           onSaveHabit={data.saveHabit}
+          onSaveItem={async (draft) => {
+            await data.saveItem(draft);
+            setTimelineRevision((revision) => revision + 1);
+          }}
           onToggleGoal={data.toggleGoal}
           onToggleGoalStep={data.toggleGoalStep}
           onToggleHabitDate={data.toggleHabitDate}
@@ -657,7 +661,7 @@ export function TodayScreen() {
       <View style={[styles.tabBar, { backgroundColor: colors.chrome, borderColor: colors.separator }]}>
         <TabButton active={destination === 'today'} colors={colors} label="Today" onPress={() => setDestination('today')} />
         <TabButton active={destination === 'timeline'} colors={colors} label="Timeline" onPress={openTimelineHome} />
-        <TabButton accent={colors.yellow} active={destination === 'goals'} colors={colors} label="Goals" onPress={openGoalsAndHabits} />
+        <TabButton accent={colors.yellow} active={destination === 'goals'} colors={colors} label="Plan" onPress={openGoalsAndHabits} />
       </View>
 
       <ItemEditor

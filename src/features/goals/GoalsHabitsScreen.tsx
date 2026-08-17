@@ -23,12 +23,14 @@ import type {
   HabitActivity,
   HabitDraft,
   ISOWeekday,
+  ItemDraft,
   ItemKind,
 } from '@/models/planning';
 import { addLocalDays, dateFromISO, formatLongDate, localISO } from '@/shared/date';
 import { timeMinutes } from '@/shared/time';
 import type { AppColors } from '@/theme/colors';
 import { habitPerformance, isHabitScheduledOn, isoWeekdayForDate, scheduledHabitDates } from './habitSchedule';
+import { PlanChatHome, YourPlansHome } from './PlanHome';
 
 interface GoalsHabitsScreenProps {
   colors: AppColors;
@@ -44,6 +46,7 @@ interface GoalsHabitsScreenProps {
   onSaveGoal: (draft: GoalDraft) => Promise<string>;
   onSaveGoalStep: (draft: GoalStepDraft) => Promise<void>;
   onSaveHabit: (draft: HabitDraft) => Promise<string>;
+  onSaveItem: (draft: ItemDraft) => Promise<void>;
   onLinkHabitToGoal: (goalId: string, habitId: string) => Promise<void>;
   onToggleGoal: (goal: Goal) => Promise<void>;
   onToggleGoalStep: (step: GoalStep) => Promise<void>;
@@ -129,9 +132,9 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
     colors, goalHabitLinks, goalSteps, goals, habitActivity, habits, today,
     onArchiveHabit, onDeleteGoal, onDeleteGoalStep, onLinkHabitToGoal,
     onSaveGoal, onSaveGoalStep, onSaveHabit, onToggleGoal, onToggleGoalStep,
-    onToggleHabitDate, onToggleHabitSkip, onUnlinkHabitFromGoal,
+    onSaveItem, onToggleHabitDate, onToggleHabitSkip, onUnlinkHabitFromGoal,
   } = props;
-  const [section, setSection] = useState<'dashboard' | 'goals' | 'habits'>('dashboard');
+  const [section, setSection] = useState<'chat' | 'plans' | 'goals' | 'habits'>('chat');
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
   const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
   const [creatingGoal, setCreatingGoal] = useState(false);
@@ -198,7 +201,7 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
         goals={goals}
         goalSteps={goalSteps}
         onAdd={() => setCreatingGoal(true)}
-        onBack={() => setSection('dashboard')}
+        onBack={() => setSection('plans')}
         onOpen={setSelectedGoalId}
         onToggle={onToggleGoal}
       />
@@ -211,7 +214,7 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
         activity={habitActivity}
         colors={colors}
         habits={habits}
-        onBack={() => setSection('dashboard')}
+        onBack={() => setSection('plans')}
         onOpen={setSelectedHabitId}
         onSaveHabit={onSaveHabit}
         today={today}
@@ -219,86 +222,33 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
     );
   }
 
+  if (section === 'plans') {
+    return (
+      <YourPlansHome
+        colors={colors}
+        goals={goals}
+        habits={habits}
+        onBack={() => setSection('chat')}
+        onOpenGoal={setSelectedGoalId}
+        onOpenGoals={() => setSection('goals')}
+        onOpenHabit={setSelectedHabitId}
+        onOpenHabits={() => setSection('habits')}
+        onStartChat={() => setSection('chat')}
+      />
+    );
+  }
+
   return (
-    <OverviewDashboard
-      activity={habitActivity}
+    <PlanChatHome
       colors={colors}
-      goalHabitLinks={goalHabitLinks}
       goals={goals}
       habits={habits}
-      onOpenGoal={setSelectedGoalId}
-      onOpenGoals={() => setSection('goals')}
-      onOpenHabit={setSelectedHabitId}
-      onOpenHabits={() => setSection('habits')}
-      steps={goalSteps}
+      onOpenPlans={() => setSection('plans')}
+      onSaveGoal={onSaveGoal}
+      onSaveHabit={onSaveHabit}
+      onSaveItem={onSaveItem}
       today={today}
     />
-  );
-}
-
-function OverviewDashboard({ activity, colors, goals, habits, onOpenGoal, onOpenGoals, onOpenHabit, onOpenHabits, steps, today }: {
-  activity: HabitActivity[];
-  colors: AppColors;
-  goalHabitLinks: GoalHabitLink[];
-  goals: Goal[];
-  habits: Habit[];
-  onOpenGoal: (id: string) => void;
-  onOpenGoals: () => void;
-  onOpenHabit: (id: string) => void;
-  onOpenHabits: () => void;
-  steps: GoalStep[];
-  today: string;
-}) {
-  const activeGoals = goals.filter((goal) => !goal.completed);
-  const activeHabits = habits.filter((habit) => habit.startDate <= today && (!habit.endDate || habit.endDate >= today));
-  const summaries = activeGoals.map((goal) => {
-    const goalSteps = steps.filter((step) => step.goalId === goal.id);
-    const complete = goalSteps.filter((step) => step.completed).length;
-    return { goal, complete, total: goalSteps.length };
-  });
-  const habitSummaries = activeHabits.map((habit) => ({
-    habit,
-    ...habitMetrics(habit, activity.filter((entry) => entry.habitId === habit.id), today, 28),
-  }));
-
-  return (
-    <ScrollView contentContainerStyle={styles.overviewContent} showsVerticalScrollIndicator={false} style={styles.screen}>
-      <View style={styles.overviewHeaderRow}>
-        <View style={styles.cardCopy}>
-          <Text style={[styles.overviewTitle, { color: colors.text }]}>Your direction</Text>
-          <Text style={[styles.overviewGuide, { color: colors.secondary }]}>Choose what matters. Build the rhythm to get there.</Text>
-        </View>
-      </View>
-      <DashboardHeader colors={colors} onPress={onOpenGoals} title="Goals" />
-      <View style={[styles.goalPanel, { backgroundColor: colors.yellowSoft }]}>
-        {summaries.slice(0, 3).map(({ goal, complete, total }, index) => (
-          <Pressable key={goal.id} onPress={() => onOpenGoal(goal.id)} style={[styles.dashboardRow, index > 0 && { borderTopColor: goalDivider(colors), borderTopWidth: StyleSheet.hairlineWidth }]}>
-            <Text style={[styles.dashboardGoalStar, { color: colors.yellow }]}>☆</Text>
-            <View style={styles.cardCopy}>
-              <Text numberOfLines={1} style={[styles.dashboardTitle, { color: colors.yellow }]}>{goal.title}</Text>
-              <Text style={[styles.dashboardMeta, { color: colors.yellow }]}>{goal.horizon === 'someday' ? 'SOMEDAY' : goal.horizon.toUpperCase()}{total ? ` · ${complete} of ${total} subgoals` : ' · Ready to break down'}</Text>
-            </View>
-            <Text style={[styles.disclosure, { color: colors.yellow }]}>›</Text>
-          </Pressable>
-        ))}
-        {!summaries.length && <Text style={[styles.dashboardEmpty, { color: colors.yellow }]}>No active goals yet. Start with something worth keeping in view.</Text>}
-      </View>
-
-      <DashboardHeader colors={colors} onPress={onOpenHabits} title="Habits" />
-      <View style={[styles.dashboardPanel, { backgroundColor: colors.card }]}>
-        {habitSummaries.slice(0, 3).map(({ habit, rate, streak }, index) => (
-          <Pressable key={habit.id} onPress={() => onOpenHabit(habit.id)} style={[styles.dashboardRow, index > 0 && { borderTopColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }]}>
-            <View style={[styles.dashboardHabitDot, { backgroundColor: rate >= 75 ? colors.blue : colors.blueSoft }]} />
-            <View style={styles.cardCopy}>
-              <Text style={[styles.dashboardTitle, { color: colors.text }]}>{habit.name}</Text>
-              <Text style={[styles.dashboardMeta, { color: colors.secondary }]}>{habit.itemKind === 'event' ? `${habit.startTime ?? 'Timed'} event` : 'Task'} · {streak} current streak</Text>
-            </View>
-            <Text style={[styles.dashboardRate, { color: colors.blue }]}>{rate}%</Text>
-          </Pressable>
-        ))}
-        {!habitSummaries.length && <Text style={[styles.dashboardEmpty, { color: colors.secondary }]}>No habits yet. Begin with one rhythm you can repeat.</Text>}
-      </View>
-    </ScrollView>
   );
 }
 
@@ -639,11 +589,6 @@ function PageHeader({ backLabel, colors, eyebrow, onBack, subtitle, title }: { b
 
 function PageBackButton({ colors, label, onBack }: { colors: AppColors; label: string; onBack: () => void }) {
   return <Pressable hitSlop={8} onPress={onBack} style={[styles.pageBack, { backgroundColor: colors.card }]}><Text style={[styles.pageBackChevron, { color: colors.blue }]}>‹</Text><Text style={[styles.pageBackText, { color: colors.blue }]}>{label}</Text></Pressable>;
-}
-
-function DashboardHeader({ colors, onPress, subtitle, title }: { colors: AppColors; onPress?: () => void; subtitle?: string; title: string }) {
-  const content = <><View><Text style={[styles.dashboardHeaderTitle, { color: colors.text }]}>{title}</Text>{subtitle && <Text style={[styles.dashboardHeaderSubtitle, { color: colors.secondary }]}>{subtitle}</Text>}</View>{onPress && <Text style={[styles.dashboardHeaderAction, { color: colors.blue }]}>View all ›</Text>}</>;
-  return onPress ? <Pressable onPress={onPress} style={styles.dashboardHeader}>{content}</Pressable> : <View style={styles.dashboardHeader}>{content}</View>;
 }
 
 function SectionHeading({ action, colors, onAction, subtitle, title }: { action?: string; colors: AppColors; onAction?: () => void; subtitle?: string; title: string }) {
