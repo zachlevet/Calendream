@@ -588,13 +588,17 @@ export function TodayScreen() {
       ) : (
         <GoalsHabitsScreen
           colors={colors}
+          goalSteps={data.goalSteps}
           goals={data.allGoals}
           habits={data.habits}
           onArchiveHabit={data.archiveHabit}
           onDeleteGoal={data.deleteGoal}
+          onDeleteGoalStep={data.deleteGoalStep}
           onSaveGoal={data.saveGoal}
+          onSaveGoalStep={data.saveGoalStep}
           onSaveHabit={data.saveHabit}
           onToggleGoal={data.toggleGoal}
+          onToggleGoalStep={data.toggleGoalStep}
           onToggleHabit={data.toggleHabit}
           today={today}
         />

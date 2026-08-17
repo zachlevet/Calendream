@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 
-import type { Goal, GoalDraft, Habit, HabitDraft, ISOWeekday, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
+import type { Goal, GoalDraft, GoalStep, GoalStepDraft, Habit, HabitDraft, ISOWeekday, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
 import { matchingSnippet } from '../shared/search';
 
 export type { ItemDraft } from '../models/planning';
@@ -43,6 +43,15 @@ interface HabitRow {
   start_date: string;
   end_date: string | null;
   completed_on_date: number;
+}
+
+interface GoalStepRow {
+  id: string;
+  goal_id: string;
+  title: string;
+  scheduled_date: string;
+  item_id: string;
+  completed_at: string | null;
 }
 
 function toItem(row: ItemRow): PlanningItem {
@@ -99,6 +108,17 @@ function toHabit(row: HabitRow): Habit {
   };
 }
 
+function toGoalStep(row: GoalStepRow): GoalStep {
+  return {
+    id: row.id,
+    goalId: row.goal_id,
+    title: row.title,
+    scheduledDate: row.scheduled_date,
+    itemId: row.item_id,
+    completed: Boolean(row.completed_at),
+  };
+}
+
 function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -123,6 +143,7 @@ export function useTodayData(date: string, reviewDate = date) {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [allGoals, setAllGoals] = useState<Goal[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
+  const [goalSteps, setGoalSteps] = useState<GoalStep[]>([]);
   const [morningReviewed, setMorningReviewed] = useState(false);
   const [journal, setJournal] = useState('');
   const [journalInLibrary, setJournalInLibrary] = useState(false);
@@ -158,7 +179,7 @@ export function useTodayData(date: string, reviewDate = date) {
       }
     }
 
-    const [todayRows, upcomingRows, overdueRows, goalRows, habitRows, page, morningReview, libraryEntry] = await Promise.all([
+    const [todayRows, upcomingRows, overdueRows, goalRows, habitRows, goalStepRows, page, morningReview, libraryEntry] = await Promise.all([
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
                 start_time, completed_at, notes, location, sort_order,
@@ -211,6 +232,15 @@ export function useTodayData(date: string, reviewDate = date) {
          ORDER BY h.created_at`,
         date,
       ),
+      db.getAllAsync<GoalStepRow>(
+        `SELECT gs.id, gs.goal_id, gs.title,
+                COALESCE(i.anchor_start, gs.scheduled_date) AS scheduled_date,
+                gs.item_id, i.completed_at
+         FROM goal_steps gs
+         JOIN items i ON i.id = gs.item_id
+         WHERE gs.deleted_at IS NULL AND i.deleted_at IS NULL
+         ORDER BY gs.goal_id, gs.sort_order, gs.created_at`,
+      ),
       db.getFirstAsync<{ reflection: string }>(
         'SELECT reflection FROM daily_pages WHERE date = ?',
         date,
@@ -228,6 +258,7 @@ export function useTodayData(date: string, reviewDate = date) {
     setAllGoals(mappedGoals);
     setGoals(mappedGoals.filter((goal) => goal.startsOn <= date && goal.targetDate >= date));
     setHabits(habitRows.map(toHabit));
+    setGoalSteps(goalStepRows.map(toGoalStep));
     setMorningReviewed(morningReview?.value === reviewDate);
     setJournal(page?.reflection ?? '');
     setJournalInLibrary(Boolean(libraryEntry));
@@ -416,7 +447,62 @@ export function useTodayData(date: string, reviewDate = date) {
 
   const deleteGoal = useCallback(async (id: string) => {
     const now = new Date().toISOString();
-    await db.runAsync('UPDATE goals SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, id);
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `UPDATE items SET deleted_at = ?, updated_at = ?
+         WHERE completed_at IS NULL AND id IN (
+           SELECT item_id FROM goal_steps WHERE goal_id = ? AND deleted_at IS NULL
+         )`,
+        now,
+        now,
+        id,
+      );
+      await db.runAsync('UPDATE goal_steps SET deleted_at = ?, updated_at = ? WHERE goal_id = ?', now, now, id);
+      await db.runAsync('UPDATE goals SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, id);
+    });
+    await refresh();
+  }, [db, refresh]);
+
+  const saveGoalStep = useCallback(async (draft: GoalStepDraft) => {
+    const now = new Date().toISOString();
+    const itemId = makeId();
+    const stepId = makeId();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `INSERT INTO items
+          (id, kind, title, anchor_start, anchor_end, precision, altitude, sort_order, created_at, updated_at)
+         VALUES (?, 'task', ?, ?, ?, 'day', 0,
+           COALESCE((SELECT MAX(sort_order) + 1 FROM items WHERE kind = 'task' AND anchor_start = ?), 0), ?, ?)`,
+        itemId, draft.title.trim(), draft.scheduledDate, draft.scheduledDate, draft.scheduledDate, now, now,
+      );
+      await db.runAsync(
+        `INSERT INTO goal_steps
+          (id, goal_id, title, scheduled_date, item_id, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?,
+           COALESCE((SELECT MAX(sort_order) + 1 FROM goal_steps WHERE goal_id = ? AND deleted_at IS NULL), 0), ?, ?)`,
+        stepId, draft.goalId, draft.title.trim(), draft.scheduledDate, itemId, draft.goalId, now, now,
+      );
+    });
+    await refresh();
+  }, [db, refresh]);
+
+  const toggleGoalStep = useCallback(async (step: GoalStep) => {
+    const now = new Date().toISOString();
+    await db.runAsync(
+      'UPDATE items SET completed_at = ?, updated_at = ? WHERE id = ?',
+      step.completed ? null : now,
+      now,
+      step.itemId,
+    );
+    await refresh();
+  }, [db, refresh]);
+
+  const deleteGoalStep = useCallback(async (step: GoalStep) => {
+    const now = new Date().toISOString();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync('UPDATE goal_steps SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, step.id);
+      await db.runAsync('UPDATE items SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, step.itemId);
+    });
     await refresh();
   }, [db, refresh]);
 
@@ -577,6 +663,7 @@ export function useTodayData(date: string, reviewDate = date) {
     goals,
     allGoals,
     habits,
+    goalSteps,
     morningReviewDue: overdueTasks.length > 0 && !morningReviewed,
     journal,
     journalInLibrary,
@@ -586,6 +673,9 @@ export function useTodayData(date: string, reviewDate = date) {
     toggleGoal,
     saveGoal,
     deleteGoal,
+    saveGoalStep,
+    toggleGoalStep,
+    deleteGoalStep,
     saveHabit,
     toggleHabit,
     archiveHabit,

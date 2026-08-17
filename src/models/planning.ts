@@ -65,6 +65,21 @@ export interface GoalDraft {
   notes?: string;
 }
 
+export interface GoalStep {
+  id: string;
+  goalId: string;
+  title: string;
+  scheduledDate: string;
+  itemId: string;
+  completed?: boolean;
+}
+
+export interface GoalStepDraft {
+  goalId: string;
+  title: string;
+  scheduledDate: string;
+}
+
 export interface Habit {
   id: string;
   name: string;

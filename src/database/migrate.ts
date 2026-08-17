@@ -63,6 +63,20 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       FOREIGN KEY (linked_habit_id) REFERENCES habits(id) ON DELETE SET NULL
     );
 
+    CREATE TABLE IF NOT EXISTS goal_steps (
+      id TEXT PRIMARY KEY NOT NULL,
+      goal_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      scheduled_date TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE,
+      FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS app_meta (
       key TEXT PRIMARY KEY NOT NULL,
       value TEXT NOT NULL,
@@ -72,6 +86,7 @@ export async function migrateDatabase(db: SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS items_anchor_start_idx ON items(anchor_start);
     CREATE INDEX IF NOT EXISTS items_updated_at_idx ON items(updated_at);
     CREATE INDEX IF NOT EXISTS goals_active_range_idx ON goals(starts_on, target_date);
+    CREATE INDEX IF NOT EXISTS goal_steps_goal_idx ON goal_steps(goal_id, sort_order);
   `);
 
   const itemColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(items)');
@@ -318,6 +333,44 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       );
       await db.runAsync(
         "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_habits_v1', 'seeded', ?)",
+        createdAt,
+      );
+    });
+  }
+
+  const goalStepSampleMarker = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_meta WHERE key = 'sample_goal_steps_v1'",
+  );
+  if (!goalStepSampleMarker) {
+    const now = new Date();
+    const createdAt = now.toISOString();
+    const today = localDate(now);
+    const sampleGoal = await db.getFirstAsync<{ id: string }>(
+      "SELECT id FROM goals WHERE id = 'sample-ironman-goal' AND deleted_at IS NULL",
+    );
+    await db.withTransactionAsync(async () => {
+      if (sampleGoal) {
+        const steps = [
+          { stepId: 'sample-ironman-step-plan', itemId: 'sample-ironman-task-plan', title: 'Choose a training plan', date: addDate(today, 4) },
+          { stepId: 'sample-ironman-step-travel', itemId: 'sample-ironman-task-travel', title: 'Book race-week travel', date: addDate(today, 18) },
+        ];
+        for (const [index, step] of steps.entries()) {
+          await db.runAsync(
+            `INSERT OR IGNORE INTO items
+              (id, kind, title, anchor_start, anchor_end, precision, altitude, sort_order, created_at, updated_at)
+             VALUES (?, 'task', ?, ?, ?, 'day', 0, ?, ?, ?)`,
+            step.itemId, step.title, step.date, step.date, index, createdAt, createdAt,
+          );
+          await db.runAsync(
+            `INSERT OR IGNORE INTO goal_steps
+              (id, goal_id, title, scheduled_date, item_id, sort_order, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            step.stepId, sampleGoal.id, step.title, step.date, step.itemId, index, createdAt, createdAt,
+          );
+        }
+      }
+      await db.runAsync(
+        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_goal_steps_v1', 'seeded', ?)",
         createdAt,
       );
     });
