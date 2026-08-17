@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import type { Goal, GoalDraft, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
+import type { Goal, GoalDraft, GoalHabitLink, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
 import { matchingSnippet } from '../shared/search';
 
 export type { ItemDraft } from '../models/planning';
@@ -55,8 +55,8 @@ function sampleGoals(today: string): Goal[] {
 
 function sampleHabits(today: string): Habit[] {
   return [
-    { id: 'web-habit-run', name: 'Morning run', weekdays: [1, 3, 5], startDate: today, completedOnDate: false },
-    { id: 'web-habit-read', name: 'Read for 20 minutes', weekdays: [1, 2, 3, 4, 5, 6, 7], startDate: today, completedOnDate: true },
+    { id: 'web-habit-run', name: 'Morning run', weekdays: [1, 3, 5], startDate: today, completedOnDate: false, cue: 'After I get dressed' },
+    { id: 'web-habit-read', name: 'Read for 20 minutes', weekdays: [1, 2, 3, 4, 5, 6, 7], startDate: today, completedOnDate: true, cue: 'After dinner' },
   ];
 }
 
@@ -67,6 +67,9 @@ export function useTodayData(date: string, _reviewDate = date) {
   const [goalSteps, setGoalSteps] = useState<GoalStep[]>([]);
   const [habitActivity, setHabitActivity] = useState<HabitActivity[]>(() => [
     { habitId: 'web-habit-read', date: _reviewDate, completed: true },
+  ]);
+  const [goalHabitLinks, setGoalHabitLinks] = useState<GoalHabitLink[]>([
+    { goalId: 'web-ironman-goal', habitId: 'web-habit-run' },
   ]);
   const [journals, setJournals] = useState<Record<string, string>>(() => ({
     [_reviewDate]: 'Today feels open. I want to protect time for the work and people that matter.',
@@ -87,6 +90,7 @@ export function useTodayData(date: string, _reviewDate = date) {
     habits: allHabits,
     goalSteps,
     habitActivity,
+    goalHabitLinks,
     morningReviewDue: false,
     journal,
     journalInLibrary: libraryDates.has(date),
@@ -170,6 +174,14 @@ export function useTodayData(date: string, _reviewDate = date) {
           : [...current, { id: `${Date.now()}-habit-task`, kind: 'task', title: habit.name, anchorStart: targetDate, anchorEnd: targetDate, precision: 'day', altitude: 0, completed: true }];
       });
     },
+    toggleHabitSkip: async (habit: Habit, targetDate: string) => {
+      const existing = habitActivity.find((entry) => entry.habitId === habit.id && entry.date === targetDate && entry.skipped);
+      setHabitActivity((current) => existing
+        ? current.filter((entry) => entry !== existing)
+        : [...current.filter((entry) => !(entry.habitId === habit.id && entry.date === targetDate)), { habitId: habit.id, date: targetDate, completed: false, skipped: true }]);
+    },
+    linkHabitToGoal: async (goalId: string, habitId: string) => setGoalHabitLinks((current) => current.some((link) => link.goalId === goalId && link.habitId === habitId) ? current : [...current, { goalId, habitId }]),
+    unlinkHabitFromGoal: async (goalId: string, habitId: string) => setGoalHabitLinks((current) => current.filter((link) => link.goalId !== goalId || link.habitId !== habitId)),
     archiveHabit: async (id: string) => setAllHabits((current) => current.filter((habit) => habit.id !== id)),
     deleteItem: async (id: string) => {
       setAllItems((current) => current.filter((item) => item.id !== id));
@@ -222,5 +234,5 @@ export function useTodayData(date: string, _reviewDate = date) {
       goals: allGoals.filter((goal) => goal.startsOn <= endDate && goal.targetDate >= startDate),
       reflections: Object.fromEntries(Object.entries(journals).filter(([noteDate]) => noteDate >= startDate && noteDate <= endDate)),
     }),
-  }), [allGoals, allHabits, allItems, date, goalSteps, habitActivity, items, journal, journals, libraryDates, upcoming]);
+  }), [allGoals, allHabits, allItems, date, goalHabitLinks, goalSteps, habitActivity, items, journal, journals, libraryDates, upcoming]);
 }

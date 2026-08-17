@@ -43,6 +43,7 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       schedule_json TEXT NOT NULL,
       start_date TEXT NOT NULL,
       end_date TEXT,
+      cue TEXT,
       archived_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -77,6 +78,23 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS goal_habits (
+      goal_id TEXT NOT NULL,
+      habit_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (goal_id, habit_id),
+      FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE,
+      FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS habit_skips (
+      habit_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (habit_id, date),
+      FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS app_meta (
       key TEXT PRIMARY KEY NOT NULL,
       value TEXT NOT NULL,
@@ -87,6 +105,7 @@ export async function migrateDatabase(db: SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS items_updated_at_idx ON items(updated_at);
     CREATE INDEX IF NOT EXISTS goals_active_range_idx ON goals(starts_on, target_date);
     CREATE INDEX IF NOT EXISTS goal_steps_goal_idx ON goal_steps(goal_id, sort_order);
+    CREATE INDEX IF NOT EXISTS goal_habits_habit_idx ON goal_habits(habit_id);
   `);
 
   const itemColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(items)');
@@ -104,6 +123,10 @@ export async function migrateDatabase(db: SQLiteDatabase) {
   }
   if (!itemColumns.some((column) => column.name === 'event_type')) {
     await db.execAsync("ALTER TABLE items ADD COLUMN event_type TEXT NOT NULL DEFAULT 'event'");
+  }
+  const habitColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(habits)');
+  if (!habitColumns.some((column) => column.name === 'cue')) {
+    await db.execAsync('ALTER TABLE habits ADD COLUMN cue TEXT');
   }
 
   const sampleMarker = await db.getFirstAsync<{ value: string }>(
@@ -371,6 +394,29 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       }
       await db.runAsync(
         "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_goal_steps_v1', 'seeded', ?)",
+        createdAt,
+      );
+    });
+  }
+
+  await db.runAsync("UPDATE habits SET cue = 'After I get dressed' WHERE id = 'sample-habit-run' AND cue IS NULL");
+  await db.runAsync("UPDATE habits SET cue = 'After dinner' WHERE id = 'sample-habit-read' AND cue IS NULL");
+
+  const goalHabitSampleMarker = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_meta WHERE key = 'sample_goal_habits_v1'",
+  );
+  if (!goalHabitSampleMarker) {
+    const createdAt = new Date().toISOString();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `INSERT OR IGNORE INTO goal_habits (goal_id, habit_id, created_at)
+         SELECT 'sample-ironman-goal', 'sample-habit-run', ?
+         WHERE EXISTS (SELECT 1 FROM goals WHERE id = 'sample-ironman-goal' AND deleted_at IS NULL)
+           AND EXISTS (SELECT 1 FROM habits WHERE id = 'sample-habit-run' AND archived_at IS NULL)`,
+        createdAt,
+      );
+      await db.runAsync(
+        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_goal_habits_v1', 'seeded', ?)",
         createdAt,
       );
     });

@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Alert,
   Platform,
@@ -11,14 +11,15 @@ import {
 } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
-import type { Goal, GoalDraft, GoalScope, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ISOWeekday } from '@/models/planning';
+import type { Goal, GoalDraft, GoalHabitLink, GoalScope, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ISOWeekday } from '@/models/planning';
 import { addLocalDays, dateFromISO, formatLongDate, localISO } from '@/shared/date';
 import type { AppColors } from '@/theme/colors';
-import { isHabitScheduledOn, isoWeekdayForDate, scheduledHabitDates } from './habitSchedule';
+import { habitPerformance, isHabitScheduledOn, isoWeekdayForDate, scheduledHabitDates } from './habitSchedule';
 
 interface GoalsHabitsScreenProps {
   colors: AppColors;
   goalSteps: GoalStep[];
+  goalHabitLinks: GoalHabitLink[];
   goals: Goal[];
   habitActivity: HabitActivity[];
   habits: Habit[];
@@ -29,9 +30,12 @@ interface GoalsHabitsScreenProps {
   onSaveGoal: (draft: GoalDraft) => Promise<void>;
   onSaveGoalStep: (draft: GoalStepDraft) => Promise<void>;
   onSaveHabit: (draft: HabitDraft) => Promise<void>;
+  onLinkHabitToGoal: (goalId: string, habitId: string) => Promise<void>;
   onToggleGoal: (goal: Goal) => Promise<void>;
   onToggleGoalStep: (step: GoalStep) => Promise<void>;
   onToggleHabitDate: (habit: Habit, date: string) => Promise<void>;
+  onToggleHabitSkip: (habit: Habit, date: string) => Promise<void>;
+  onUnlinkHabitFromGoal: (goalId: string, habitId: string) => Promise<void>;
 }
 
 const WEEKDAYS: { value: ISOWeekday; label: string }[] = [
@@ -55,17 +59,16 @@ function weekdayFor(date: string): ISOWeekday {
 }
 
 export function GoalsHabitsScreen({
-  colors, goalSteps, goals, habitActivity, habits, today, onArchiveHabit, onDeleteGoal, onDeleteGoalStep,
-  onSaveGoal, onSaveGoalStep, onSaveHabit, onToggleGoal, onToggleGoalStep,
-  onToggleHabitDate,
+  colors, goalHabitLinks, goalSteps, goals, habitActivity, habits, today, onArchiveHabit, onDeleteGoal, onDeleteGoalStep,
+  onLinkHabitToGoal, onSaveGoal, onSaveGoalStep, onSaveHabit, onToggleGoal, onToggleGoalStep,
+  onToggleHabitDate, onToggleHabitSkip, onUnlinkHabitFromGoal,
 }: GoalsHabitsScreenProps) {
   const [goalDraft, setGoalDraft] = useState<GoalDraft | null>(null);
-  const [goalStepDraft, setGoalStepDraft] = useState<GoalStepDraft | null>(null);
   const [habitDraft, setHabitDraft] = useState<HabitDraft | null>(null);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const [stepDatePickerOpen, setStepDatePickerOpen] = useState(false);
   const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null);
   const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
+  const [section, setSection] = useState<'dashboard' | 'goals' | 'habits'>('dashboard');
   const currentWeekday = weekdayFor(today);
   const activeGoals = useMemo(() => goals.filter((goal) => !goal.completed), [goals]);
   const completedGoals = useMemo(() => goals.filter((goal) => goal.completed), [goals]);
@@ -85,7 +88,7 @@ export function GoalsHabitsScreen({
     setGoalDraft(null);
     setDatePickerOpen(false);
     setHabitDraft(habit ? {
-      id: habit.id, name: habit.name, weekdays: habit.weekdays, startDate: habit.startDate, endDate: habit.endDate,
+      id: habit.id, name: habit.name, weekdays: habit.weekdays, startDate: habit.startDate, endDate: habit.endDate, cue: habit.cue,
     } : {
       name: '', weekdays: [currentWeekday], startDate: today,
     });
@@ -103,21 +106,9 @@ export function GoalsHabitsScreen({
     setHabitDraft(null);
   }
 
-  async function submitGoalStep() {
-    if (!goalStepDraft?.title.trim()) return;
-    await onSaveGoalStep(goalStepDraft);
-    setGoalStepDraft(null);
-    setStepDatePickerOpen(false);
-  }
-
   function changeGoalDate(event: DateTimePickerEvent, selected?: Date) {
     if (Platform.OS !== 'ios') setDatePickerOpen(false);
     if (selected && goalDraft) setGoalDraft({ ...goalDraft, targetDate: localISO(selected) });
-  }
-
-  function changeStepDate(event: DateTimePickerEvent, selected?: Date) {
-    if (Platform.OS !== 'ios') setStepDatePickerOpen(false);
-    if (selected && goalStepDraft) setGoalStepDraft({ ...goalStepDraft, scheduledDate: localISO(selected) });
   }
 
   const selectedHabit = habits.find((habit) => habit.id === selectedHabitId);
@@ -129,11 +120,56 @@ export function GoalsHabitsScreen({
         draft={habitDraft?.id === selectedHabit.id ? habitDraft : null}
         habit={selectedHabit}
         onArchive={async () => { await onArchiveHabit(selectedHabit.id); setSelectedHabitId(null); setHabitDraft(null); }}
-        onBack={() => { setSelectedHabitId(null); setHabitDraft(null); }}
+        onBack={() => { setSelectedHabitId(null); setHabitDraft(null); setSection('habits'); }}
         onEdit={() => beginHabit(selectedHabit)}
         onSave={submitHabit}
         onSetDraft={setHabitDraft}
         onToggleDate={(date) => onToggleHabitDate(selectedHabit, date)}
+        onToggleSkip={(date) => onToggleHabitSkip(selectedHabit, date)}
+        today={today}
+      />
+    );
+  }
+
+  const selectedGoal = goals.find((goal) => goal.id === expandedGoalId);
+  if (selectedGoal) {
+    return (
+      <GoalDetailPage
+        colors={colors}
+        draft={goalDraft?.id === selectedGoal.id ? goalDraft : null}
+        goal={selectedGoal}
+        habits={habits}
+        links={goalHabitLinks.filter((link) => link.goalId === selectedGoal.id)}
+        onBack={() => { setExpandedGoalId(null); setGoalDraft(null); setSection('goals'); }}
+        onDeleteGoal={async () => { await onDeleteGoal(selectedGoal.id); setExpandedGoalId(null); setSection('goals'); }}
+        onDeleteStep={onDeleteGoalStep}
+        onEdit={() => beginGoal(selectedGoal)}
+        onLinkHabit={(habitId) => onLinkHabitToGoal(selectedGoal.id, habitId)}
+        onSave={submitGoal}
+        onSaveStep={onSaveGoalStep}
+        onSetDraft={setGoalDraft}
+        onToggleGoal={() => onToggleGoal(selectedGoal)}
+        onToggleStep={onToggleGoalStep}
+        onUnlinkHabit={(habitId) => onUnlinkHabitFromGoal(selectedGoal.id, habitId)}
+        steps={goalSteps.filter((step) => step.goalId === selectedGoal.id)}
+        today={today}
+      />
+    );
+  }
+
+  if (section === 'dashboard') {
+    return (
+      <CommandCenterDashboard
+        activity={habitActivity}
+        colors={colors}
+        goalHabitLinks={goalHabitLinks}
+        goals={goals}
+        habits={habits}
+        onOpenGoal={(goalId) => setExpandedGoalId(goalId)}
+        onOpenGoals={() => setSection('goals')}
+        onOpenHabit={(habitId) => setSelectedHabitId(habitId)}
+        onOpenHabits={() => setSection('habits')}
+        steps={goalSteps}
         today={today}
       />
     );
@@ -148,12 +184,14 @@ export function GoalsHabitsScreen({
       showsVerticalScrollIndicator={false}
       style={styles.screen}
     >
+      <Pressable hitSlop={8} onPress={() => setSection('dashboard')} style={styles.backRow}><Text style={[styles.backText, { color: colors.blue }]}>‹ Command Center</Text></Pressable>
       <View style={styles.intro}>
-        <Text style={[styles.eyebrow, { color: colors.yellow }]}>DIRECTION & RHYTHM</Text>
-        <Text style={[styles.title, { color: colors.text }]}>Goals & Habits</Text>
-        <Text style={[styles.subtitle, { color: colors.secondary }]}>Keep the bigger picture visible, then turn it into what you do today.</Text>
+        <Text style={[styles.eyebrow, { color: section === 'goals' ? colors.yellow : colors.blue }]}>{section === 'goals' ? 'DIRECTION' : 'RHYTHM'}</Text>
+        <Text style={[styles.title, { color: colors.text }]}>{section === 'goals' ? 'Goals' : 'Habits'}</Text>
+        <Text style={[styles.subtitle, { color: colors.secondary }]}>{section === 'goals' ? 'Projects, milestones, and the next actions that move your life forward.' : 'Your recurring practices, schedules, and long-term consistency.'}</Text>
       </View>
 
+      {section === 'goals' && <>
       <SectionTitle action="Add goal" colors={colors} onAction={() => beginGoal()} title="Goals" />
       {goalDraft && (
         <View style={[styles.composer, { backgroundColor: colors.yellowSoft, borderColor: colors.yellow }]}> 
@@ -195,71 +233,24 @@ export function GoalsHabitsScreen({
         </View>
       )}
       {activeGoals.map((goal) => {
-        const expanded = expandedGoalId === goal.id;
         const steps = goalSteps.filter((step) => step.goalId === goal.id);
         const completedCount = steps.filter((step) => step.completed).length;
         return (
-          <Fragment key={goal.id}>
-            <Pressable onPress={() => { setExpandedGoalId(expanded ? null : goal.id); setGoalStepDraft(null); }} style={[styles.goalCard, { backgroundColor: colors.yellowSoft }]}>
-              <Pressable
-                accessibilityLabel={`Complete ${goal.title}`}
-                hitSlop={8}
-                onPress={(event) => { event.stopPropagation(); void onToggleGoal(goal); }}
-                style={styles.goalStarButton}
-              >
-                <Text style={[styles.goalStar, { color: colors.yellow }]}>☆</Text>
-              </Pressable>
-              <View style={styles.cardCopy}>
-                <Text style={[styles.cardTitle, { color: colors.yellow }]} numberOfLines={1}>{goal.title}</Text>
-                <Text style={[styles.cardEyebrow, { color: colors.yellow }]}>{goal.scope.toUpperCase()} · {formatLongDate(goal.targetDate).toUpperCase()}{steps.length ? ` · ${completedCount}/${steps.length}` : ''}</Text>
-              </View>
-              <Text style={[styles.disclosure, { color: colors.yellow }]}>{expanded ? '−' : '+'}</Text>
+          <Pressable key={goal.id} onPress={() => setExpandedGoalId(goal.id)} style={[styles.goalCard, { backgroundColor: colors.yellowSoft }]}>
+            <Pressable
+              accessibilityLabel={`Complete ${goal.title}`}
+              hitSlop={8}
+              onPress={(event) => { event.stopPropagation(); void onToggleGoal(goal); }}
+              style={styles.goalStarButton}
+            >
+              <Text style={[styles.goalStar, { color: colors.yellow }]}>☆</Text>
             </Pressable>
-            {expanded && (
-              <View style={[styles.goalDetail, { borderColor: colors.separator, backgroundColor: colors.card }]}>
-                <View style={styles.goalDetailHeader}>
-                  <View style={styles.cardCopy}>
-                    <Text style={[styles.goalDetailMeta, { color: colors.secondary }]}>{goal.scope[0].toUpperCase() + goal.scope.slice(1)} goal · due {formatLongDate(goal.targetDate)}</Text>
-                    {goal.notes && <Text style={[styles.goalNotes, { color: colors.text }]}>{goal.notes}</Text>}
-                  </View>
-                  <Pressable hitSlop={8} onPress={() => beginGoal(goal)}><Text style={[styles.editGoal, { color: colors.blue }]}>Edit</Text></Pressable>
-                </View>
-                {steps.length > 0 && (
-                  <View style={[styles.progressTrack, { backgroundColor: colors.separator }]}>
-                    <View style={[styles.progressFill, { backgroundColor: colors.yellow, width: `${(completedCount / steps.length) * 100}%` }]} />
-                  </View>
-                )}
-                <View style={styles.subgoalHeader}>
-                  <Text style={[styles.subgoalTitle, { color: colors.text }]}>Subgoals</Text>
-                  {!goalStepDraft && <Pressable hitSlop={8} onPress={() => setGoalStepDraft({ goalId: goal.id, title: '', scheduledDate: today })}><Text style={[styles.addSubgoal, { color: colors.blue }]}>Add</Text></Pressable>}
-                </View>
-                {steps.map((step) => (
-                  <Pressable
-                    key={step.id}
-                    onLongPress={() => Alert.alert('Remove this subgoal?', 'Its linked task will also be removed.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => void onDeleteGoalStep(step) }])}
-                    onPress={() => void onToggleGoalStep(step)}
-                    style={[styles.subgoalRow, { borderColor: colors.separator }]}
-                  >
-                    <View style={[styles.subgoalCheck, { borderColor: step.completed ? colors.yellow : colors.tertiary }, step.completed && { backgroundColor: colors.yellow }]}>{step.completed && <Text style={styles.checkmark}>✓</Text>}</View>
-                    <Text style={[styles.subgoalName, { color: step.completed ? colors.tertiary : colors.text }, step.completed && styles.completed]} numberOfLines={1}>{step.title}</Text>
-                    <Text style={[styles.subgoalDate, { color: colors.secondary }]}>{formatLongDate(step.scheduledDate)}</Text>
-                  </Pressable>
-                ))}
-                {steps.length === 0 && !goalStepDraft && <Text style={[styles.noSubgoals, { color: colors.secondary }]}>Break this goal into something you can do on a specific day.</Text>}
-                {goalStepDraft?.goalId === goal.id && (
-                  <View style={[styles.stepComposer, { borderColor: colors.separator }]}>
-                    <TextInput autoFocus onChangeText={(title) => setGoalStepDraft({ ...goalStepDraft, title })} placeholder="First step" placeholderTextColor={colors.tertiary} style={[styles.stepInput, { color: colors.text }]} value={goalStepDraft.title} />
-                    <Pressable onPress={() => setStepDatePickerOpen((open) => !open)} style={styles.stepDateButton}>
-                      <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Do on</Text>
-                      <Text style={[styles.dateValue, { color: colors.blue }]}>{formatLongDate(goalStepDraft.scheduledDate)}</Text>
-                    </Pressable>
-                    {stepDatePickerOpen && <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} maximumDate={dateFromISO(goal.targetDate)} minimumDate={dateFromISO(today)} mode="date" onChange={changeStepDate} value={dateFromISO(goalStepDraft.scheduledDate)} />}
-                    <ComposerActions colors={colors} onCancel={() => { setGoalStepDraft(null); setStepDatePickerOpen(false); }} onSave={() => void submitGoalStep()} saveDisabled={!goalStepDraft.title.trim()} />
-                  </View>
-                )}
-              </View>
-            )}
-          </Fragment>
+            <View style={styles.cardCopy}>
+              <Text style={[styles.cardTitle, { color: colors.yellow }]} numberOfLines={1}>{goal.title}</Text>
+              <Text style={[styles.cardEyebrow, { color: colors.yellow }]}>{goal.scope.toUpperCase()} · {formatLongDate(goal.targetDate).toUpperCase()}{steps.length ? ` · ${completedCount}/${steps.length}` : ''}</Text>
+            </View>
+            <Text style={[styles.disclosure, { color: colors.yellow }]}>›</Text>
+          </Pressable>
         );
       })}
       {activeGoals.length === 0 && !goalDraft && <Empty colors={colors} text="No active goals yet. Add one that deserves to stay in view." />}
@@ -267,14 +258,16 @@ export function GoalsHabitsScreen({
         <View style={styles.completedGroup}>
           <Text style={[styles.completedLabel, { color: colors.secondary }]}>COMPLETED</Text>
           {completedGoals.map((goal) => (
-            <Pressable key={goal.id} onLongPress={() => beginGoal(goal)} onPress={() => void onToggleGoal(goal)} style={styles.completedRow}>
+            <Pressable key={goal.id} onPress={() => setExpandedGoalId(goal.id)} style={styles.completedRow}>
               <Text style={[styles.completedStar, { color: colors.tertiary }]}>★</Text>
               <Text style={[styles.completedTitle, { color: colors.tertiary }]}>{goal.title}</Text>
             </Pressable>
           ))}
         </View>
       )}
+      </>}
 
+      {section === 'habits' && <>
       <SectionTitle action="Add habit" colors={colors} onAction={() => beginHabit()} title="Habits" />
       {habitDraft && (
         <View style={[styles.composer, { backgroundColor: colors.card, borderColor: colors.separator }]}>
@@ -288,11 +281,13 @@ export function GoalsHabitsScreen({
           />
           <Text style={[styles.schedulePrompt, { color: colors.secondary }]}>Repeat on</Text>
           <WeekdayPicker colors={colors} selected={habitDraft.weekdays} onChange={(weekdays) => setHabitDraft({ ...habitDraft, weekdays })} />
+          <TextInput onChangeText={(cue) => setHabitDraft({ ...habitDraft, cue })} placeholder="Anchor it: after coffee, at the gym…" placeholderTextColor={colors.tertiary} style={[styles.habitCueInput, { color: colors.text, borderColor: colors.separator }]} value={habitDraft.cue ?? ''} />
           <ComposerActions colors={colors} onCancel={() => setHabitDraft(null)} onDelete={habitDraft.id ? async () => { await onArchiveHabit(habitDraft.id!); setHabitDraft(null); } : undefined} onSave={() => void submitHabit()} saveDisabled={!habitDraft.name.trim() || habitDraft.weekdays.length === 0} />
         </View>
       )}
       {habits.map((habit) => {
         const dueToday = habit.weekdays.includes(currentWeekday);
+        const metrics = habitMetrics(habit, habitActivity.filter((entry) => entry.habitId === habit.id), today, 28);
         return (
           <Pressable key={habit.id} onPress={() => setSelectedHabitId(habit.id)} style={[styles.habitRow, { borderColor: colors.separator }]}>
             <View style={[styles.habitDot, { backgroundColor: dueToday ? habit.completedOnDate ? colors.blue : colors.blueSoft : colors.card }]} />
@@ -302,19 +297,190 @@ export function GoalsHabitsScreen({
                 {WEEKDAYS.map((day) => <Text key={day.value} style={[styles.miniWeekday, { color: habit.weekdays.includes(day.value) ? colors.blue : colors.tertiary }]}>{day.label}</Text>)}
               </View>
             </View>
-            <Text style={[styles.todayStatus, { color: habit.completedOnDate ? colors.blue : colors.secondary }]}>{dueToday ? habit.completedOnDate ? 'Done' : 'Today' : ''}</Text>
+            <Text style={[styles.todayStatus, { color: metrics.rate >= 75 ? colors.blue : colors.secondary }]}>{metrics.rate}%</Text>
             <Text style={[styles.habitDisclosure, { color: colors.tertiary }]}>›</Text>
           </Pressable>
         );
       })}
       {habits.length === 0 && !habitDraft && <Empty colors={colors} text="No habits yet. Start with one small rhythm." />}
+      </>}
 
-      <Text style={[styles.hint, { color: colors.tertiary }]}>Tap to complete · press and hold to edit</Text>
+      <Text style={[styles.hint, { color: colors.tertiary }]}>Tap an item to open its full workspace.</Text>
     </ScrollView>
   );
 }
 
-function HabitDetailPage({ activity, colors, draft, habit, onArchive, onBack, onEdit, onSave, onSetDraft, onToggleDate, today }: {
+function CommandCenterDashboard({ activity, colors, goalHabitLinks, goals, habits, onOpenGoal, onOpenGoals, onOpenHabit, onOpenHabits, steps, today }: {
+  activity: HabitActivity[];
+  colors: AppColors;
+  goalHabitLinks: GoalHabitLink[];
+  goals: Goal[];
+  habits: Habit[];
+  onOpenGoal: (id: string) => void;
+  onOpenGoals: () => void;
+  onOpenHabit: (id: string) => void;
+  onOpenHabits: () => void;
+  steps: GoalStep[];
+  today: string;
+}) {
+  const activeGoals = goals.filter((goal) => !goal.completed);
+  const activeHabits = habits.filter((habit) => habit.startDate <= today && (!habit.endDate || habit.endDate >= today));
+  const habitSummaries = activeHabits.map((habit) => ({ habit, ...habitMetrics(habit, activity.filter((entry) => entry.habitId === habit.id), today, 28) }));
+  const weeklyScheduled = activeHabits.flatMap((habit) => scheduledHabitDates(habit, addLocalDays(today, -(weekdayFor(today) - 1)), today).map((date) => ({ habit, date })));
+  const completedKeys = new Set(activity.filter((entry) => entry.completed).map((entry) => `${entry.habitId}:${entry.date}`));
+  const skippedKeys = new Set(activity.filter((entry) => entry.skipped).map((entry) => `${entry.habitId}:${entry.date}`));
+  const weeklyConsidered = weeklyScheduled.filter(({ habit, date }) => !skippedKeys.has(`${habit.id}:${date}`));
+  const weeklyCompleted = weeklyConsidered.filter(({ habit, date }) => completedKeys.has(`${habit.id}:${date}`)).length;
+  const weeklyRate = weeklyConsidered.length ? Math.round((weeklyCompleted / weeklyConsidered.length) * 100) : 0;
+  const goalSummaries = activeGoals.map((goal) => {
+    const goalSteps = steps.filter((step) => step.goalId === goal.id);
+    const complete = goalSteps.filter((step) => step.completed).length;
+    const overdue = goalSteps.filter((step) => !step.completed && step.scheduledDate < today).length;
+    const linked = goalHabitLinks.filter((link) => link.goalId === goal.id);
+    return { goal, steps: goalSteps, complete, overdue, linked, progress: goalSteps.length ? Math.round((complete / goalSteps.length) * 100) : 0 };
+  });
+  const attentionCount = goalSummaries.filter(({ goal, overdue, steps: goalSteps }) => goal.targetDate < today || overdue > 0 || goalSteps.length === 0).length;
+  const todaySteps = steps.filter((step) => !step.completed && step.scheduledDate === today);
+  const todayHabits = activeHabits.filter((habit) => isHabitScheduledOn(habit, today) && !completedKeys.has(`${habit.id}:${today}`) && !skippedKeys.has(`${habit.id}:${today}`));
+  const lowestHabit = [...habitSummaries].filter((summary) => summary.scheduled > 0).sort((a, b) => a.rate - b.rate)[0];
+
+  return (
+    <ScrollView contentContainerStyle={styles.commandContent} showsVerticalScrollIndicator={false} style={styles.screen}>
+      <View style={styles.commandIntro}>
+        <Text style={[styles.eyebrow, { color: colors.blue }]}>COMMAND CENTER</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Your direction</Text>
+        <Text style={[styles.commandSummary, { color: colors.secondary }]}>{activeGoals.length} active goals · {attentionCount ? `${attentionCount} need attention` : 'everything is moving'}</Text>
+      </View>
+
+      <View style={styles.commandStats}>
+        <CommandStat colors={colors} label="GOALS" value={`${activeGoals.length}`} />
+        <CommandStat colors={colors} label="THIS WEEK" value={`${weeklyRate}%`} />
+        <CommandStat colors={colors} label="TODAY" value={`${todaySteps.length + todayHabits.length}`} />
+      </View>
+
+      <DashboardHeader colors={colors} onPress={onOpenGoals} title="Goals" />
+      <View style={[styles.dashboardPanel, { backgroundColor: colors.card }]}>
+        {goalSummaries.slice(0, 3).map(({ goal, steps: goalSteps, complete, overdue, progress }) => (
+          <Pressable key={goal.id} onPress={() => onOpenGoal(goal.id)} style={[styles.dashboardRow, { borderColor: colors.separator }]}>
+            <Text style={[styles.dashboardGoalStar, { color: colors.yellow }]}>☆</Text>
+            <View style={styles.cardCopy}>
+              <Text style={[styles.dashboardTitle, { color: colors.text }]} numberOfLines={1}>{goal.title}</Text>
+              <Text style={[styles.dashboardMeta, { color: overdue ? colors.red : colors.secondary }]}>{goalSteps.length ? `${complete} of ${goalSteps.length} milestones · ${progress}%` : 'Add the first milestone'}{overdue ? ` · ${overdue} overdue` : ''}</Text>
+            </View>
+            <View style={[styles.miniProgressTrack, { backgroundColor: colors.separator }]}><View style={[styles.miniProgressFill, { backgroundColor: colors.yellow, width: `${progress}%` }]} /></View>
+          </Pressable>
+        ))}
+        {!goalSummaries.length && <Text style={[styles.dashboardEmpty, { color: colors.secondary }]}>No active goals yet.</Text>}
+      </View>
+
+      <DashboardHeader colors={colors} onPress={onOpenHabits} title="Habits" />
+      <View style={[styles.dashboardPanel, { backgroundColor: colors.card }]}>
+        {habitSummaries.slice(0, 4).map(({ habit, rate, streak }) => (
+          <Pressable key={habit.id} onPress={() => onOpenHabit(habit.id)} style={[styles.dashboardRow, { borderColor: colors.separator }]}>
+            <View style={[styles.dashboardHabitDot, { backgroundColor: rate >= 80 ? colors.blue : rate >= 50 ? colors.blueSoft : colors.separator }]} />
+            <View style={styles.cardCopy}>
+              <Text style={[styles.dashboardTitle, { color: colors.text }]}>{habit.name}</Text>
+              <Text style={[styles.dashboardMeta, { color: colors.secondary }]}>{rate}% over 4 weeks · {streak} current streak</Text>
+            </View>
+            <Text style={[styles.dashboardRate, { color: colors.blue }]}>{rate}%</Text>
+          </Pressable>
+        ))}
+        {!habitSummaries.length && <Text style={[styles.dashboardEmpty, { color: colors.secondary }]}>No active habits yet.</Text>}
+      </View>
+
+      <DashboardHeader colors={colors} title="Today’s contribution" />
+      <View style={[styles.dashboardPanel, { backgroundColor: colors.card }]}>
+        {todaySteps.slice(0, 3).map((step) => {
+          const goal = goals.find((candidate) => candidate.id === step.goalId);
+          return <Pressable key={step.id} onPress={() => onOpenGoal(step.goalId)} style={[styles.contributionRow, { borderColor: colors.separator }]}><View style={[styles.contributionMark, { borderColor: colors.yellow }]} /><View style={styles.cardCopy}><Text style={[styles.dashboardTitle, { color: colors.text }]}>{step.title}</Text><Text style={[styles.dashboardMeta, { color: colors.yellow }]}>Moves “{goal?.title ?? 'Goal'}” forward</Text></View></Pressable>;
+        })}
+        {todayHabits.slice(0, Math.max(0, 4 - todaySteps.length)).map((habit) => {
+          const linkedGoal = goalHabitLinks.find((link) => link.habitId === habit.id);
+          const goal = goals.find((candidate) => candidate.id === linkedGoal?.goalId);
+          return <Pressable key={habit.id} onPress={() => onOpenHabit(habit.id)} style={[styles.contributionRow, { borderColor: colors.separator }]}><View style={[styles.contributionMark, { borderColor: colors.blue }]} /><View style={styles.cardCopy}><Text style={[styles.dashboardTitle, { color: colors.text }]}>{habit.name}</Text><Text style={[styles.dashboardMeta, { color: goal ? colors.yellow : colors.blue }]}>{goal ? `Supports “${goal.title}”` : 'Scheduled for today'}</Text></View></Pressable>;
+        })}
+        {!todaySteps.length && !todayHabits.length && <Text style={[styles.dashboardEmpty, { color: colors.secondary }]}>Your larger plans are handled for today.</Text>}
+      </View>
+
+      {lowestHabit && lowestHabit.rate < 75 && (
+        <Pressable onPress={() => onOpenHabit(lowestHabit.habit.id)} style={[styles.insightCard, { backgroundColor: colors.blueSoft }]}>
+          <Text style={[styles.insightEyebrow, { color: colors.blue }]}>PATTERN</Text>
+          <Text style={[styles.insightText, { color: colors.text }]}>{lowestHabit.habit.name} is at {lowestHabit.rate}% over the last four weeks. Consider adjusting its days or making the action easier to start.</Text>
+        </Pressable>
+      )}
+    </ScrollView>
+  );
+}
+
+function GoalDetailPage({ colors, draft, goal, habits, links, onBack, onDeleteGoal, onDeleteStep, onEdit, onLinkHabit, onSave, onSaveStep, onSetDraft, onToggleGoal, onToggleStep, onUnlinkHabit, steps, today }: {
+  colors: AppColors;
+  draft: GoalDraft | null;
+  goal: Goal;
+  habits: Habit[];
+  links: GoalHabitLink[];
+  onBack: () => void;
+  onDeleteGoal: () => Promise<void>;
+  onDeleteStep: (step: GoalStep) => Promise<void>;
+  onEdit: () => void;
+  onLinkHabit: (habitId: string) => Promise<void>;
+  onSave: () => Promise<void>;
+  onSaveStep: (draft: GoalStepDraft) => Promise<void>;
+  onSetDraft: (draft: GoalDraft | null) => void;
+  onToggleGoal: () => Promise<void>;
+  onToggleStep: (step: GoalStep) => Promise<void>;
+  onUnlinkHabit: (habitId: string) => Promise<void>;
+  steps: GoalStep[];
+  today: string;
+}) {
+  const [stepDraft, setStepDraft] = useState<GoalStepDraft | null>(null);
+  const [stepPickerOpen, setStepPickerOpen] = useState(false);
+  const [habitChooserOpen, setHabitChooserOpen] = useState(false);
+  const completed = steps.filter((step) => step.completed).length;
+  const progress = steps.length ? Math.round((completed / steps.length) * 100) : 0;
+  const nextStep = steps.filter((step) => !step.completed).sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate))[0];
+  const linkedHabits = links.map((link) => habits.find((habit) => habit.id === link.habitId)).filter((habit): habit is Habit => Boolean(habit));
+  const availableHabits = habits.filter((habit) => !links.some((link) => link.habitId === habit.id));
+
+  async function submitStep() {
+    if (!stepDraft?.title.trim()) return;
+    await onSaveStep(stepDraft);
+    setStepDraft(null);
+    setStepPickerOpen(false);
+  }
+
+  return (
+    <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.workspaceContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.screen}>
+      <Pressable hitSlop={8} onPress={onBack} style={styles.backRow}><Text style={[styles.backText, { color: colors.blue }]}>‹ Goals</Text></Pressable>
+      <View style={styles.workspaceTitleRow}>
+        <Pressable accessibilityLabel={goal.completed ? `Reopen ${goal.title}` : `Complete ${goal.title}`} onPress={() => void onToggleGoal()} style={[styles.workspaceStar, { borderColor: colors.yellow, backgroundColor: goal.completed ? colors.yellow : colors.yellowSoft }]}><Text style={[styles.workspaceStarText, { color: goal.completed ? '#FFFFFF' : colors.yellow }]}>{goal.completed ? '★' : '☆'}</Text></Pressable>
+        <View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: colors.yellow }]}>{goal.scope.toUpperCase()} GOAL</Text><Text style={[styles.workspaceTitle, { color: colors.text }]}>{goal.title}</Text><Text style={[styles.workspaceMeta, { color: colors.secondary }]}>Due {formatLongDate(goal.targetDate)} · {progress}% complete</Text></View>
+        {!draft && <Pressable hitSlop={8} onPress={onEdit}><Text style={[styles.editGoal, { color: colors.blue }]}>Edit</Text></Pressable>}
+      </View>
+
+      {draft && <GoalComposer colors={colors} draft={draft} onCancel={() => onSetDraft(null)} onDelete={onDeleteGoal} onSave={onSave} onSetDraft={onSetDraft} today={today} />}
+      {!draft && goal.notes && <Text style={[styles.workspaceNotes, { color: colors.text }]}>{goal.notes}</Text>}
+
+      <View style={[styles.goalOverview, { backgroundColor: colors.yellowSoft }]}>
+        <View><Text style={[styles.overviewValue, { color: colors.yellow }]}>{progress}%</Text><Text style={[styles.overviewLabel, { color: colors.yellow }]}>PROGRESS</Text></View>
+        <View style={styles.overviewDivider} />
+        <View style={styles.cardCopy}><Text style={[styles.overviewLabel, { color: colors.yellow }]}>NEXT ACTION</Text><Text style={[styles.overviewNext, { color: colors.text }]}>{nextStep?.title ?? 'Choose the first milestone'}</Text>{nextStep && <Text style={[styles.overviewDate, { color: colors.secondary }]}>{formatLongDate(nextStep.scheduledDate)}</Text>}</View>
+      </View>
+
+      <SectionTitle action="Add" colors={colors} onAction={() => setStepDraft({ goalId: goal.id, title: '', scheduledDate: today })} title="Milestones" />
+      {steps.map((step) => <Pressable key={step.id} onLongPress={() => Alert.alert('Remove this milestone?', 'Its dated task will also be removed.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => void onDeleteStep(step) }])} onPress={() => void onToggleStep(step)} style={[styles.projectRow, { borderColor: colors.separator }]}><View style={[styles.subgoalCheck, { borderColor: step.completed ? colors.yellow : colors.tertiary }, step.completed && { backgroundColor: colors.yellow }]}>{step.completed && <Text style={styles.checkmark}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.projectTitle, { color: step.completed ? colors.tertiary : colors.text }, step.completed && styles.completed]}>{step.title}</Text><Text style={[styles.projectDate, { color: step.scheduledDate < today && !step.completed ? colors.red : colors.secondary }]}>{formatLongDate(step.scheduledDate)}</Text></View></Pressable>)}
+      {!steps.length && !stepDraft && <Empty colors={colors} text="Add a milestone and assign it to a day. It will become a task on Today and Timeline." />}
+      {stepDraft && <View style={[styles.stepComposer, { borderColor: colors.separator }]}><TextInput autoFocus onChangeText={(title) => setStepDraft({ ...stepDraft, title })} placeholder="Milestone or next action" placeholderTextColor={colors.tertiary} style={[styles.stepInput, { color: colors.text }]} value={stepDraft.title} /><Pressable onPress={() => setStepPickerOpen((open) => !open)} style={styles.stepDateButton}><Text style={[styles.fieldLabel, { color: colors.secondary }]}>Do on</Text><Text style={[styles.dateValue, { color: colors.blue }]}>{formatLongDate(stepDraft.scheduledDate)}</Text></Pressable>{stepPickerOpen && <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} maximumDate={dateFromISO(goal.targetDate)} minimumDate={dateFromISO(today)} mode="date" onChange={(_, selected) => { if (Platform.OS !== 'ios') setStepPickerOpen(false); if (selected) setStepDraft({ ...stepDraft, scheduledDate: localISO(selected) }); }} value={dateFromISO(stepDraft.scheduledDate)} />}<ComposerActions colors={colors} onCancel={() => { setStepDraft(null); setStepPickerOpen(false); }} onSave={() => void submitStep()} saveDisabled={!stepDraft.title.trim()} /></View>}
+
+      <SectionTitle action={availableHabits.length ? 'Link habit' : undefined} colors={colors} onAction={() => setHabitChooserOpen((open) => !open)} title="Supporting habits" />
+      {linkedHabits.map((habit) => <Pressable key={habit.id} onLongPress={() => void onUnlinkHabit(habit.id)} style={[styles.linkedHabitRow, { backgroundColor: colors.blueSoft }]}><View style={[styles.dashboardHabitDot, { backgroundColor: colors.blue }]} /><View style={styles.cardCopy}><Text style={[styles.projectTitle, { color: colors.text }]}>{habit.name}</Text><Text style={[styles.projectDate, { color: colors.secondary }]}>{habit.weekdays.length} days each week</Text></View><Text style={[styles.linkedLabel, { color: colors.blue }]}>LINKED</Text></Pressable>)}
+      {!linkedHabits.length && !habitChooserOpen && <Empty colors={colors} text="Link a recurring habit to show how your weekly rhythm supports this goal." />}
+      {habitChooserOpen && <View style={[styles.habitChooser, { backgroundColor: colors.card }]}>{availableHabits.map((habit) => <Pressable key={habit.id} onPress={() => { void onLinkHabit(habit.id); setHabitChooserOpen(false); }} style={[styles.chooserRow, { borderColor: colors.separator }]}><Text style={[styles.projectTitle, { color: colors.text }]}>{habit.name}</Text><Text style={[styles.addSubgoal, { color: colors.blue }]}>Link</Text></Pressable>)}</View>}
+      <Text style={[styles.hint, { color: colors.tertiary }]}>Long-press a milestone or linked habit to remove it.</Text>
+    </ScrollView>
+  );
+}
+
+function HabitDetailPage({ activity, colors, draft, habit, onArchive, onBack, onEdit, onSave, onSetDraft, onToggleDate, onToggleSkip, today }: {
   activity: HabitActivity[];
   colors: AppColors;
   draft: HabitDraft | null;
@@ -325,6 +491,7 @@ function HabitDetailPage({ activity, colors, draft, habit, onArchive, onBack, on
   onSave: () => Promise<void>;
   onSetDraft: (draft: HabitDraft | null) => void;
   onToggleDate: (date: string) => Promise<void>;
+  onToggleSkip: (date: string) => Promise<void>;
   today: string;
 }) {
   const [startPickerOpen, setStartPickerOpen] = useState(false);
@@ -355,6 +522,7 @@ function HabitDetailPage({ activity, colors, draft, habit, onArchive, onBack, on
           <TextInput autoFocus onChangeText={(name) => onSetDraft({ ...draft, name })} placeholder="Habit name" placeholderTextColor={colors.tertiary} style={[styles.composerTitle, { color: colors.text, borderColor: colors.separator }]} value={draft.name} />
           <Text style={[styles.schedulePrompt, { color: colors.secondary }]}>Repeat on</Text>
           <WeekdayPicker colors={colors} selected={draft.weekdays} onChange={(weekdays) => onSetDraft({ ...draft, weekdays })} />
+          <TextInput onChangeText={(cue) => onSetDraft({ ...draft, cue })} placeholder="Anchor it: after coffee, at the gym…" placeholderTextColor={colors.tertiary} style={[styles.habitCueInput, { color: colors.text, borderColor: colors.separator }]} value={draft.cue ?? ''} />
           <Pressable onPress={() => setStartPickerOpen((open) => !open)} style={styles.dateRow}>
             <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Starts</Text>
             <Text style={[styles.dateValue, { color: colors.blue }]}>{formatLongDate(draft.startDate)}</Text>
@@ -380,7 +548,7 @@ function HabitDetailPage({ activity, colors, draft, habit, onArchive, onBack, on
         </Pressable>
       )}
 
-      <HabitTracker activity={activity} colors={colors} habit={habit} onToggleDate={onToggleDate} today={today} />
+      <HabitTracker activity={activity} colors={colors} habit={habit} onToggleDate={onToggleDate} onToggleSkip={onToggleSkip} today={today} />
 
       <View style={styles.habitInfoSection}>
         <Text style={[styles.habitInfoTitle, { color: colors.text }]}>Schedule</Text>
@@ -389,6 +557,7 @@ function HabitDetailPage({ activity, colors, draft, habit, onArchive, onBack, on
           <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Started</Text>
           <Text style={[styles.habitInfoValue, { color: colors.text }]}>{formatLongDate(habit.startDate)}</Text>
         </View>
+        {habit.cue && <View style={[styles.habitInfoRow, { borderColor: colors.separator }]}><Text style={[styles.fieldLabel, { color: colors.secondary }]}>Anchor</Text><Text style={[styles.habitInfoValue, { color: colors.text }]} numberOfLines={2}>{habit.cue}</Text></View>}
         <View style={[styles.habitInfoRow, { borderColor: colors.separator }]}>
           <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Next</Text>
           <Text style={[styles.habitInfoValue, { color: colors.text }]}>{nextDate ? formatLongDate(nextDate) : 'No upcoming days'}</Text>
@@ -399,13 +568,14 @@ function HabitDetailPage({ activity, colors, draft, habit, onArchive, onBack, on
   );
 }
 
-function HabitTracker({ activity, colors, habit, onToggleDate, today }: { activity: HabitActivity[]; colors: AppColors; habit: Habit; onToggleDate: (date: string) => Promise<void>; today: string }) {
+function HabitTracker({ activity, colors, habit, onToggleDate, onToggleSkip, today }: { activity: HabitActivity[]; colors: AppColors; habit: Habit; onToggleDate: (date: string) => Promise<void>; onToggleSkip: (date: string) => Promise<void>; today: string }) {
   const tracker = useMemo(() => {
     const todayOffset = weekdayFor(today) - 1;
     const start = addLocalDays(today, -(todayOffset + 19 * 7));
     const weeks = Array.from({ length: 20 }, (_, week) => Array.from({ length: 7 }, (_, day) => addLocalDays(start, week * 7 + day)));
     const completed = new Set(activity.filter((entry) => entry.completed).map((entry) => entry.date));
-    const scheduled = scheduledHabitDates(habit, start, today);
+    const skipped = new Set(activity.filter((entry) => entry.skipped).map((entry) => entry.date));
+    const scheduled = scheduledHabitDates(habit, start, today).filter((date) => !skipped.has(date));
     const completedCount = scheduled.filter((date) => completed.has(date)).length;
     let streak = 0;
     for (const date of [...scheduled].reverse()) {
@@ -413,7 +583,7 @@ function HabitTracker({ activity, colors, habit, onToggleDate, today }: { activi
       if (!completed.has(date)) break;
       streak += 1;
     }
-    return { weeks, completed, completedCount, scheduledCount: scheduled.length, streak };
+    return { weeks, completed, skipped, completedCount, scheduledCount: scheduled.length, streak };
   }, [activity, habit, today]);
   const rate = tracker.scheduledCount ? Math.round((tracker.completedCount / tracker.scheduledCount) * 100) : 0;
 
@@ -445,16 +615,21 @@ function HabitTracker({ activity, colors, habit, onToggleDate, today }: { activi
               {week.map((date) => {
                 const scheduled = isHabitScheduledOn(habit, date);
                 const completed = tracker.completed.has(date);
+                const skipped = tracker.skipped.has(date);
                 const future = date > today;
                 return (
                   <Pressable
                     accessibilityLabel={`${date}${completed ? ', completed' : scheduled ? ', scheduled' : ''}`}
                     disabled={!scheduled || future}
                     key={date}
-                    onPress={() => void onToggleDate(date)}
+                    onLongPress={() => Alert.alert('Update this day', formatLongDate(date), [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: skipped ? 'Remove skip' : 'Skip this day', onPress: () => void onToggleSkip(date) },
+                    ])}
+                    onPress={() => void (skipped ? onToggleSkip(date) : onToggleDate(date))}
                     style={[
                       styles.activityCell,
-                      { backgroundColor: !scheduled ? colors.background : completed ? colors.blue : future ? colors.blueSoft : colors.separator },
+                      { backgroundColor: !scheduled ? colors.background : skipped ? colors.amberSoft : completed ? colors.blue : future ? colors.blueSoft : colors.separator },
                       date === today && { borderColor: colors.red, borderWidth: 1 },
                     ]}
                   />
@@ -464,7 +639,7 @@ function HabitTracker({ activity, colors, habit, onToggleDate, today }: { activi
           ))}
         </View>
       </View>
-      <View style={styles.legend}><Text style={[styles.legendText, { color: colors.tertiary }]}>Missed</Text><View style={[styles.legendCell, { backgroundColor: colors.separator }]} /><View style={[styles.legendCell, { backgroundColor: colors.blueSoft }]} /><View style={[styles.legendCell, { backgroundColor: colors.blue }]} /><Text style={[styles.legendText, { color: colors.tertiary }]}>Complete</Text></View>
+      <View style={styles.legend}><Text style={[styles.legendText, { color: colors.tertiary }]}>Missed</Text><View style={[styles.legendCell, { backgroundColor: colors.separator }]} /><View style={[styles.legendCell, { backgroundColor: colors.amberSoft }]} /><View style={[styles.legendCell, { backgroundColor: colors.blue }]} /><Text style={[styles.legendText, { color: colors.tertiary }]}>Complete</Text></View>
     </View>
   );
 }
@@ -473,8 +648,26 @@ function TrackerStat({ colors, label, value }: { colors: AppColors; label: strin
   return <View style={styles.trackerStat}><Text style={[styles.trackerStatValue, { color: colors.blue }]}>{value}</Text><Text style={[styles.trackerStatLabel, { color: colors.tertiary }]}>{label}</Text></View>;
 }
 
-function SectionTitle({ title, action, colors, onAction }: { title: string; action: string; colors: AppColors; onAction: () => void }) {
-  return <View style={styles.sectionHeader}><Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text><Pressable hitSlop={8} onPress={onAction}><Text style={[styles.sectionAction, { color: colors.blue }]}>{action}</Text></Pressable></View>;
+function habitMetrics(habit: Habit, activity: HabitActivity[], today: string, windowDays: number) {
+  const start = addLocalDays(today, -(windowDays - 1));
+  return habitPerformance(habit, activity, start, today);
+}
+
+function CommandStat({ colors, label, value }: { colors: AppColors; label: string; value: string }) {
+  return <View style={[styles.commandStat, { backgroundColor: colors.card }]}><Text style={[styles.commandStatValue, { color: colors.text }]}>{value}</Text><Text style={[styles.commandStatLabel, { color: colors.secondary }]}>{label}</Text></View>;
+}
+
+function DashboardHeader({ colors, onPress, title }: { colors: AppColors; onPress?: () => void; title: string }) {
+  return <View style={styles.dashboardHeader}><Text style={[styles.dashboardHeaderTitle, { color: colors.text }]}>{title}</Text>{onPress && <Pressable hitSlop={8} onPress={onPress}><Text style={[styles.dashboardHeaderAction, { color: colors.blue }]}>View all ›</Text></Pressable>}</View>;
+}
+
+function GoalComposer({ colors, draft, onCancel, onDelete, onSave, onSetDraft, today }: { colors: AppColors; draft: GoalDraft; onCancel: () => void; onDelete: () => Promise<void>; onSave: () => Promise<void>; onSetDraft: (draft: GoalDraft | null) => void; today: string }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  return <View style={[styles.composer, { backgroundColor: colors.yellowSoft, borderColor: colors.yellow }]}><TextInput autoFocus onChangeText={(title) => onSetDraft({ ...draft, title })} placeholder="What are you working toward?" placeholderTextColor={colors.tertiary} style={[styles.composerTitle, { color: colors.text, borderColor: colors.separator }]} value={draft.title} /><View style={styles.scopeRow}>{(['month', 'quarter', 'year'] as GoalScope[]).map((scope) => <Pressable key={scope} onPress={() => onSetDraft({ ...draft, scope, targetDate: targetForScope(today, scope) })} style={[styles.scopePill, { backgroundColor: draft.scope === scope ? colors.yellow : colors.background }]}><Text style={[styles.scopeText, { color: draft.scope === scope ? '#FFFFFF' : colors.secondary }]}>{scope[0].toUpperCase() + scope.slice(1)}</Text></Pressable>)}</View><Pressable onPress={() => setPickerOpen((open) => !open)} style={styles.dateRow}><Text style={[styles.fieldLabel, { color: colors.secondary }]}>Target</Text><Text style={[styles.dateValue, { color: colors.yellow }]}>{formatLongDate(draft.targetDate)}</Text></Pressable>{pickerOpen && <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} minimumDate={dateFromISO(today)} mode="date" onChange={(_, selected) => { if (Platform.OS !== 'ios') setPickerOpen(false); if (selected) onSetDraft({ ...draft, targetDate: localISO(selected) }); }} value={dateFromISO(draft.targetDate)} />}<TextInput multiline onChangeText={(notes) => onSetDraft({ ...draft, notes })} placeholder="Why does this matter?" placeholderTextColor={colors.tertiary} style={[styles.notesInput, { color: colors.text, borderColor: colors.separator }]} value={draft.notes ?? ''} /><ComposerActions colors={colors} onCancel={onCancel} onDelete={onDelete} onSave={() => void onSave()} saveDisabled={!draft.title.trim()} /></View>;
+}
+
+function SectionTitle({ title, action, colors, onAction }: { title: string; action?: string; colors: AppColors; onAction: () => void }) {
+  return <View style={styles.sectionHeader}><Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>{action && <Pressable hitSlop={8} onPress={onAction}><Text style={[styles.sectionAction, { color: colors.blue }]}>{action}</Text></Pressable>}</View>;
 }
 
 function WeekdayPicker({ selected, colors, onChange }: { selected: ISOWeekday[]; colors: AppColors; onChange: (days: ISOWeekday[]) => void }) {
@@ -496,6 +689,51 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.15 },
   title: { fontSize: 31, lineHeight: 36, fontWeight: '700', letterSpacing: -1, marginTop: 4 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 5, maxWidth: 330 },
+  commandContent: { paddingHorizontal: 18, paddingTop: 17, paddingBottom: 112 },
+  commandIntro: { marginBottom: 13 },
+  commandSummary: { fontSize: 14, lineHeight: 20, marginTop: 4 },
+  commandStats: { flexDirection: 'row', gap: 8, marginBottom: 13 },
+  commandStat: { flex: 1, minHeight: 58, borderRadius: 16, paddingHorizontal: 10, justifyContent: 'center' },
+  commandStatValue: { fontSize: 19, lineHeight: 22, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  commandStatLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 0.65, marginTop: 2 },
+  dashboardHeader: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  dashboardHeaderTitle: { fontSize: 19, fontWeight: '700', letterSpacing: -0.3 },
+  dashboardHeaderAction: { fontSize: 12, fontWeight: '700' },
+  dashboardPanel: { borderRadius: 18, paddingHorizontal: 12, marginBottom: 10 },
+  dashboardRow: { minHeight: 53, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
+  dashboardGoalStar: { width: 27, fontSize: 21 },
+  dashboardHabitDot: { width: 9, height: 9, borderRadius: 5, marginRight: 12 },
+  dashboardTitle: { fontSize: 14, lineHeight: 18, fontWeight: '600' },
+  dashboardMeta: { fontSize: 10, lineHeight: 14, marginTop: 2 },
+  dashboardRate: { marginLeft: 9, fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  dashboardEmpty: { fontSize: 13, lineHeight: 18, paddingVertical: 15 },
+  miniProgressTrack: { width: 38, height: 4, borderRadius: 2, overflow: 'hidden', marginLeft: 9 },
+  miniProgressFill: { height: 4, borderRadius: 2 },
+  contributionRow: { minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
+  contributionMark: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, marginRight: 10 },
+  insightCard: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12, marginTop: 5 },
+  insightEyebrow: { fontSize: 9, fontWeight: '800', letterSpacing: 0.75 },
+  insightText: { fontSize: 13, lineHeight: 18, marginTop: 4 },
+  workspaceContent: { paddingHorizontal: 18, paddingTop: 7, paddingBottom: 112 },
+  workspaceTitleRow: { minHeight: 90, flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingTop: 7 },
+  workspaceStar: { width: 35, height: 35, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  workspaceStarText: { fontSize: 22, lineHeight: 24 },
+  workspaceTitle: { fontSize: 27, lineHeight: 31, fontWeight: '700', letterSpacing: -0.75, marginTop: 3 },
+  workspaceMeta: { fontSize: 11, lineHeight: 15, marginTop: 4 },
+  workspaceNotes: { fontSize: 14, lineHeight: 20, marginBottom: 12 },
+  goalOverview: { minHeight: 76, borderRadius: 18, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 9 },
+  overviewValue: { fontSize: 25, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  overviewLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 0.65 },
+  overviewDivider: { width: StyleSheet.hairlineWidth, height: 42, backgroundColor: 'rgba(160,120,0,0.18)' },
+  overviewNext: { fontSize: 13, fontWeight: '700', marginTop: 3 },
+  overviewDate: { fontSize: 10, marginTop: 2 },
+  projectRow: { minHeight: 50, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
+  projectTitle: { fontSize: 14, lineHeight: 18, fontWeight: '600' },
+  projectDate: { fontSize: 10, marginTop: 2 },
+  linkedHabitRow: { minHeight: 52, borderRadius: 15, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 7 },
+  linkedLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 0.55 },
+  habitChooser: { borderRadius: 16, paddingHorizontal: 12, marginBottom: 8 },
+  chooserRow: { minHeight: 45, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionHeader: { height: 42, marginTop: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 21, fontWeight: '700', letterSpacing: -0.4 },
   sectionAction: { fontSize: 14, fontWeight: '600' },
@@ -583,6 +821,7 @@ const styles = StyleSheet.create({
   dateValue: { fontSize: 14, fontWeight: '700' },
   notesInput: { minHeight: 50, maxHeight: 100, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 10, fontSize: 14 },
   schedulePrompt: { fontSize: 12, fontWeight: '600', marginTop: 11, marginBottom: 8 },
+  habitCueInput: { minHeight: 40, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 14, marginTop: 7, paddingVertical: 7 },
   weekdays: { flexDirection: 'row', justifyContent: 'space-between' },
   weekday: { width: 36, height: 36, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
   weekdayText: { fontSize: 12, fontWeight: '700' },

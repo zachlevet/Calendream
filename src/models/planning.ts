@@ -87,6 +87,7 @@ export interface Habit {
   startDate: string;
   endDate?: string;
   completedOnDate?: boolean;
+  cue?: string;
 }
 
 export interface HabitDraft {
@@ -95,12 +96,19 @@ export interface HabitDraft {
   weekdays: ISOWeekday[];
   startDate: string;
   endDate?: string;
+  cue?: string;
 }
 
 export interface HabitActivity {
   habitId: string;
   date: string;
   completed: boolean;
+  skipped?: boolean;
+}
+
+export interface GoalHabitLink {
+  goalId: string;
+  habitId: string;
 }
 
 export interface SearchResult {

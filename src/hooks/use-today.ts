@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
 
-import type { Goal, GoalDraft, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ISOWeekday, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
+import type { Goal, GoalDraft, GoalHabitLink, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ISOWeekday, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
 import { scheduledHabitDates } from '../features/goals/habitSchedule';
 import { matchingSnippet } from '../shared/search';
 
@@ -44,6 +44,7 @@ interface HabitRow {
   start_date: string;
   end_date: string | null;
   completed_on_date: number;
+  cue: string | null;
 }
 
 interface GoalStepRow {
@@ -106,6 +107,7 @@ function toHabit(row: HabitRow): Habit {
     startDate: row.start_date,
     endDate: row.end_date ?? undefined,
     completedOnDate: Boolean(row.completed_on_date),
+    cue: row.cue ?? undefined,
   };
 }
 
@@ -143,7 +145,13 @@ async function ensureHabitTasks(db: SQLiteDatabase, startDate: string, endDate: 
     startDate,
     endDate,
   );
+  const skipRows = await db.getAllAsync<{ habit_id: string; date: string }>(
+    'SELECT habit_id, date FROM habit_skips WHERE date >= ? AND date <= ?',
+    startDate,
+    endDate,
+  );
   const existing = new Set(existingRows.map((row) => `${row.habit_id}:${row.anchor_start}`));
+  const skipped = new Set(skipRows.map((row) => `${row.habit_id}:${row.date}`));
   const inserts: { habitId: string; name: string; date: string }[] = [];
 
   for (const habit of habits) {
@@ -152,7 +160,7 @@ async function ensureHabitTasks(db: SQLiteDatabase, startDate: string, endDate: 
     const dates = scheduledHabitDates({ weekdays, startDate: habit.start_date, endDate: habit.end_date ?? undefined }, startDate, endDate);
     for (const scheduledDate of dates) {
       const key = `${habit.id}:${scheduledDate}`;
-      if (!existing.has(key)) {
+      if (!existing.has(key) && !skipped.has(key)) {
         inserts.push({ habitId: habit.id, name: habit.name, date: scheduledDate });
         existing.add(key);
       }
@@ -185,6 +193,7 @@ export function useTodayData(date: string, reviewDate = date) {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [goalSteps, setGoalSteps] = useState<GoalStep[]>([]);
   const [habitActivity, setHabitActivity] = useState<HabitActivity[]>([]);
+  const [goalHabitLinks, setGoalHabitLinks] = useState<GoalHabitLink[]>([]);
   const [morningReviewed, setMorningReviewed] = useState(false);
   const [journal, setJournal] = useState('');
   const [journalInLibrary, setJournalInLibrary] = useState(false);
@@ -193,7 +202,7 @@ export function useTodayData(date: string, reviewDate = date) {
   const refresh = useCallback(async () => {
     await ensureHabitTasks(db, reviewDate, addDays(reviewDate, 90));
 
-    const [todayRows, upcomingRows, overdueRows, goalRows, habitRows, goalStepRows, activityRows, page, morningReview, libraryEntry] = await Promise.all([
+    const [todayRows, upcomingRows, overdueRows, goalRows, habitRows, goalStepRows, activityRows, skipRows, linkRows, page, morningReview, libraryEntry] = await Promise.all([
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
                 start_time, completed_at, notes, location, sort_order,
@@ -235,7 +244,7 @@ export function useTodayData(date: string, reviewDate = date) {
          ORDER BY completed_at IS NOT NULL, target_date, created_at`,
       ),
       db.getAllAsync<HabitRow>(
-        `SELECT h.id, h.name, h.schedule_json, h.start_date, h.end_date,
+        `SELECT h.id, h.name, h.schedule_json, h.start_date, h.end_date, h.cue,
                 EXISTS(
                   SELECT 1 FROM items i
                   WHERE i.deleted_at IS NULL AND i.habit_id = h.id
@@ -263,6 +272,15 @@ export function useTodayData(date: string, reviewDate = date) {
         addDays(reviewDate, -365),
         addDays(reviewDate, 90),
       ),
+      db.getAllAsync<{ habit_id: string; date: string }>(
+        `SELECT habit_id, date FROM habit_skips
+         WHERE date >= ? AND date <= ? ORDER BY date`,
+        addDays(reviewDate, -365),
+        addDays(reviewDate, 90),
+      ),
+      db.getAllAsync<{ goal_id: string; habit_id: string }>(
+        'SELECT goal_id, habit_id FROM goal_habits ORDER BY created_at',
+      ),
       db.getFirstAsync<{ reflection: string }>(
         'SELECT reflection FROM daily_pages WHERE date = ?',
         date,
@@ -281,7 +299,11 @@ export function useTodayData(date: string, reviewDate = date) {
     setGoals(mappedGoals.filter((goal) => goal.startsOn <= date && goal.targetDate >= date));
     setHabits(habitRows.map(toHabit));
     setGoalSteps(goalStepRows.map(toGoalStep));
-    setHabitActivity(activityRows.map((row) => ({ habitId: row.habit_id, date: row.anchor_start, completed: Boolean(row.completed_at) })));
+    setHabitActivity([
+      ...activityRows.map((row) => ({ habitId: row.habit_id, date: row.anchor_start, completed: Boolean(row.completed_at) })),
+      ...skipRows.map((row) => ({ habitId: row.habit_id, date: row.date, completed: false, skipped: true })),
+    ]);
+    setGoalHabitLinks(linkRows.map((row) => ({ goalId: row.goal_id, habitId: row.habit_id })));
     setMorningReviewed(morningReview?.value === reviewDate);
     setJournal(page?.reflection ?? '');
     setJournalInLibrary(Boolean(libraryEntry));
@@ -536,9 +558,9 @@ export function useTodayData(date: string, reviewDate = date) {
       const habitId = draft.id;
       await db.withTransactionAsync(async () => {
         await db.runAsync(
-          `UPDATE habits SET name = ?, schedule_json = ?, start_date = ?, end_date = ?, updated_at = ?
+          `UPDATE habits SET name = ?, schedule_json = ?, start_date = ?, end_date = ?, cue = ?, updated_at = ?
            WHERE id = ?`,
-          draft.name.trim(), schedule, draft.startDate, draft.endDate ?? null, now, habitId,
+          draft.name.trim(), schedule, draft.startDate, draft.endDate ?? null, draft.cue?.trim() || null, now, habitId,
         );
         await db.runAsync(
           `UPDATE items SET deleted_at = ?, updated_at = ?
@@ -554,9 +576,9 @@ export function useTodayData(date: string, reviewDate = date) {
     } else {
       await db.runAsync(
         `INSERT INTO habits
-          (id, name, schedule_json, start_date, end_date, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        makeId(), draft.name.trim(), schedule, draft.startDate, draft.endDate ?? null, now, now,
+          (id, name, schedule_json, start_date, end_date, cue, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        makeId(), draft.name.trim(), schedule, draft.startDate, draft.endDate ?? null, draft.cue?.trim() || null, now, now,
       );
     }
     await refresh();
@@ -582,6 +604,51 @@ export function useTodayData(date: string, reviewDate = date) {
         makeId(), habit.name, targetDate, targetDate, habit.id, now, targetDate, now, now,
       );
     }
+    await refresh();
+  }, [db, refresh]);
+
+  const toggleHabitSkip = useCallback(async (habit: Habit, targetDate: string) => {
+    const now = new Date().toISOString();
+    const existing = await db.getFirstAsync<{ habit_id: string }>(
+      'SELECT habit_id FROM habit_skips WHERE habit_id = ? AND date = ?',
+      habit.id,
+      targetDate,
+    );
+    await db.withTransactionAsync(async () => {
+      if (existing) {
+        await db.runAsync('DELETE FROM habit_skips WHERE habit_id = ? AND date = ?', habit.id, targetDate);
+      } else {
+        await db.runAsync(
+          'INSERT INTO habit_skips (habit_id, date, created_at) VALUES (?, ?, ?)',
+          habit.id,
+          targetDate,
+          now,
+        );
+        await db.runAsync(
+          `UPDATE items SET deleted_at = ?, updated_at = ?
+           WHERE habit_id = ? AND anchor_start = ? AND completed_at IS NULL AND deleted_at IS NULL`,
+          now,
+          now,
+          habit.id,
+          targetDate,
+        );
+      }
+    });
+    await refresh();
+  }, [db, refresh]);
+
+  const linkHabitToGoal = useCallback(async (goalId: string, habitId: string) => {
+    await db.runAsync(
+      'INSERT OR IGNORE INTO goal_habits (goal_id, habit_id, created_at) VALUES (?, ?, ?)',
+      goalId,
+      habitId,
+      new Date().toISOString(),
+    );
+    await refresh();
+  }, [db, refresh]);
+
+  const unlinkHabitFromGoal = useCallback(async (goalId: string, habitId: string) => {
+    await db.runAsync('DELETE FROM goal_habits WHERE goal_id = ? AND habit_id = ?', goalId, habitId);
     await refresh();
   }, [db, refresh]);
 
@@ -705,6 +772,7 @@ export function useTodayData(date: string, reviewDate = date) {
     habits,
     goalSteps,
     habitActivity,
+    goalHabitLinks,
     morningReviewDue: overdueTasks.length > 0 && !morningReviewed,
     journal,
     journalInLibrary,
@@ -720,6 +788,9 @@ export function useTodayData(date: string, reviewDate = date) {
     saveHabit,
     toggleHabit,
     toggleHabitDate,
+    toggleHabitSkip,
+    linkHabitToGoal,
+    unlinkHabitFromGoal,
     archiveHabit,
     deleteItem,
     saveJournal,
