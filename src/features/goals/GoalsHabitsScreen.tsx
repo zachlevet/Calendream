@@ -251,11 +251,6 @@ function OverviewDashboard({ activity, colors, goals, habits, onOpenGoal, onOpen
 }) {
   const activeGoals = goals.filter((goal) => !goal.completed);
   const activeHabits = habits.filter((habit) => habit.startDate <= today && (!habit.endDate || habit.endDate >= today));
-  const attentionCount = activeGoals.filter((goal) => {
-    const goalSteps = steps.filter((step) => step.goalId === goal.id);
-    return goal.completionDate && goal.completionDate < today
-      || goalSteps.some((step) => !step.completed && step.scheduledDate < today);
-  }).length;
   const summaries = activeGoals.map((goal) => {
     const goalSteps = steps.filter((step) => step.goalId === goal.id);
     const complete = goalSteps.filter((step) => step.completed).length;
@@ -265,20 +260,15 @@ function OverviewDashboard({ activity, colors, goals, habits, onOpenGoal, onOpen
     habit,
     ...habitMetrics(habit, activity.filter((entry) => entry.habitId === habit.id), today, 28),
   }));
-  const lowestHabit = [...habitSummaries].filter((summary) => summary.scheduled > 0).sort((a, b) => a.rate - b.rate)[0];
 
   return (
     <ScrollView contentContainerStyle={styles.overviewContent} showsVerticalScrollIndicator={false} style={styles.screen}>
-      <View style={styles.overviewIntro}>
-        <Text style={[styles.eyebrow, { color: colors.blue }]}>DIRECTION & RHYTHM</Text>
-        <Text style={[styles.title, { color: colors.text }]}>Goals & Habits</Text>
-        <Text style={[styles.subtitle, { color: colors.secondary }]}>One place to understand what you’re working toward and the rhythms supporting it.</Text>
-        <Text style={[styles.overviewSummary, { color: colors.secondary }]}>{activeGoals.length} goals · {activeHabits.length} habits{attentionCount ? ` · ${attentionCount} needs attention` : ''}</Text>
+      <View style={styles.overviewHeaderRow}>
+        <View style={styles.cardCopy}>
+          <Text style={[styles.overviewTitle, { color: colors.text }]}>Your direction</Text>
+          <Text style={[styles.overviewGuide, { color: colors.secondary }]}>Choose what matters. Build the rhythm to get there.</Text>
+        </View>
       </View>
-
-      <DashboardHeader colors={colors} onPress={onOpenHabits} subtitle="Your last seven days, with today on the right." title="This week" />
-      <SevenDayHabitMatrix activity={activity} colors={colors} habits={activeHabits.slice(0, 4)} onOpenHabit={onOpenHabit} today={today} />
-
       <DashboardHeader colors={colors} onPress={onOpenGoals} title="Goals" />
       <View style={[styles.goalPanel, { backgroundColor: colors.yellowSoft }]}>
         {summaries.slice(0, 3).map(({ goal, complete, total }, index) => (
@@ -308,13 +298,6 @@ function OverviewDashboard({ activity, colors, goals, habits, onOpenGoal, onOpen
         ))}
         {!habitSummaries.length && <Text style={[styles.dashboardEmpty, { color: colors.secondary }]}>No habits yet. Begin with one rhythm you can repeat.</Text>}
       </View>
-
-      {lowestHabit && lowestHabit.rate < 75 && (
-        <Pressable onPress={() => onOpenHabit(lowestHabit.habit.id)} style={[styles.insightCard, { backgroundColor: colors.blueSoft }]}>
-          <Text style={[styles.insightEyebrow, { color: colors.blue }]}>PATTERN</Text>
-          <Text style={[styles.insightText, { color: colors.text }]}>{lowestHabit.habit.name} is at {lowestHabit.rate}% over four weeks. A smaller action or easier schedule may make it more natural to keep.</Text>
-        </Pressable>
-      )}
     </ScrollView>
   );
 }
@@ -707,14 +690,17 @@ function formatTime(date: Date) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  overviewContent: { paddingHorizontal: 18, paddingTop: 17, paddingBottom: 112 },
+  overviewContent: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 112 },
+  overviewHeaderRow: { minHeight: 57, flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  overviewTitle: { fontSize: 27, lineHeight: 32, fontWeight: '700', letterSpacing: -0.7 },
+  overviewGuide: { fontSize: 13, lineHeight: 18, fontWeight: '600', marginTop: 3 },
   overviewIntro: { marginBottom: 14 },
   overviewSummary: { fontSize: 13, lineHeight: 18, marginTop: 8, fontWeight: '600' },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.15 },
   title: { fontSize: 31, lineHeight: 36, fontWeight: '700', letterSpacing: -1, marginTop: 4 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: 5, maxWidth: 345 },
-  dashboardHeader: { minHeight: 45, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
-  dashboardHeaderTitle: { fontSize: 19, lineHeight: 22, fontWeight: '700', letterSpacing: -0.3 },
+  dashboardHeader: { minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 5 },
+  dashboardHeaderTitle: { fontSize: 20, lineHeight: 24, fontWeight: '700', letterSpacing: -0.4 },
   dashboardHeaderSubtitle: { fontSize: 10, lineHeight: 14, marginTop: 1 },
   dashboardHeaderAction: { fontSize: 12, fontWeight: '700' },
   dashboardPanel: { borderRadius: 18, paddingHorizontal: 12, marginBottom: 10, overflow: 'hidden' },
