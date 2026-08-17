@@ -221,6 +221,7 @@ export function TodayScreen() {
       altitude: item.altitude,
       eventType: item.eventType,
       time: item.startTime,
+      endTime: item.endTime,
       notes: item.notes,
       location: item.location,
       locationPlace: item.locationPlace,
@@ -469,7 +470,13 @@ export function TodayScreen() {
                 onAction={() => void toggleNewInlineEditor('event')}
                 title="Events"
               />
-              {events.map((event) => (
+              {events.map((event) => {
+                const habitEntries = event.habitId
+                  ? data.habitActivity.filter((entry) => entry.habitId === event.habitId && entry.date === selectedDate)
+                  : [];
+                const habitEntry = habitEntries.find((entry) => entry.completed || entry.failed || entry.skipped) ?? habitEntries[0];
+                const showHabitCheckIn = Boolean(event.habitId && eventPhase(event) === 'past' && !habitEntry?.completed && !habitEntry?.failed);
+                return (
                 <Fragment key={event.id}>
                 <Pressable
                   onPress={() => void toggleInlineEditor(event)}
@@ -505,11 +512,23 @@ export function TodayScreen() {
                     </Pressable>
                   )}
                 </Pressable>
+                  {showHabitCheckIn && (
+                    <View style={[styles.habitEventCheckIn, { backgroundColor: colors.blueSoft }]}>
+                      <View style={styles.rowCopy}>
+                        <Text style={[styles.habitEventQuestion, { color: colors.text }]}>Did you complete this habit?</Text>
+                        <Text style={[styles.habitEventMeta, { color: colors.secondary }]}>This updates your habit tracker.</Text>
+                      </View>
+                      <Pressable onPress={() => event.habitId && void data.markHabitFailed(event.habitId, selectedDate)} style={[styles.habitEventChoice, { borderColor: colors.blue }]}><Text style={[styles.habitEventChoiceText, { color: colors.blue }]}>No</Text></Pressable>
+                      <Pressable onPress={() => void data.toggleTask(event)} style={[styles.habitEventChoice, { backgroundColor: colors.blue, borderColor: colors.blue }]}><Text style={[styles.habitEventChoiceText, { color: '#FFFFFF' }]}>Yes</Text></Pressable>
+                    </View>
+                  )}
+                  {habitEntry?.failed && <Text style={[styles.habitEventMissed, { color: colors.tertiary }]}>Habit marked not completed</Text>}
                   {inlineEditor?.item?.id === event.id && (
                     <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
                   )}
                 </Fragment>
-              ))}
+                );
+              })}
               {inlineEditor?.kind === 'event' && !inlineEditor.item && (
                 <InlineComposer colors={colors} key="new-event" kind="event" onCancel={closeInlineEditor} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
               )}
@@ -955,13 +974,13 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange,
 
   useEffect(() => {
     if (!onDraftChange) return;
-    onDraftChange({ id: initial?.id, kind, title, date: today, endDate: initial?.anchorEnd ?? undefined, precision: initial?.precision, altitude: initial?.altitude, eventType: initial?.eventType, time, notes, location, locationPlace });
-  }, [initial?.altitude, initial?.anchorEnd, initial?.eventType, initial?.id, initial?.precision, kind, location, locationPlace, notes, onDraftChange, time, title, today]);
+    onDraftChange({ id: initial?.id, kind, title, date: today, endDate: initial?.anchorEnd ?? undefined, precision: initial?.precision, altitude: initial?.altitude, eventType: initial?.eventType, time, endTime: initial?.endTime, notes, location, locationPlace });
+  }, [initial?.altitude, initial?.anchorEnd, initial?.endTime, initial?.eventType, initial?.id, initial?.precision, kind, location, locationPlace, notes, onDraftChange, time, title, today]);
 
   async function submit() {
     if (!title.trim() || saving) return;
     setSaving(true);
-    await onSave({ id: initial?.id, kind, title, date: today, endDate: initial?.anchorEnd ?? undefined, precision: initial?.precision, altitude: initial?.altitude, eventType: initial?.eventType, time, notes, location, locationPlace });
+    await onSave({ id: initial?.id, kind, title, date: today, endDate: initial?.anchorEnd ?? undefined, precision: initial?.precision, altitude: initial?.altitude, eventType: initial?.eventType, time, endTime: initial?.endTime, notes, location, locationPlace });
   }
 
   function focusComposer() {
@@ -1071,7 +1090,7 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
   async function submit() {
     if (!valid || saving) return;
     setSaving(true);
-    await onSave({ id: item?.id, kind, title, date, endDate: item?.anchorEnd ?? undefined, precision: item?.precision, altitude: item?.altitude, eventType: item?.eventType, time, notes, location, locationPlace });
+    await onSave({ id: item?.id, kind, title, date, endDate: item?.anchorEnd ?? undefined, precision: item?.precision, altitude: item?.altitude, eventType: item?.eventType, time, endTime: item?.endTime, notes, location, locationPlace });
   }
 
   function confirmDelete() {
@@ -1507,6 +1526,12 @@ const styles = StyleSheet.create({
   eventRow: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
   eventTime: { width: 68, fontSize: 13, fontVariant: ['tabular-nums'] },
   eventRule: { width: 3, height: 27, borderRadius: 2, marginRight: 11 },
+  habitEventCheckIn: { minHeight: 49, borderRadius: 15, marginLeft: 68, marginTop: 5, marginBottom: 7, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  habitEventQuestion: { fontSize: 12, lineHeight: 15, fontWeight: '700' },
+  habitEventMeta: { fontSize: 9, lineHeight: 12, marginTop: 1 },
+  habitEventChoice: { minWidth: 38, height: 28, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  habitEventChoiceText: { fontSize: 11, fontWeight: '800' },
+  habitEventMissed: { marginLeft: 68, marginTop: 4, marginBottom: 5, fontSize: 10 },
   mapsButton: { height: 28, borderRadius: 14, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   mapsButtonText: { fontSize: 12, fontWeight: '700' },
   rowCopy: { flex: 1, paddingVertical: 6 },

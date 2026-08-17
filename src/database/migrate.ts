@@ -14,6 +14,7 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       precision TEXT NOT NULL DEFAULT 'day',
       altitude INTEGER NOT NULL DEFAULT 0,
       start_time TEXT,
+      end_time TEXT,
       completed_at TEXT,
       notes TEXT,
       location TEXT,
@@ -44,6 +45,9 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       start_date TEXT NOT NULL,
       end_date TEXT,
       cue TEXT,
+      item_kind TEXT NOT NULL DEFAULT 'task',
+      start_time TEXT,
+      end_time TEXT,
       archived_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -53,8 +57,10 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       id TEXT PRIMARY KEY NOT NULL,
       title TEXT NOT NULL,
       scope TEXT NOT NULL CHECK (scope IN ('month', 'quarter', 'year')),
+      horizon TEXT NOT NULL DEFAULT 'year',
       starts_on TEXT NOT NULL,
       target_date TEXT NOT NULL,
+      completion_date TEXT,
       notes TEXT,
       linked_habit_id TEXT,
       completed_at TEXT,
@@ -95,6 +101,14 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS habit_failures (
+      habit_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (habit_id, date),
+      FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS app_meta (
       key TEXT PRIMARY KEY NOT NULL,
       value TEXT NOT NULL,
@@ -124,9 +138,30 @@ export async function migrateDatabase(db: SQLiteDatabase) {
   if (!itemColumns.some((column) => column.name === 'event_type')) {
     await db.execAsync("ALTER TABLE items ADD COLUMN event_type TEXT NOT NULL DEFAULT 'event'");
   }
+  if (!itemColumns.some((column) => column.name === 'end_time')) {
+    await db.execAsync('ALTER TABLE items ADD COLUMN end_time TEXT');
+  }
   const habitColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(habits)');
   if (!habitColumns.some((column) => column.name === 'cue')) {
     await db.execAsync('ALTER TABLE habits ADD COLUMN cue TEXT');
+  }
+  if (!habitColumns.some((column) => column.name === 'item_kind')) {
+    await db.execAsync("ALTER TABLE habits ADD COLUMN item_kind TEXT NOT NULL DEFAULT 'task'");
+  }
+  if (!habitColumns.some((column) => column.name === 'start_time')) {
+    await db.execAsync('ALTER TABLE habits ADD COLUMN start_time TEXT');
+  }
+  if (!habitColumns.some((column) => column.name === 'end_time')) {
+    await db.execAsync('ALTER TABLE habits ADD COLUMN end_time TEXT');
+  }
+  const goalColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(goals)');
+  if (!goalColumns.some((column) => column.name === 'horizon')) {
+    await db.execAsync("ALTER TABLE goals ADD COLUMN horizon TEXT NOT NULL DEFAULT 'year'");
+    await db.execAsync('UPDATE goals SET horizon = scope');
+  }
+  if (!goalColumns.some((column) => column.name === 'completion_date')) {
+    await db.execAsync('ALTER TABLE goals ADD COLUMN completion_date TEXT');
+    await db.execAsync('UPDATE goals SET completion_date = target_date');
   }
 
   const sampleMarker = await db.getFirstAsync<{ value: string }>(
@@ -280,9 +315,9 @@ export async function migrateDatabase(db: SQLiteDatabase) {
     await db.withTransactionAsync(async () => {
       await db.runAsync(
         `INSERT OR IGNORE INTO goals
-          (id, title, scope, starts_on, target_date, notes, created_at, updated_at)
-         SELECT 'goal-' || id, title, precision, anchor_start, COALESCE(anchor_end, anchor_start),
-                notes, created_at, updated_at
+          (id, title, scope, horizon, starts_on, target_date, completion_date, notes, created_at, updated_at)
+         SELECT 'goal-' || id, title, precision, precision, anchor_start, COALESCE(anchor_end, anchor_start),
+                COALESCE(anchor_end, anchor_start), notes, created_at, updated_at
          FROM items
          WHERE deleted_at IS NULL AND kind = 'task'
            AND precision IN ('month', 'quarter', 'year')
@@ -297,10 +332,11 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       );
       await db.runAsync(
         `INSERT OR IGNORE INTO goals
-          (id, title, scope, starts_on, target_date, notes, created_at, updated_at)
-         VALUES ('sample-ironman-goal', 'Race my first Ironman', 'year', ?, ?,
+          (id, title, scope, horizon, starts_on, target_date, completion_date, notes, created_at, updated_at)
+         VALUES ('sample-ironman-goal', 'Race my first Ironman', 'year', 'year', ?, ?, ?,
                  'Build steadily toward race day.', ?, ?)`,
         today,
+        ironmanTarget,
         ironmanTarget,
         createdAt,
         createdAt,
@@ -402,6 +438,69 @@ export async function migrateDatabase(db: SQLiteDatabase) {
   await db.runAsync("UPDATE habits SET cue = 'After I get dressed' WHERE id = 'sample-habit-run' AND cue IS NULL");
   await db.runAsync("UPDATE habits SET cue = 'After dinner' WHERE id = 'sample-habit-read' AND cue IS NULL");
 
+  const habitHistoryMarker = await db.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_meta WHERE key = 'sample_habit_history_v1'",
+  );
+  if (!habitHistoryMarker) {
+    const now = new Date();
+    const createdAt = now.toISOString();
+    const today = localDate(now);
+    const historyStart = addDate(today, -35);
+    await db.withTransactionAsync(async () => {
+      await db.runAsync("UPDATE habits SET start_date = ? WHERE id IN ('sample-habit-run', 'sample-habit-read')", historyStart);
+      await db.runAsync(
+        `INSERT OR IGNORE INTO habits
+          (id, name, schedule_json, start_date, item_kind, start_time, end_time, created_at, updated_at)
+         VALUES ('sample-habit-swim', 'Swim', '[2,4,6]', ?, 'event', '7:00 AM', '8:00 AM', ?, ?)`,
+        historyStart,
+        createdAt,
+        createdAt,
+      );
+
+      const samples = [
+        { id: 'sample-habit-run', name: 'Morning run', weekdays: [1, 3, 5], misses: [-3] },
+        { id: 'sample-habit-read', name: 'Read for 20 minutes', weekdays: [1, 2, 3, 4, 5, 6, 7], misses: [-5, -2] },
+        { id: 'sample-habit-swim', name: 'Swim', weekdays: [2, 4, 6], misses: [-4] },
+      ];
+      for (let offset = -10; offset < 0; offset += 1) {
+        const date = addDate(today, offset);
+        const weekday = isoWeekday(date);
+        for (const sample of samples) {
+          if (!sample.weekdays.includes(weekday) || sample.misses.includes(offset)) continue;
+          const existing = await db.getFirstAsync<{ id: string }>(
+            'SELECT id FROM items WHERE habit_id = ? AND anchor_start = ? AND deleted_at IS NULL',
+            sample.id,
+            date,
+          );
+          if (!existing) {
+            await db.runAsync(
+              `INSERT INTO items
+                (id, kind, title, anchor_start, anchor_end, precision, altitude, habit_id,
+                 start_time, end_time, completed_at, sort_order, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, ?, ?)`,
+              `sample-history-${sample.id}-${date}`,
+              sample.id === 'sample-habit-swim' ? 'event' : 'task',
+              sample.name,
+              date,
+              date,
+              sample.id === 'sample-habit-swim' ? 'time' : 'day',
+              sample.id,
+              sample.id === 'sample-habit-swim' ? '7:00 AM' : null,
+              sample.id === 'sample-habit-swim' ? '8:00 AM' : null,
+              createdAt,
+              createdAt,
+              createdAt,
+            );
+          }
+        }
+      }
+      await db.runAsync(
+        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_habit_history_v1', 'seeded', ?)",
+        createdAt,
+      );
+    });
+  }
+
   const goalHabitSampleMarker = await db.getFirstAsync<{ value: string }>(
     "SELECT value FROM app_meta WHERE key = 'sample_goal_habits_v1'",
   );
@@ -430,6 +529,12 @@ function localDate(date: Date) {
 function addDate(isoDate: string, amount: number) {
   const [year, month, day] = isoDate.split('-').map(Number);
   return localDate(new Date(year, month - 1, day + amount));
+}
+
+function isoWeekday(isoDate: string) {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const weekday = new Date(year, month - 1, day).getDay();
+  return weekday === 0 ? 7 : weekday;
 }
 
 function quarterStart(isoDate: string) {

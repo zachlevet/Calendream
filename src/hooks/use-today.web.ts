@@ -48,15 +48,16 @@ function sampleGoals(today: string): Goal[] {
   const [year, month] = today.split('-').map(Number);
   const targetDate = addDays(`${year}-${String(month).padStart(2, '0')}-01`, new Date(year, month, 0).getDate() - 1);
   return [
-    { id: 'web-ironman-goal', title: 'Race my first Ironman', scope: 'year', startsOn: `${year}-01-01`, targetDate },
-    { id: 'web-creative-goal', title: 'Build a consistent creative practice', scope: 'quarter', startsOn: `${year}-${String(Math.floor((month - 1) / 3) * 3 + 1).padStart(2, '0')}-01`, targetDate: addDays(targetDate, 45) },
+    { id: 'web-ironman-goal', title: 'Race my first Ironman', scope: 'year', horizon: 'year', startsOn: `${year}-01-01`, targetDate, completionDate: targetDate },
+    { id: 'web-creative-goal', title: 'Build a consistent creative practice', scope: 'quarter', horizon: 'quarter', startsOn: `${year}-${String(Math.floor((month - 1) / 3) * 3 + 1).padStart(2, '0')}-01`, targetDate: addDays(targetDate, 45), completionDate: addDays(targetDate, 45) },
   ];
 }
 
 function sampleHabits(today: string): Habit[] {
   return [
-    { id: 'web-habit-run', name: 'Morning run', weekdays: [1, 3, 5], startDate: today, completedOnDate: false, cue: 'After I get dressed' },
-    { id: 'web-habit-read', name: 'Read for 20 minutes', weekdays: [1, 2, 3, 4, 5, 6, 7], startDate: today, completedOnDate: true, cue: 'After dinner' },
+    { id: 'web-habit-run', name: 'Morning run', weekdays: [1, 3, 5], startDate: addDays(today, -30), completedOnDate: false, cue: 'After I get dressed', itemKind: 'task' },
+    { id: 'web-habit-read', name: 'Read for 20 minutes', weekdays: [1, 2, 3, 4, 5, 6, 7], startDate: addDays(today, -30), completedOnDate: true, cue: 'After dinner', itemKind: 'task' },
+    { id: 'web-habit-swim', name: 'Swim', weekdays: [2, 4, 6], startDate: addDays(today, -30), completedOnDate: false, itemKind: 'event', startTime: '7:00 AM', endTime: '8:00 AM' },
   ];
 }
 
@@ -65,9 +66,16 @@ export function useTodayData(date: string, _reviewDate = date) {
   const [allGoals, setAllGoals] = useState<Goal[]>(() => sampleGoals(_reviewDate));
   const [allHabits, setAllHabits] = useState<Habit[]>(() => sampleHabits(_reviewDate));
   const [goalSteps, setGoalSteps] = useState<GoalStep[]>([]);
-  const [habitActivity, setHabitActivity] = useState<HabitActivity[]>(() => [
-    { habitId: 'web-habit-read', date: _reviewDate, completed: true },
-  ]);
+  const [habitActivity, setHabitActivity] = useState<HabitActivity[]>(() => {
+    const entries: HabitActivity[] = [];
+    for (let offset = -6; offset <= 0; offset += 1) {
+      const activityDate = addDays(_reviewDate, offset);
+      if (offset !== -5) entries.push({ habitId: 'web-habit-read', date: activityDate, completed: offset !== -2 });
+      if ([-6, -4, -2].includes(offset)) entries.push({ habitId: 'web-habit-run', date: activityDate, completed: offset !== -2 });
+      if ([-5, -3, -1].includes(offset)) entries.push({ habitId: 'web-habit-swim', date: activityDate, completed: offset !== -3 });
+    }
+    return entries;
+  });
   const [goalHabitLinks, setGoalHabitLinks] = useState<GoalHabitLink[]>([
     { goalId: 'web-ironman-goal', habitId: 'web-habit-run' },
   ]);
@@ -85,7 +93,7 @@ export function useTodayData(date: string, _reviewDate = date) {
     items,
     upcoming,
     overdueTasks: [] as PlanningItem[],
-    goals: allGoals.filter((goal) => goal.startsOn <= date && goal.targetDate >= date),
+    goals: allGoals.filter((goal) => goal.horizon !== 'someday' && goal.startsOn <= date && goal.targetDate >= date),
     allGoals,
     habits: allHabits,
     goalSteps,
@@ -106,6 +114,7 @@ export function useTodayData(date: string, _reviewDate = date) {
           precision: draft.kind === 'event' && draft.time ? 'time' : 'day',
           altitude: draft.altitude ?? (draft.kind === 'event' ? 1 : 0),
           startTime: draft.time,
+          endTime: draft.endTime,
           notes: draft.notes,
           location: draft.location,
           locationPlace: draft.locationPlace,
@@ -120,15 +129,20 @@ export function useTodayData(date: string, _reviewDate = date) {
       setAllItems((current) => current.map((existing) =>
         existing.id === item.id ? { ...existing, completed: !existing.completed } : existing,
       ));
+      if (item.habitId && item.anchorStart) {
+        setHabitActivity((current) => current.filter((entry) => !(entry.habitId === item.habitId && entry.date === item.anchorStart && entry.failed)));
+      }
     },
     toggleGoal: async (goal: Goal) => {
       setAllGoals((current) => current.map((existing) => existing.id === goal.id ? { ...existing, completed: !existing.completed } : existing));
     },
     saveGoal: async (draft: GoalDraft) => {
-      const goal: Goal = { ...draft, id: draft.id ?? `${Date.now()}-goal` };
+      const id = draft.id ?? `${Date.now()}-goal`;
+      const goal: Goal = { ...draft, id };
       setAllGoals((current) => draft.id
         ? current.map((existing) => existing.id === draft.id ? { ...existing, ...goal } : existing)
         : [...current, goal]);
+      return id;
     },
     deleteGoal: async (id: string) => setAllGoals((current) => current.filter((goal) => goal.id !== id)),
     saveGoalStep: async (draft: GoalStepDraft) => {
@@ -152,10 +166,12 @@ export function useTodayData(date: string, _reviewDate = date) {
       setAllItems((current) => current.filter((item) => item.id !== step.itemId));
     },
     saveHabit: async (draft: HabitDraft) => {
-      const habit: Habit = { ...draft, id: draft.id ?? `${Date.now()}-habit`, completedOnDate: false };
+      const id = draft.id ?? `${Date.now()}-habit`;
+      const habit: Habit = { ...draft, id, completedOnDate: false };
       setAllHabits((current) => draft.id
         ? current.map((existing) => existing.id === draft.id ? { ...existing, ...habit } : existing)
         : [...current, habit]);
+      return id;
     },
     toggleHabit: async (habit: Habit) => {
       setAllHabits((current) => current.map((existing) => existing.id === habit.id
@@ -168,10 +184,10 @@ export function useTodayData(date: string, _reviewDate = date) {
         ? current.map((entry) => entry === existing ? { ...entry, completed: !entry.completed } : entry)
         : [...current, { habitId: habit.id, date: targetDate, completed: true }]);
       setAllItems((current) => {
-        const task = current.find((item) => item.anchorStart === targetDate && item.title === habit.name && item.kind === 'task');
+        const task = current.find((item) => item.anchorStart === targetDate && item.habitId === habit.id);
         return task
           ? current.map((item) => item.id === task.id ? { ...item, completed: !item.completed } : item)
-          : [...current, { id: `${Date.now()}-habit-task`, kind: 'task', title: habit.name, anchorStart: targetDate, anchorEnd: targetDate, precision: 'day', altitude: 0, completed: true }];
+          : [...current, { id: `${Date.now()}-habit-item`, kind: habit.itemKind, habitId: habit.id, title: habit.name, anchorStart: targetDate, anchorEnd: targetDate, precision: habit.itemKind === 'event' ? 'time' : 'day', altitude: 0, startTime: habit.startTime, endTime: habit.endTime, completed: true }];
       });
     },
     toggleHabitSkip: async (habit: Habit, targetDate: string) => {
@@ -179,6 +195,9 @@ export function useTodayData(date: string, _reviewDate = date) {
       setHabitActivity((current) => existing
         ? current.filter((entry) => entry !== existing)
         : [...current.filter((entry) => !(entry.habitId === habit.id && entry.date === targetDate)), { habitId: habit.id, date: targetDate, completed: false, skipped: true }]);
+    },
+    markHabitFailed: async (habitId: string, targetDate: string) => {
+      setHabitActivity((current) => [...current.filter((entry) => !(entry.habitId === habitId && entry.date === targetDate)), { habitId, date: targetDate, completed: false, failed: true }]);
     },
     linkHabitToGoal: async (goalId: string, habitId: string) => setGoalHabitLinks((current) => current.some((link) => link.goalId === goalId && link.habitId === habitId) ? current : [...current, { goalId, habitId }]),
     unlinkHabitFromGoal: async (goalId: string, habitId: string) => setGoalHabitLinks((current) => current.filter((link) => link.goalId !== goalId || link.habitId !== habitId)),
@@ -231,7 +250,7 @@ export function useTodayData(date: string, _reviewDate = date) {
         && item.anchorStart <= endDate
         && (item.anchorEnd ?? item.anchorStart) >= startDate
       )),
-      goals: allGoals.filter((goal) => goal.startsOn <= endDate && goal.targetDate >= startDate),
+      goals: allGoals.filter((goal) => goal.horizon !== 'someday' && goal.startsOn <= endDate && goal.targetDate >= startDate),
       reflections: Object.fromEntries(Object.entries(journals).filter(([noteDate]) => noteDate >= startDate && noteDate <= endDate)),
     }),
   }), [allGoals, allHabits, allItems, date, goalHabitLinks, goalSteps, habitActivity, items, journal, journals, libraryDates, upcoming]);

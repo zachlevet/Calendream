@@ -124,7 +124,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
       return;
     }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setInlineDraft({ id: item.id, kind: item.kind, title: item.title, date: item.anchorStart ?? today, endDate: item.anchorEnd ?? undefined, precision: item.precision, altitude: item.altitude, eventType: item.eventType, time: item.startTime, notes: item.notes, location: item.location, locationPlace: item.locationPlace });
+    setInlineDraft({ id: item.id, kind: item.kind, title: item.title, date: item.anchorStart ?? today, endDate: item.anchorEnd ?? undefined, precision: item.precision, altitude: item.altitude, eventType: item.eventType, time: item.startTime, endTime: item.endTime, notes: item.notes, location: item.location, locationPlace: item.locationPlace });
     setEditingItem(item);
     setEditingSlot(slot);
   }, [closeInlineEditor, editingItem, editingSlot, inlineDraft, onSaveItem, today]);

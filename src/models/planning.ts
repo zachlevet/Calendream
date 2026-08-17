@@ -3,6 +3,7 @@ export type EventType = 'event' | 'trip';
 export type TimePrecision = 'time' | 'day' | 'month' | 'quarter' | 'year' | 'someday';
 export type TimelineZoom = 'today' | 'week' | 'month' | 'quarter' | 'year';
 export type GoalScope = 'month' | 'quarter' | 'year';
+export type GoalHorizon = GoalScope | 'someday';
 export type ISOWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export interface LocationPlace {
@@ -18,6 +19,7 @@ export interface ItemDraft {
   title: string;
   date: string;
   time?: string;
+  endTime?: string;
   notes?: string;
   location?: string;
   locationPlace?: LocationPlace;
@@ -36,7 +38,9 @@ export interface PlanningItem {
   precision: TimePrecision;
   altitude: 0 | 1 | 2 | 3 | 4;
   startTime?: string;
+  endTime?: string;
   completed?: boolean;
+  habitId?: string;
   habitName?: string;
   notes?: string;
   location?: string;
@@ -49,8 +53,10 @@ export interface Goal {
   id: string;
   title: string;
   scope: GoalScope;
+  horizon: GoalHorizon;
   startsOn: string;
   targetDate: string;
+  completionDate?: string;
   completed?: boolean;
   notes?: string;
   linkedHabitId?: string;
@@ -60,8 +66,10 @@ export interface GoalDraft {
   id?: string;
   title: string;
   scope: GoalScope;
+  horizon: GoalHorizon;
   startsOn: string;
   targetDate: string;
+  completionDate?: string;
   notes?: string;
 }
 
@@ -88,6 +96,9 @@ export interface Habit {
   endDate?: string;
   completedOnDate?: boolean;
   cue?: string;
+  itemKind: ItemKind;
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface HabitDraft {
@@ -97,6 +108,9 @@ export interface HabitDraft {
   startDate: string;
   endDate?: string;
   cue?: string;
+  itemKind: ItemKind;
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface HabitActivity {
@@ -104,6 +118,7 @@ export interface HabitActivity {
   date: string;
   completed: boolean;
   skipped?: boolean;
+  failed?: boolean;
 }
 
 export interface GoalHabitLink {

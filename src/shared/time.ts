@@ -14,7 +14,7 @@ export function timeMinutes(value?: string) {
 export type EventPhase = 'past' | 'current' | 'upcoming';
 
 export function eventPhase(
-  event: { anchorStart: string | null; anchorEnd: string | null; startTime?: string },
+  event: { anchorStart: string | null; anchorEnd: string | null; startTime?: string; endTime?: string },
   now = new Date(),
 ): EventPhase {
   if (!event.anchorStart) return 'past';
@@ -30,7 +30,11 @@ export function eventPhase(
   const current = now.getHours() * 60 + now.getMinutes();
   if (current < start) return 'upcoming';
 
-  // Until events support an explicit end time, a timed event is considered
-  // current for one hour after it begins.
+  const explicitEnd = timeMinutes(event.endTime);
+  if (explicitEnd >= 0 && explicitEnd !== Number.MAX_SAFE_INTEGER && explicitEnd >= start) {
+    return current < explicitEnd ? 'current' : 'past';
+  }
+
+  // Timed events without an explicit end remain current for one hour.
   return current < start + 60 ? 'current' : 'past';
 }
