@@ -97,6 +97,12 @@ export interface HabitDraft {
   endDate?: string;
 }
 
+export interface HabitActivity {
+  habitId: string;
+  date: string;
+  completed: boolean;
+}
+
 export interface SearchResult {
   id: string;
   kind: 'event' | 'task' | 'note';

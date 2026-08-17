@@ -11,14 +11,16 @@ import {
 } from 'react-native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
-import type { Goal, GoalDraft, GoalScope, GoalStep, GoalStepDraft, Habit, HabitDraft, ISOWeekday } from '@/models/planning';
-import { dateFromISO, formatLongDate, localISO } from '@/shared/date';
+import type { Goal, GoalDraft, GoalScope, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ISOWeekday } from '@/models/planning';
+import { addLocalDays, dateFromISO, formatLongDate, localISO } from '@/shared/date';
 import type { AppColors } from '@/theme/colors';
+import { isHabitScheduledOn, isoWeekdayForDate, scheduledHabitDates } from './habitSchedule';
 
 interface GoalsHabitsScreenProps {
   colors: AppColors;
   goalSteps: GoalStep[];
   goals: Goal[];
+  habitActivity: HabitActivity[];
   habits: Habit[];
   today: string;
   onArchiveHabit: (id: string) => Promise<void>;
@@ -29,7 +31,7 @@ interface GoalsHabitsScreenProps {
   onSaveHabit: (draft: HabitDraft) => Promise<void>;
   onToggleGoal: (goal: Goal) => Promise<void>;
   onToggleGoalStep: (step: GoalStep) => Promise<void>;
-  onToggleHabit: (habit: Habit) => Promise<void>;
+  onToggleHabitDate: (habit: Habit, date: string) => Promise<void>;
 }
 
 const WEEKDAYS: { value: ISOWeekday; label: string }[] = [
@@ -49,13 +51,13 @@ function targetForScope(today: string, scope: GoalScope) {
 }
 
 function weekdayFor(date: string): ISOWeekday {
-  const day = dateFromISO(date).getDay();
-  return (day === 0 ? 7 : day) as ISOWeekday;
+  return isoWeekdayForDate(date);
 }
 
 export function GoalsHabitsScreen({
-  colors, goalSteps, goals, habits, today, onArchiveHabit, onDeleteGoal, onDeleteGoalStep,
-  onSaveGoal, onSaveGoalStep, onSaveHabit, onToggleGoal, onToggleGoalStep, onToggleHabit,
+  colors, goalSteps, goals, habitActivity, habits, today, onArchiveHabit, onDeleteGoal, onDeleteGoalStep,
+  onSaveGoal, onSaveGoalStep, onSaveHabit, onToggleGoal, onToggleGoalStep,
+  onToggleHabitDate,
 }: GoalsHabitsScreenProps) {
   const [goalDraft, setGoalDraft] = useState<GoalDraft | null>(null);
   const [goalStepDraft, setGoalStepDraft] = useState<GoalStepDraft | null>(null);
@@ -63,6 +65,7 @@ export function GoalsHabitsScreen({
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [stepDatePickerOpen, setStepDatePickerOpen] = useState(false);
   const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null);
+  const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
   const currentWeekday = weekdayFor(today);
   const activeGoals = useMemo(() => goals.filter((goal) => !goal.completed), [goals]);
   const completedGoals = useMemo(() => goals.filter((goal) => goal.completed), [goals]);
@@ -115,6 +118,25 @@ export function GoalsHabitsScreen({
   function changeStepDate(event: DateTimePickerEvent, selected?: Date) {
     if (Platform.OS !== 'ios') setStepDatePickerOpen(false);
     if (selected && goalStepDraft) setGoalStepDraft({ ...goalStepDraft, scheduledDate: localISO(selected) });
+  }
+
+  const selectedHabit = habits.find((habit) => habit.id === selectedHabitId);
+  if (selectedHabit) {
+    return (
+      <HabitDetailPage
+        activity={habitActivity.filter((entry) => entry.habitId === selectedHabit.id)}
+        colors={colors}
+        draft={habitDraft?.id === selectedHabit.id ? habitDraft : null}
+        habit={selectedHabit}
+        onArchive={async () => { await onArchiveHabit(selectedHabit.id); setSelectedHabitId(null); setHabitDraft(null); }}
+        onBack={() => { setSelectedHabitId(null); setHabitDraft(null); }}
+        onEdit={() => beginHabit(selectedHabit)}
+        onSave={submitHabit}
+        onSetDraft={setHabitDraft}
+        onToggleDate={(date) => onToggleHabitDate(selectedHabit, date)}
+        today={today}
+      />
+    );
   }
 
   return (
@@ -255,7 +277,7 @@ export function GoalsHabitsScreen({
 
       <SectionTitle action="Add habit" colors={colors} onAction={() => beginHabit()} title="Habits" />
       {habitDraft && (
-        <View style={[styles.composer, { backgroundColor: colors.card, borderColor: colors.separator }]}> 
+        <View style={[styles.composer, { backgroundColor: colors.card, borderColor: colors.separator }]}>
           <TextInput
             autoFocus
             onChangeText={(name) => setHabitDraft({ ...habitDraft, name })}
@@ -272,10 +294,8 @@ export function GoalsHabitsScreen({
       {habits.map((habit) => {
         const dueToday = habit.weekdays.includes(currentWeekday);
         return (
-          <Pressable key={habit.id} onLongPress={() => beginHabit(habit)} onPress={() => dueToday && void onToggleHabit(habit)} style={[styles.habitRow, { borderColor: colors.separator }]}> 
-            <View style={[styles.habitCheck, { borderColor: habit.completedOnDate ? colors.blue : colors.tertiary }, habit.completedOnDate && { backgroundColor: colors.blue }]}>
-              {habit.completedOnDate && <Text style={styles.checkmark}>✓</Text>}
-            </View>
+          <Pressable key={habit.id} onPress={() => setSelectedHabitId(habit.id)} style={[styles.habitRow, { borderColor: colors.separator }]}>
+            <View style={[styles.habitDot, { backgroundColor: dueToday ? habit.completedOnDate ? colors.blue : colors.blueSoft : colors.card }]} />
             <View style={styles.cardCopy}>
               <Text style={[styles.habitTitle, { color: dueToday ? colors.text : colors.secondary }]}>{habit.name}</Text>
               <View style={styles.miniWeekdays}>
@@ -283,6 +303,7 @@ export function GoalsHabitsScreen({
               </View>
             </View>
             <Text style={[styles.todayStatus, { color: habit.completedOnDate ? colors.blue : colors.secondary }]}>{dueToday ? habit.completedOnDate ? 'Done' : 'Today' : ''}</Text>
+            <Text style={[styles.habitDisclosure, { color: colors.tertiary }]}>›</Text>
           </Pressable>
         );
       })}
@@ -291,6 +312,165 @@ export function GoalsHabitsScreen({
       <Text style={[styles.hint, { color: colors.tertiary }]}>Tap to complete · press and hold to edit</Text>
     </ScrollView>
   );
+}
+
+function HabitDetailPage({ activity, colors, draft, habit, onArchive, onBack, onEdit, onSave, onSetDraft, onToggleDate, today }: {
+  activity: HabitActivity[];
+  colors: AppColors;
+  draft: HabitDraft | null;
+  habit: Habit;
+  onArchive: () => Promise<void>;
+  onBack: () => void;
+  onEdit: () => void;
+  onSave: () => Promise<void>;
+  onSetDraft: (draft: HabitDraft | null) => void;
+  onToggleDate: (date: string) => Promise<void>;
+  today: string;
+}) {
+  const [startPickerOpen, setStartPickerOpen] = useState(false);
+  const todayWeekday = weekdayFor(today);
+  const dueToday = habit.weekdays.includes(todayWeekday) && habit.startDate <= today && (!habit.endDate || habit.endDate >= today);
+  const todayCompleted = activity.some((entry) => entry.date === today && entry.completed);
+  const nextDate = useMemo(() => {
+    for (let offset = dueToday ? 1 : 0; offset <= 14; offset += 1) {
+      const candidate = addLocalDays(today, offset);
+      if (habit.weekdays.includes(weekdayFor(candidate)) && (!habit.endDate || candidate <= habit.endDate)) return candidate;
+    }
+    return null;
+  }, [dueToday, habit.endDate, habit.weekdays, today]);
+
+  return (
+    <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.habitDetailContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.screen}>
+      <Pressable hitSlop={8} onPress={onBack} style={styles.backRow}><Text style={[styles.backText, { color: colors.blue }]}>‹ Goals & Habits</Text></Pressable>
+      <View style={styles.habitDetailTitleRow}>
+        <View style={styles.cardCopy}>
+          <Text style={[styles.eyebrow, { color: colors.blue }]}>HABIT</Text>
+          <Text style={[styles.habitDetailTitle, { color: colors.text }]}>{habit.name}</Text>
+        </View>
+        {!draft && <Pressable hitSlop={8} onPress={onEdit}><Text style={[styles.editGoal, { color: colors.blue }]}>Edit</Text></Pressable>}
+      </View>
+
+      {draft && (
+        <View style={[styles.composer, { backgroundColor: colors.card, borderColor: colors.separator }]}>
+          <TextInput autoFocus onChangeText={(name) => onSetDraft({ ...draft, name })} placeholder="Habit name" placeholderTextColor={colors.tertiary} style={[styles.composerTitle, { color: colors.text, borderColor: colors.separator }]} value={draft.name} />
+          <Text style={[styles.schedulePrompt, { color: colors.secondary }]}>Repeat on</Text>
+          <WeekdayPicker colors={colors} selected={draft.weekdays} onChange={(weekdays) => onSetDraft({ ...draft, weekdays })} />
+          <Pressable onPress={() => setStartPickerOpen((open) => !open)} style={styles.dateRow}>
+            <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Starts</Text>
+            <Text style={[styles.dateValue, { color: colors.blue }]}>{formatLongDate(draft.startDate)}</Text>
+          </Pressable>
+          {startPickerOpen && <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} mode="date" onChange={(_, selected) => { if (Platform.OS !== 'ios') setStartPickerOpen(false); if (selected) onSetDraft({ ...draft, startDate: localISO(selected) }); }} value={dateFromISO(draft.startDate)} />}
+          <ComposerActions
+            colors={colors}
+            onCancel={() => onSetDraft(null)}
+            onDelete={async () => { await onArchive(); }}
+            onSave={() => void onSave()}
+            saveDisabled={!draft.name.trim() || draft.weekdays.length === 0}
+          />
+        </View>
+      )}
+
+      {!draft && dueToday && (
+        <Pressable onPress={() => void onToggleDate(today)} style={[styles.todayCheckIn, { backgroundColor: todayCompleted ? colors.blue : colors.blueSoft }]}>
+          <View style={[styles.todayCheckCircle, { borderColor: todayCompleted ? '#FFFFFF' : colors.blue }, todayCompleted && { backgroundColor: '#FFFFFF' }]}>{todayCompleted && <Text style={[styles.todayCheckmark, { color: colors.blue }]}>✓</Text>}</View>
+          <View style={styles.cardCopy}>
+            <Text style={[styles.todayCheckTitle, { color: todayCompleted ? '#FFFFFF' : colors.blue }]}>{todayCompleted ? 'Completed today' : 'Complete today'}</Text>
+            <Text style={[styles.todayCheckMeta, { color: todayCompleted ? 'rgba(255,255,255,0.78)' : colors.secondary }]}>Also updates the task on Today</Text>
+          </View>
+        </Pressable>
+      )}
+
+      <HabitTracker activity={activity} colors={colors} habit={habit} onToggleDate={onToggleDate} today={today} />
+
+      <View style={styles.habitInfoSection}>
+        <Text style={[styles.habitInfoTitle, { color: colors.text }]}>Schedule</Text>
+        <Pressable onPress={onEdit}><View pointerEvents="none"><WeekdayPicker colors={colors} selected={habit.weekdays} onChange={() => undefined} /></View></Pressable>
+        <View style={[styles.habitInfoRow, { borderColor: colors.separator }]}>
+          <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Started</Text>
+          <Text style={[styles.habitInfoValue, { color: colors.text }]}>{formatLongDate(habit.startDate)}</Text>
+        </View>
+        <View style={[styles.habitInfoRow, { borderColor: colors.separator }]}>
+          <Text style={[styles.fieldLabel, { color: colors.secondary }]}>Next</Text>
+          <Text style={[styles.habitInfoValue, { color: colors.text }]}>{nextDate ? formatLongDate(nextDate) : 'No upcoming days'}</Text>
+        </View>
+      </View>
+      <Text style={[styles.hint, { color: colors.tertiary }]}>Tap any past scheduled square to update it.</Text>
+    </ScrollView>
+  );
+}
+
+function HabitTracker({ activity, colors, habit, onToggleDate, today }: { activity: HabitActivity[]; colors: AppColors; habit: Habit; onToggleDate: (date: string) => Promise<void>; today: string }) {
+  const tracker = useMemo(() => {
+    const todayOffset = weekdayFor(today) - 1;
+    const start = addLocalDays(today, -(todayOffset + 19 * 7));
+    const weeks = Array.from({ length: 20 }, (_, week) => Array.from({ length: 7 }, (_, day) => addLocalDays(start, week * 7 + day)));
+    const completed = new Set(activity.filter((entry) => entry.completed).map((entry) => entry.date));
+    const scheduled = scheduledHabitDates(habit, start, today);
+    const completedCount = scheduled.filter((date) => completed.has(date)).length;
+    let streak = 0;
+    for (const date of [...scheduled].reverse()) {
+      if (date === today && !completed.has(date)) continue;
+      if (!completed.has(date)) break;
+      streak += 1;
+    }
+    return { weeks, completed, completedCount, scheduledCount: scheduled.length, streak };
+  }, [activity, habit, today]);
+  const rate = tracker.scheduledCount ? Math.round((tracker.completedCount / tracker.scheduledCount) * 100) : 0;
+
+  return (
+    <View style={[styles.trackerCard, { backgroundColor: colors.card }]}>
+      <View style={styles.trackerHeader}>
+        <View><Text style={[styles.trackerTitle, { color: colors.text }]}>Activity</Text><Text style={[styles.trackerSubtitle, { color: colors.secondary }]}>Last 20 weeks</Text></View>
+        <View style={styles.trackerStats}>
+          <TrackerStat colors={colors} label="STREAK" value={`${tracker.streak}`} />
+          <TrackerStat colors={colors} label="RATE" value={`${rate}%`} />
+          <TrackerStat colors={colors} label="DONE" value={`${tracker.completedCount}`} />
+        </View>
+      </View>
+      <View style={styles.activityMonthRow}>
+        <View style={styles.activityMonthGutter} />
+        <View style={styles.activityWeeks}>
+          {tracker.weeks.map((week, index) => {
+            const month = dateFromISO(week[0]).getMonth();
+            const priorMonth = index ? dateFromISO(tracker.weeks[index - 1][0]).getMonth() : -1;
+            return <View key={week[0]} style={styles.activityMonthCell}>{month !== priorMonth && <Text style={[styles.activityMonth, { color: colors.tertiary }]}>{dateFromISO(week[0]).toLocaleDateString(undefined, { month: 'short' })}</Text>}</View>;
+          })}
+        </View>
+      </View>
+      <View style={styles.activityBody}>
+        <View style={styles.activityLabels}><Text style={[styles.activityLabel, { color: colors.tertiary }]}>M</Text><Text style={[styles.activityLabel, { color: colors.tertiary }]}>W</Text><Text style={[styles.activityLabel, { color: colors.tertiary }]}>F</Text></View>
+        <View style={styles.activityWeeks}>
+          {tracker.weeks.map((week) => (
+            <View key={week[0]} style={styles.activityWeek}>
+              {week.map((date) => {
+                const scheduled = isHabitScheduledOn(habit, date);
+                const completed = tracker.completed.has(date);
+                const future = date > today;
+                return (
+                  <Pressable
+                    accessibilityLabel={`${date}${completed ? ', completed' : scheduled ? ', scheduled' : ''}`}
+                    disabled={!scheduled || future}
+                    key={date}
+                    onPress={() => void onToggleDate(date)}
+                    style={[
+                      styles.activityCell,
+                      { backgroundColor: !scheduled ? colors.background : completed ? colors.blue : future ? colors.blueSoft : colors.separator },
+                      date === today && { borderColor: colors.red, borderWidth: 1 },
+                    ]}
+                  />
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      </View>
+      <View style={styles.legend}><Text style={[styles.legendText, { color: colors.tertiary }]}>Missed</Text><View style={[styles.legendCell, { backgroundColor: colors.separator }]} /><View style={[styles.legendCell, { backgroundColor: colors.blueSoft }]} /><View style={[styles.legendCell, { backgroundColor: colors.blue }]} /><Text style={[styles.legendText, { color: colors.tertiary }]}>Complete</Text></View>
+    </View>
+  );
+}
+
+function TrackerStat({ colors, label, value }: { colors: AppColors; label: string; value: string }) {
+  return <View style={styles.trackerStat}><Text style={[styles.trackerStatValue, { color: colors.blue }]}>{value}</Text><Text style={[styles.trackerStatLabel, { color: colors.tertiary }]}>{label}</Text></View>;
 }
 
 function SectionTitle({ title, action, colors, onAction }: { title: string; action: string; colors: AppColors; onAction: () => void }) {
@@ -351,12 +531,48 @@ const styles = StyleSheet.create({
   completedStar: { fontSize: 17 },
   completedTitle: { fontSize: 14, textDecorationLine: 'line-through' },
   habitRow: { minHeight: 62, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
-  habitCheck: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, marginRight: 12, alignItems: 'center', justifyContent: 'center' },
+  habitDot: { width: 9, height: 9, borderRadius: 5, marginLeft: 3, marginRight: 14 },
   checkmark: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   habitTitle: { fontSize: 16, lineHeight: 21, fontWeight: '600' },
   miniWeekdays: { flexDirection: 'row', gap: 7, marginTop: 3 },
   miniWeekday: { fontSize: 9, fontWeight: '700' },
   todayStatus: { fontSize: 12, fontWeight: '700' },
+  habitDisclosure: { fontSize: 22, lineHeight: 24, marginLeft: 8 },
+  habitDetailContent: { paddingHorizontal: 18, paddingTop: 7, paddingBottom: 112 },
+  backRow: { minHeight: 34, alignSelf: 'flex-start', justifyContent: 'center' },
+  backText: { fontSize: 14, fontWeight: '600' },
+  habitDetailTitleRow: { minHeight: 68, flexDirection: 'row', alignItems: 'flex-start', paddingTop: 7 },
+  habitDetailTitle: { fontSize: 29, lineHeight: 34, fontWeight: '700', letterSpacing: -0.8, marginTop: 3 },
+  todayCheckIn: { minHeight: 58, borderRadius: 17, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  todayCheckCircle: { width: 25, height: 25, borderRadius: 13, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 },
+  todayCheckmark: { fontSize: 14, fontWeight: '800' },
+  todayCheckTitle: { fontSize: 15, fontWeight: '700' },
+  todayCheckMeta: { fontSize: 11, marginTop: 2 },
+  trackerCard: { borderRadius: 19, paddingHorizontal: 13, paddingTop: 13, paddingBottom: 11 },
+  trackerHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 13 },
+  trackerTitle: { fontSize: 16, fontWeight: '700' },
+  trackerSubtitle: { fontSize: 10, marginTop: 1 },
+  trackerStats: { flexDirection: 'row', gap: 11 },
+  trackerStat: { minWidth: 29, alignItems: 'flex-end' },
+  trackerStatValue: { fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  trackerStatLabel: { fontSize: 7, fontWeight: '800', letterSpacing: 0.5, marginTop: 1 },
+  activityMonthRow: { height: 14, flexDirection: 'row' },
+  activityMonthGutter: { width: 15 },
+  activityMonthCell: { width: 10 },
+  activityMonth: { width: 24, fontSize: 7, fontWeight: '700' },
+  activityBody: { flexDirection: 'row' },
+  activityLabels: { width: 15, height: 95, paddingVertical: 14, justifyContent: 'space-between' },
+  activityLabel: { fontSize: 7, fontWeight: '700' },
+  activityWeeks: { flex: 1, flexDirection: 'row', justifyContent: 'space-between' },
+  activityWeek: { gap: 3 },
+  activityCell: { width: 10, height: 10, borderRadius: 2 },
+  legend: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 9 },
+  legendCell: { width: 9, height: 9, borderRadius: 2 },
+  legendText: { fontSize: 8 },
+  habitInfoSection: { marginTop: 15 },
+  habitInfoTitle: { fontSize: 18, fontWeight: '700', marginBottom: 10 },
+  habitInfoRow: { minHeight: 42, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  habitInfoValue: { fontSize: 13, fontWeight: '600' },
   composer: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 13, marginBottom: 10 },
   composerTitle: { height: 44, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 17, fontWeight: '600', paddingVertical: 0 },
   scopeRow: { flexDirection: 'row', gap: 7, marginTop: 12 },

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import type { Goal, GoalDraft, GoalStep, GoalStepDraft, Habit, HabitDraft, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
+import type { Goal, GoalDraft, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
 import { matchingSnippet } from '../shared/search';
 
 export type { ItemDraft } from '../models/planning';
@@ -65,6 +65,9 @@ export function useTodayData(date: string, _reviewDate = date) {
   const [allGoals, setAllGoals] = useState<Goal[]>(() => sampleGoals(_reviewDate));
   const [allHabits, setAllHabits] = useState<Habit[]>(() => sampleHabits(_reviewDate));
   const [goalSteps, setGoalSteps] = useState<GoalStep[]>([]);
+  const [habitActivity, setHabitActivity] = useState<HabitActivity[]>(() => [
+    { habitId: 'web-habit-read', date: _reviewDate, completed: true },
+  ]);
   const [journals, setJournals] = useState<Record<string, string>>(() => ({
     [_reviewDate]: 'Today feels open. I want to protect time for the work and people that matter.',
   }));
@@ -83,6 +86,7 @@ export function useTodayData(date: string, _reviewDate = date) {
     allGoals,
     habits: allHabits,
     goalSteps,
+    habitActivity,
     morningReviewDue: false,
     journal,
     journalInLibrary: libraryDates.has(date),
@@ -154,6 +158,18 @@ export function useTodayData(date: string, _reviewDate = date) {
         ? { ...existing, completedOnDate: !existing.completedOnDate }
         : existing));
     },
+    toggleHabitDate: async (habit: Habit, targetDate: string) => {
+      const existing = habitActivity.find((entry) => entry.habitId === habit.id && entry.date === targetDate);
+      setHabitActivity((current) => existing
+        ? current.map((entry) => entry === existing ? { ...entry, completed: !entry.completed } : entry)
+        : [...current, { habitId: habit.id, date: targetDate, completed: true }]);
+      setAllItems((current) => {
+        const task = current.find((item) => item.anchorStart === targetDate && item.title === habit.name && item.kind === 'task');
+        return task
+          ? current.map((item) => item.id === task.id ? { ...item, completed: !item.completed } : item)
+          : [...current, { id: `${Date.now()}-habit-task`, kind: 'task', title: habit.name, anchorStart: targetDate, anchorEnd: targetDate, precision: 'day', altitude: 0, completed: true }];
+      });
+    },
     archiveHabit: async (id: string) => setAllHabits((current) => current.filter((habit) => habit.id !== id)),
     deleteItem: async (id: string) => {
       setAllItems((current) => current.filter((item) => item.id !== id));
@@ -206,5 +222,5 @@ export function useTodayData(date: string, _reviewDate = date) {
       goals: allGoals.filter((goal) => goal.startsOn <= endDate && goal.targetDate >= startDate),
       reflections: Object.fromEntries(Object.entries(journals).filter(([noteDate]) => noteDate >= startDate && noteDate <= endDate)),
     }),
-  }), [allGoals, allHabits, allItems, date, goalSteps, items, journal, journals, libraryDates, upcoming]);
+  }), [allGoals, allHabits, allItems, date, goalSteps, habitActivity, items, journal, journals, libraryDates, upcoming]);
 }
