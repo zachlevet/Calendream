@@ -372,7 +372,7 @@ function LibraryEmpty({ colors, text }: { colors: AppColors; text: string }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  planHeader: { paddingHorizontal: 18, paddingTop: 7, paddingBottom: 7, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  planHeader: { paddingHorizontal: 18, paddingTop: 7, paddingBottom: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   planOverview: { minHeight: 40, borderRadius: 20, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' },
   planOverviewIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   planIdentityTitle: { fontSize: 15, lineHeight: 18, fontWeight: '800' },
