@@ -279,19 +279,17 @@ function PlanPreviewCard({ colors, entry, onChange, onEditPrompt, onSave, saving
   );
 }
 
-export function YourPlansHome({ colors, goals, habits, onBack, onOpenGoal, onOpenGoals, onOpenHabit, onOpenHabits, onStartChat }: {
+export function YourPlansHome({ colors, goals, habits, onBack, onOpenGoal, onOpenHabit, onStartChat }: {
   colors: AppColors;
   goals: Goal[];
   habits: Habit[];
   onBack: () => void;
   onOpenGoal: (id: string) => void;
-  onOpenGoals: () => void;
   onOpenHabit: (id: string) => void;
-  onOpenHabits: () => void;
   onStartChat: () => void;
 }) {
-  const activeGoals = goals.filter((goal) => !goal.completed && goal.horizon !== 'someday');
-  const somedayGoals = goals.filter((goal) => !goal.completed && goal.horizon === 'someday');
+  const primaryGoals = goals.filter((goal) => goal.horizon !== 'someday');
+  const somedayGoals = goals.filter((goal) => goal.horizon === 'someday');
   return (
     <ScrollView contentContainerStyle={styles.libraryContent} showsVerticalScrollIndicator={false} style={styles.flex}>
       <Pressable onPress={onBack} style={[styles.backButton, { backgroundColor: colors.card }]}><Text style={[styles.backText, { color: colors.blue }]}>‹ Plan</Text></Pressable>
@@ -300,15 +298,15 @@ export function YourPlansHome({ colors, goals, habits, onBack, onOpenGoal, onOpe
         <Text style={[styles.librarySubtitle, { color: colors.secondary }]}>Everything you’ve asked Calendream to keep in motion.</Text>
       </View>
 
-      <LibraryHeading action="View all ›" colors={colors} onPress={onOpenGoals} title="Goals" />
+      <LibraryHeading colors={colors} title="Goals" />
       <View style={[styles.goalList, { backgroundColor: colors.yellowSoft }]}>
-        {activeGoals.slice(0, 3).map((goal, index) => <PlanGoalRow colors={colors} goal={goal} index={index} key={goal.id} onPress={() => onOpenGoal(goal.id)} />)}
-        {!activeGoals.length && <LibraryEmpty colors={colors} text="No active goals yet." />}
+        {primaryGoals.map((goal, index) => <PlanGoalRow colors={colors} goal={goal} index={index} key={goal.id} onPress={() => onOpenGoal(goal.id)} />)}
+        {!primaryGoals.length && <LibraryEmpty colors={colors} text="No goals yet." />}
       </View>
 
-      <LibraryHeading action="View all ›" colors={colors} onPress={onOpenHabits} title="Routines" />
+      <LibraryHeading colors={colors} title="Routines" />
       <View style={[styles.routineList, { backgroundColor: colors.card }]}>
-        {habits.slice(0, 4).map((habit, index) => (
+        {habits.map((habit, index) => (
           <Pressable key={habit.id} onPress={() => onOpenHabit(habit.id)} style={[styles.libraryRow, index > 0 && { borderTopColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }]}>
             <View style={[styles.routineDot, { backgroundColor: colors.blue }]} />
             <View style={styles.copy}><Text style={[styles.libraryRowTitle, { color: colors.text }]}>{habit.name}</Text><Text style={[styles.libraryRowMeta, { color: colors.secondary }]}>{habit.weekdays.map((day) => WEEKDAY_LABELS[day]).join(' · ')}{habit.startTime ? ` · ${habit.startTime}` : ' · Task'}</Text></View>
@@ -326,11 +324,11 @@ export function YourPlansHome({ colors, goals, habits, onBack, onOpenGoal, onOpe
 }
 
 function PlanGoalRow({ colors, goal, index, onPress }: { colors: AppColors; goal: Goal; index: number; onPress: () => void }) {
-  return <Pressable onPress={onPress} style={[styles.libraryRow, index > 0 && { borderTopColor: 'rgba(199,141,0,0.18)', borderTopWidth: StyleSheet.hairlineWidth }]}><Text style={[styles.goalStar, { color: colors.yellow }]}>☆</Text><View style={styles.copy}><Text style={[styles.libraryRowTitle, { color: colors.yellow }]}>{goal.title}</Text><Text style={[styles.libraryRowMeta, { color: colors.yellow }]}>{goal.horizon.toUpperCase()} GOAL</Text></View><Text style={[styles.chevron, { color: colors.yellow }]}>›</Text></Pressable>;
+  return <Pressable onPress={onPress} style={[styles.libraryRow, index > 0 && { borderTopColor: 'rgba(199,141,0,0.18)', borderTopWidth: StyleSheet.hairlineWidth }]}><Text style={[styles.goalStar, { color: goal.completed ? colors.tertiary : colors.yellow }]}>{goal.completed ? '★' : '☆'}</Text><View style={styles.copy}><Text style={[styles.libraryRowTitle, { color: goal.completed ? colors.tertiary : colors.yellow }, goal.completed && styles.completedGoal]}>{goal.title}</Text><Text style={[styles.libraryRowMeta, { color: goal.completed ? colors.tertiary : colors.yellow }]}>{goal.completed ? 'COMPLETED · ' : ''}{goal.horizon.toUpperCase()} GOAL</Text></View><Text style={[styles.chevron, { color: goal.completed ? colors.tertiary : colors.yellow }]}>›</Text></Pressable>;
 }
 
-function LibraryHeading({ action, colors, onPress, title }: { action?: string; colors: AppColors; onPress?: () => void; title: string }) {
-  return <Pressable disabled={!onPress} onPress={onPress} style={styles.libraryHeading}><Text style={[styles.libraryHeadingText, { color: colors.text }]}>{title}</Text>{action && <Text style={[styles.libraryAction, { color: colors.blue }]}>{action}</Text>}</Pressable>;
+function LibraryHeading({ colors, title }: { colors: AppColors; title: string }) {
+  return <View style={styles.libraryHeading}><Text style={[styles.libraryHeadingText, { color: colors.text }]}>{title}</Text></View>;
 }
 
 function LibraryEmpty({ colors, text }: { colors: AppColors; text: string }) {
@@ -412,6 +410,7 @@ const styles = StyleSheet.create({
   routineDot: { width: 9, height: 9, borderRadius: 5, marginHorizontal: 5, marginRight: 14 },
   copy: { flex: 1 },
   libraryRowTitle: { fontSize: 14, lineHeight: 18, fontWeight: '700' },
+  completedGoal: { textDecorationLine: 'line-through' },
   libraryRowMeta: { fontSize: 9, lineHeight: 13, marginTop: 2, fontWeight: '700' },
   chevron: { width: 18, textAlign: 'center', fontSize: 18 },
   libraryEmpty: { fontSize: 13, lineHeight: 18, paddingVertical: 15 },
