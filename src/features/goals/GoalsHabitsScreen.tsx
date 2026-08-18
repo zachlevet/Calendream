@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Alert,
+  LayoutAnimation,
   Platform,
   Pressable,
   ScrollView,
@@ -29,7 +30,7 @@ import type {
 import { addLocalDays, dateFromISO, formatLongDate, localISO } from '@/shared/date';
 import { timeMinutes } from '@/shared/time';
 import type { AppColors } from '@/theme/colors';
-import { isHabitScheduledOn, isoWeekdayForDate, scheduledHabitDates } from './habitSchedule';
+import { habitEventDuration, habitEventEndTime, isHabitScheduledOn, isoWeekdayForDate, scheduledHabitDates } from './habitSchedule';
 import { PlanChatHome, YourPlansHome } from './PlanHome';
 
 interface GoalsHabitsScreenProps {
@@ -61,6 +62,14 @@ const WEEKDAYS: { value: ISOWeekday; label: string }[] = [
   { value: 7, label: 'S' },
 ];
 const HORIZONS: GoalHorizon[] = ['month', 'quarter', 'year', 'someday'];
+const EVENT_DURATIONS = [30, 45, 60, 90, 120];
+
+function durationLabel(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes === 60) return '1 hr';
+  if (minutes % 60 === 0) return `${minutes / 60} hr`;
+  return `${Math.floor(minutes / 60)} hr ${minutes % 60} min`;
+}
 
 function weekdayFor(date: string): ISOWeekday {
   return isoWeekdayForDate(date);
@@ -292,17 +301,29 @@ function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, o
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() => habitDraftFor(habit));
+  const [schedulePicker, setSchedulePicker] = useState<'time' | 'duration' | null>(null);
   const todayCompleted = activity.some((entry) => entry.date === today && entry.completed);
   const dueToday = isHabitScheduledOn(habit, today);
+  const eventDuration = habitEventDuration(habit.startTime, habit.endTime);
 
   async function updateHabit(change: Partial<HabitDraft>) {
     await onSave({ ...habitDraftFor(habit), ...change });
   }
 
+  async function changeItemKind(kind: ItemKind) {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSchedulePicker(null);
+    await updateHabit({
+      itemKind: kind,
+      startTime: kind === 'event' ? habit.startTime ?? '7:00 AM' : undefined,
+      endTime: kind === 'event' ? habit.endTime ?? '8:00 AM' : undefined,
+    });
+  }
+
   return (
     <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.habitDetailContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.screen}>
       <PageBackButton colors={colors} label="Your Plans" onBack={onBack} />
-      <View style={styles.habitDetailTitleRow}><View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: colors.blue }]}>HABIT</Text><Text style={[styles.habitDetailTitle, { color: colors.text }]}>{habit.name}</Text><Text style={[styles.workspaceMeta, { color: colors.secondary }]}>{habit.itemKind === 'event' ? `${habit.startTime ?? 'Timed'} event` : 'Creates a task'} on scheduled days</Text></View>{!editing && <Pressable hitSlop={8} onPress={() => { setDraft(habitDraftFor(habit)); setEditing(true); }}><Text style={[styles.editAction, { color: colors.blue }]}>Edit</Text></Pressable>}</View>
+      <View style={styles.habitDetailTitleRow}><View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: colors.blue }]}>ROUTINE</Text><Text style={[styles.habitDetailTitle, { color: colors.text }]}>{habit.name}</Text><Text style={[styles.workspaceMeta, { color: colors.secondary }]}>{habit.itemKind === 'event' ? `${habit.startTime ?? 'Timed'} event` : 'Creates a task'} on scheduled days</Text></View>{!editing && <Pressable hitSlop={8} onPress={() => { setDraft(habitDraftFor(habit)); setEditing(true); }}><Text style={[styles.editAction, { color: colors.blue }]}>Edit</Text></Pressable>}</View>
       {editing && <HabitComposer colors={colors} draft={draft} onCancel={() => setEditing(false)} onDelete={onArchive} onSave={async (nextDraft) => { await onSave(nextDraft); setEditing(false); }} onSetDraft={setDraft} today={today} />}
 
       {!editing && dueToday && <Pressable onPress={() => void onToggleDate(today)} style={[styles.todayCheckIn, { backgroundColor: todayCompleted ? colors.blue : colors.blueSoft }]}><View style={[styles.todayCheckCircle, { borderColor: todayCompleted ? '#FFFFFF' : colors.blue }, todayCompleted && { backgroundColor: '#FFFFFF' }]}>{todayCompleted && <Text style={[styles.todayCheckmark, { color: colors.blue }]}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.todayCheckTitle, { color: todayCompleted ? '#FFFFFF' : colors.blue }]}>{todayCompleted ? 'Completed today' : 'Complete today'}</Text><Text style={[styles.todayCheckMeta, { color: todayCompleted ? 'rgba(255,255,255,0.78)' : colors.secondary }]}>Updates the {habit.itemKind} and this tracker together</Text></View></Pressable>}
@@ -312,9 +333,31 @@ function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, o
       <View style={styles.habitInfoSection}>
         <SectionHeading colors={colors} subtitle="Tap a day to turn it on or off." title="Schedule" />
         <WeekdayPicker colors={colors} selected={habit.weekdays} onChange={(weekdays) => { if (weekdays.length) void updateHabit({ weekdays }); }} />
-        <View style={[styles.behaviorCard, { backgroundColor: colors.card }]}><Text style={[styles.behaviorTitle, { color: colors.text }]}>Create on scheduled days</Text><View style={styles.kindRow}>{(['task', 'event'] as ItemKind[]).map((kind) => <Pressable key={kind} onPress={() => void updateHabit({ itemKind: kind, startTime: kind === 'event' ? habit.startTime ?? '7:00 AM' : undefined, endTime: kind === 'event' ? habit.endTime ?? '8:00 AM' : undefined })} style={[styles.kindPill, { backgroundColor: habit.itemKind === kind ? colors.blue : colors.background }]}><Text style={[styles.kindText, { color: habit.itemKind === kind ? '#FFFFFF' : colors.secondary }]}>{kind === 'task' ? 'Task' : 'Event'}</Text></Pressable>)}</View>{habit.itemKind === 'event' && <Text style={[styles.behaviorMeta, { color: colors.secondary }]}>{habit.startTime ?? '7:00 AM'}–{habit.endTime ?? '8:00 AM'} · After it passes, Calendream can ask whether you completed it.</Text>}</View>
-        {habit.cue && <View style={[styles.quietInfoRow, { borderColor: colors.separator }]}><Text style={[styles.fieldLabel, { color: colors.secondary }]}>Anchor</Text><Text numberOfLines={2} style={[styles.habitInfoValue, { color: colors.text }]}>{habit.cue}</Text></View>}
-        <View style={[styles.quietInfoRow, { borderColor: colors.separator }]}><Text style={[styles.fieldLabel, { color: colors.secondary }]}>Duration</Text><Text style={[styles.habitInfoValue, { color: colors.text }]}>{habit.endDate ? `Until ${formatLongDate(habit.endDate)}` : 'Ongoing'}</Text></View>
+        <View style={[styles.behaviorCard, { backgroundColor: colors.card }]}>
+          <Text style={[styles.behaviorTitle, { color: colors.text }]}>Create on scheduled days</Text>
+          <View style={styles.kindRow}>
+            {(['task', 'event'] as ItemKind[]).map((kind) => (
+              <Pressable key={kind} onPress={() => void changeItemKind(kind)} style={[styles.kindPill, { backgroundColor: habit.itemKind === kind ? colors.blue : colors.background }]}>
+                <Text style={[styles.kindText, { color: habit.itemKind === kind ? '#FFFFFF' : colors.secondary }]}>{kind === 'task' ? 'Task' : 'Event'}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {habit.itemKind === 'event' && (
+            <View style={[styles.eventSettings, { borderTopColor: colors.separator }]}>
+              <Pressable onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setSchedulePicker((open) => open === 'time' ? null : 'time'); }} style={styles.behaviorSettingRow}>
+                <View><Text style={[styles.behaviorSettingTitle, { color: colors.text }]}>Starts</Text><Text style={[styles.behaviorSettingMeta, { color: colors.secondary }]}>On every scheduled day</Text></View>
+                <Text style={[styles.behaviorSettingValue, { color: colors.blue }]}>{habit.startTime ?? '7:00 AM'}</Text>
+              </Pressable>
+              {schedulePicker === 'time' && <DateTimePicker display={Platform.OS === 'ios' ? 'spinner' : 'default'} mode="time" onChange={(_, selected) => { if (!selected) return; const startTime = formatTime(selected); void updateHabit({ startTime, endTime: habitEventEndTime(startTime, eventDuration) }); }} value={dateForTime(habit.startTime)} />}
+              <Pressable onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setSchedulePicker((open) => open === 'duration' ? null : 'duration'); }} style={[styles.behaviorSettingRow, { borderTopColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }]}>
+                <View><Text style={[styles.behaviorSettingTitle, { color: colors.text }]}>Length</Text><Text style={[styles.behaviorSettingMeta, { color: colors.secondary }]}>How long to protect</Text></View>
+                <Text style={[styles.behaviorSettingValue, { color: colors.blue }]}>{durationLabel(eventDuration)}</Text>
+              </Pressable>
+              {schedulePicker === 'duration' && <View style={styles.durationOptions}>{EVENT_DURATIONS.map((minutes) => { const selected = eventDuration === minutes; return <Pressable key={minutes} onPress={() => { void updateHabit({ endTime: habitEventEndTime(habit.startTime, minutes) }); setSchedulePicker(null); }} style={[styles.durationOption, { backgroundColor: selected ? colors.blue : colors.background }]}><Text style={[styles.durationOptionText, { color: selected ? '#FFFFFF' : colors.secondary }]}>{durationLabel(minutes)}</Text></Pressable>; })}</View>}
+              <Text style={[styles.behaviorMeta, { color: colors.secondary }]}>After the event passes, Calendream can ask whether you completed it.</Text>
+            </View>
+          )}
+        </View>
         <View style={styles.startedRow}><Text style={[styles.startedText, { color: colors.tertiary }]}>Started {formatLongDate(habit.startDate)}</Text></View>
       </View>
       <Text style={[styles.hint, { color: colors.tertiary }]}>Tap a past square to update it. Long-press to mark a planned rest day.</Text>
@@ -556,10 +599,18 @@ const styles = StyleSheet.create({
   habitInfoSection: { marginTop: 7 },
   behaviorCard: { borderRadius: 17, padding: 12, marginTop: 12 },
   behaviorTitle: { fontSize: 14, fontWeight: '700' },
-  behaviorMeta: { fontSize: 11, lineHeight: 16, marginTop: 9 },
+  behaviorMeta: { fontSize: 10, lineHeight: 15, marginTop: 8 },
   kindRow: { flexDirection: 'row', gap: 7, marginTop: 9 },
   kindPill: { minWidth: 78, height: 32, borderRadius: 16, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
   kindText: { fontSize: 12, fontWeight: '700' },
+  eventSettings: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingTop: 2 },
+  behaviorSettingRow: { minHeight: 49, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  behaviorSettingTitle: { fontSize: 13, lineHeight: 17, fontWeight: '700' },
+  behaviorSettingMeta: { fontSize: 9, lineHeight: 12, marginTop: 1 },
+  behaviorSettingValue: { fontSize: 12, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  durationOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingTop: 5, paddingBottom: 5 },
+  durationOption: { minHeight: 30, borderRadius: 15, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  durationOptionText: { fontSize: 10, fontWeight: '800' },
   quietInfoRow: { minHeight: 44, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   habitInfoValue: { maxWidth: 225, fontSize: 13, fontWeight: '600', textAlign: 'right' },
   startedRow: { paddingTop: 11, alignItems: 'flex-end' },

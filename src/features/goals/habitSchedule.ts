@@ -1,5 +1,27 @@
 import type { Habit, HabitActivity, ISOWeekday } from '../../models/planning.ts';
 import { addLocalDays, dateFromISO } from '../../shared/date.ts';
+import { timeMinutes } from '../../shared/time.ts';
+
+function formatClockMinutes(value: number) {
+  const normalized = ((value % 1440) + 1440) % 1440;
+  const hour24 = Math.floor(normalized / 60);
+  const minute = normalized % 60;
+  const period = hour24 >= 12 ? 'PM' : 'AM';
+  const hour = hour24 % 12 || 12;
+  return `${hour}:${String(minute).padStart(2, '0')} ${period}`;
+}
+
+export function habitEventDuration(startTime?: string, endTime?: string) {
+  const start = timeMinutes(startTime);
+  const end = timeMinutes(endTime);
+  if (start < 0 || end < 0) return 60;
+  return end > start ? end - start : end + 1440 - start;
+}
+
+export function habitEventEndTime(startTime: string | undefined, durationMinutes: number) {
+  const start = timeMinutes(startTime);
+  return formatClockMinutes((start < 0 ? 7 * 60 : start) + durationMinutes);
+}
 
 export function isoWeekdayForDate(isoDate: string): ISOWeekday {
   const weekday = dateFromISO(isoDate).getDay();
