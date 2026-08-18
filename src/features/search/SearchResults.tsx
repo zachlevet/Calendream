@@ -15,9 +15,10 @@ interface SearchResultsProps {
 
 export function SearchOverlay(props: SearchResultsProps) {
   const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
+  const compact = !props.query.trim();
 
   return (
-    <View style={[styles.overlay, !glassAvailable && { backgroundColor: props.colors.chrome, borderColor: props.colors.separator }]}>
+    <View style={[styles.overlay, compact && styles.overlayCompact, !glassAvailable && { backgroundColor: props.colors.chrome, borderColor: props.colors.separator }]}>
       {glassAvailable && (
         <GlassView
           colorScheme="auto"
@@ -38,11 +39,12 @@ const GROUPS: { kind: SearchResult['kind']; title: string }[] = [
   { kind: 'event', title: 'Events' },
   { kind: 'task', title: 'Tasks' },
   { kind: 'note', title: 'Notes' },
+  { kind: 'goal', title: 'Goals' },
 ];
 
 export function SearchResults({ colors, loading, query, results, onSelect }: SearchResultsProps) {
   if (!query.trim()) {
-    return <View style={styles.empty}><Text style={[styles.emptyText, { color: colors.tertiary }]}>Search events, tasks, and notes</Text></View>;
+    return <View style={styles.empty}><Text style={[styles.emptyText, { color: colors.secondary }]}>Search for an event, task, note, or goal</Text></View>;
   }
 
   if (!loading && results.length === 0) {
@@ -78,7 +80,7 @@ export function SearchResults({ colors, loading, query, results, onSelect }: Sea
 const styles = StyleSheet.create({
   overlay: {
     position: 'absolute',
-    zIndex: 20,
+    zIndex: 40,
     top: 50,
     left: 10,
     right: 10,
@@ -93,6 +95,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 10,
   },
+  overlayCompact: { height: 62, borderRadius: 20 },
   glass: { position: 'absolute', inset: 0, borderRadius: 24 },
   overlayContent: { flex: 1 },
   content: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 100 },

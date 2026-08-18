@@ -356,7 +356,16 @@ export function useTodayData(date: string, _reviewDate = date) {
           title: 'Daily Reflection',
           snippet: matchingSnippet(reflection, query),
         }));
-      return [...itemResults, ...noteResults];
+      const goalResults = allGoals
+        .filter((goal) => [goal.title, goal.notes].some((value) => value?.toLocaleLowerCase().includes(normalized)))
+        .map((goal): SearchResult => ({
+          id: goal.id,
+          kind: 'goal',
+          date: goal.targetDate,
+          title: goal.title,
+          snippet: matchingSnippet(goal.notes, query),
+        }));
+      return [...itemResults, ...noteResults, ...goalResults];
     },
     loadRange: async (startDate: string, endDate: string): Promise<TimelineSnapshot> => ({
       items: allItems.filter((item) => (

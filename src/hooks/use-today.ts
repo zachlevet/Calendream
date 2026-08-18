@@ -396,7 +396,7 @@ export function useTodayData(date: string, reviewDate = date) {
     const query = rawQuery.trim();
     if (!query) return [];
     const pattern = `%${query}%`;
-    const [itemRows, noteRows] = await Promise.all([
+    const [itemRows, noteRows, goalRows] = await Promise.all([
       db.getAllAsync<{ id: string; kind: 'task' | 'event'; title: string; anchor_start: string; notes: string | null }>(
         `SELECT id, kind, title, anchor_start, notes
          FROM items
@@ -416,6 +416,16 @@ export function useTodayData(date: string, reviewDate = date) {
          LIMIT 20`,
         pattern,
       ),
+      db.getAllAsync<{ id: string; title: string; target_date: string; notes: string | null }>(
+        `SELECT id, title, target_date, notes
+         FROM goals
+         WHERE deleted_at IS NULL
+           AND (title LIKE ? COLLATE NOCASE OR notes LIKE ? COLLATE NOCASE)
+         ORDER BY completed_at IS NOT NULL, target_date
+         LIMIT 20`,
+        pattern,
+        pattern,
+      ),
     ]);
 
     return [
@@ -432,6 +442,13 @@ export function useTodayData(date: string, reviewDate = date) {
         date: row.date,
         title: 'Daily Reflection',
         snippet: matchingSnippet(row.reflection, query),
+      })),
+      ...goalRows.map((row): SearchResult => ({
+        id: row.id,
+        kind: 'goal',
+        date: row.target_date,
+        title: row.title,
+        snippet: matchingSnippet(row.notes, query),
       })),
     ];
   }, [db]);

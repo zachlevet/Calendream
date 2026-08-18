@@ -122,8 +122,8 @@ export function CompactCalendarOverlay({ colors, dataRevision, initialDate, load
   return (
     <View pointerEvents="box-none" style={[styles.layer, { top: insets.top + 44 }]}>
       <Pressable accessibilityLabel="Close calendar" onPress={onClose} style={styles.backdrop} />
-      <View style={[styles.panel, !glassAvailable && { backgroundColor: fallbackGlass }]}>
-        {glassAvailable && <GlassView glassEffectStyle="regular" isInteractive style={styles.glass} tintColor={colors.background === '#000000' ? 'rgba(44,44,48,0.5)' : 'rgba(255,255,255,0.3)'} />}
+      <View style={[styles.panel, { borderColor: colors.background === '#000000' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.72)' }, !glassAvailable && { backgroundColor: fallbackGlass }]}>
+        {glassAvailable && <GlassView glassEffectStyle="regular" isInteractive style={styles.glass} tintColor={colors.background === '#000000' ? 'rgba(44,44,48,0.62)' : 'rgba(255,255,255,0.52)'} />}
         <View style={styles.header}>
           <Pressable accessibilityLabel="Previous month" hitSlop={10} onPress={() => { setActionDate(null); setMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1)); }} style={styles.monthButton}><Text style={[styles.chevron, { color: colors.blue }]}>‹</Text></Pressable>
           <Text style={[styles.monthTitle, { color: colors.text }]}>{new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(month)}</Text>
@@ -184,7 +184,7 @@ function CalendarPreviewEvent({ item, colors }: { item: PlanningItem; colors: Ap
 const styles = StyleSheet.create({
   layer: { position: 'absolute', zIndex: 40, left: 0, right: 0, bottom: 78 },
   backdrop: { position: 'absolute', inset: 0 },
-  panel: { marginHorizontal: 10, borderRadius: 24, overflow: 'hidden', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 9, shadowColor: '#000000', shadowOpacity: 0.14, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 12 },
+  panel: { marginHorizontal: 10, borderRadius: 24, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', paddingHorizontal: 12, paddingTop: 8, paddingBottom: 9, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 28, shadowOffset: { width: 0, height: 12 }, elevation: 12 },
   glass: { position: 'absolute', inset: 0, borderRadius: 24 },
   header: { height: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   monthButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },

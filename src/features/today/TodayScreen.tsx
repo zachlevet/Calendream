@@ -356,6 +356,11 @@ export function TodayScreen() {
   }
 
   function selectSearchResult(result: SearchResult) {
+    if (result.kind === 'goal') {
+      const goal = data.allGoals.find((candidate) => candidate.id === result.id);
+      if (goal) openGoal(goal);
+      return;
+    }
     setDestination('today');
     setSelectedDate(result.date);
     closeSearch();
@@ -387,6 +392,13 @@ export function TodayScreen() {
               <SymbolView name="xmark.circle.fill" size={18} tintColor={colors.tertiary} />
             </Pressable>
           </View>
+          <Pressable
+            accessibilityLabel="Open calendar"
+            onPress={toggleCalendar}
+            style={({ pressed }) => [styles.calendarButton, { backgroundColor: colors.card }, pressed && styles.pressed]}
+          >
+            <SymbolView name="calendar" size={16} tintColor={colors.text} />
+          </Pressable>
           <Pressable
             accessibilityLabel="Add an item"
             onPress={() => openQuickCapture()}
@@ -692,7 +704,9 @@ export function TodayScreen() {
         />
       )}
 
-      {searchOpen && Boolean(searchQuery.trim()) && (
+      {(searchOpen || calendarOpen) && <FocusGlassVeil colors={colors} onPress={searchOpen ? closeSearch : () => setCalendarOpen(false)} />}
+
+      {searchOpen && (
         <SearchOverlay colors={colors} loading={searchLoading} onSelect={selectSearchResult} query={searchQuery} results={searchResults} />
       )}
 
@@ -1055,6 +1069,20 @@ function EmptySectionPrompt({ kind, colors, onPress }: { kind: 'event' | 'task';
         <Text style={[styles.emptySectionPlus, { color: colors.blue }]}>+</Text>
       </View>
     </Pressable>
+  );
+}
+
+function FocusGlassVeil({ colors, onPress }: { colors: AppColors; onPress: () => void }) {
+  const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
+  const fallback = colors.background === '#000000' ? 'rgba(10,10,12,0.70)' : 'rgba(246,246,250,0.76)';
+  const tint = colors.background === '#000000' ? 'rgba(26,26,30,0.50)' : 'rgba(255,255,255,0.42)';
+  return (
+    <View style={styles.focusVeil}>
+      {glassAvailable
+        ? <GlassView glassEffectStyle="regular" pointerEvents="none" style={StyleSheet.absoluteFill} tintColor={tint} />
+        : <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: fallback }]} />}
+      <Pressable accessibilityLabel="Close focused view" onPress={onPress} style={StyleSheet.absoluteFill} />
+    </View>
   );
 }
 
@@ -1632,7 +1660,8 @@ function MiniCalendar({ colors, selected, today, visibleMonth, onChangeMonth, on
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   pressed: { opacity: 0.6 },
-  topBar: { position: 'relative', zIndex: 60, height: 44, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topBar: { position: 'relative', zIndex: 60, height: 44, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  focusVeil: { position: 'absolute', zIndex: 30, top: 44, left: 0, right: 0, bottom: 78, overflow: 'hidden' },
   dateStripFrame: { height: 76, borderBottomWidth: StyleSheet.hairlineWidth },
   dateStripContent: { paddingHorizontal: 18, alignItems: 'center' },
   todayMorph: { height: 75, overflow: 'hidden' },
@@ -1650,7 +1679,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   searchButton: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   calendarButton: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  searchOrb: { flex: 1, height: 34, borderRadius: 17, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  searchOrb: { flex: 1, minWidth: 0, height: 34, borderRadius: 17, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
   searchInput: { flex: 1, height: 34, fontSize: 15, paddingVertical: 0 },
   addButton: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#FF3B30', alignItems: 'center', justifyContent: 'center' },
   addSymbol: { color: '#FFFFFF', fontSize: 24, lineHeight: 25, fontWeight: '400' },

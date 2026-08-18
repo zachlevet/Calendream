@@ -132,7 +132,7 @@ export interface GoalHabitLink {
 
 export interface SearchResult {
   id: string;
-  kind: 'event' | 'task' | 'note';
+  kind: 'event' | 'task' | 'note' | 'goal';
   date: string;
   title: string;
   snippet?: string;
