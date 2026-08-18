@@ -1537,7 +1537,7 @@ const styles = StyleSheet.create({
   eventRow: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
   eventTime: { width: 68, fontSize: 13, fontVariant: ['tabular-nums'] },
   eventRule: { width: 3, height: 27, borderRadius: 2, marginRight: 11 },
-  habitEventCheckIn: { minHeight: 49, borderRadius: 15, marginLeft: 68, marginTop: 5, marginBottom: 7, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  habitEventCheckIn: { minHeight: 49, borderRadius: 15, marginTop: 5, marginBottom: 7, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 7 },
   habitEventQuestion: { fontSize: 12, lineHeight: 15, fontWeight: '700' },
   habitEventMeta: { fontSize: 9, lineHeight: 12, marginTop: 1 },
   habitEventChoice: { minWidth: 38, height: 28, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
