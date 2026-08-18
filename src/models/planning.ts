@@ -84,6 +84,7 @@ export interface GoalStep {
 }
 
 export interface GoalStepDraft {
+  id?: string;
   goalId: string;
   title: string;
   scheduledDate?: string;

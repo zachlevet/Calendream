@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Keyboard,
   LayoutAnimation,
   Platform,
   Pressable,
@@ -206,6 +207,18 @@ function GoalDetailPage({ colors, goal, onBack, onDeleteGoal, onDeleteStep, onSa
   const [draft, setDraft] = useState(() => goalDraftFor(goal));
   const [stepDraft, setStepDraft] = useState<GoalStepDraft | null>(null);
   const [stepPickerOpen, setStepPickerOpen] = useState(false);
+  const scroll = useRef<ScrollView>(null);
+  const scrollOffset = useRef(0);
+  const stepEditorView = useRef<View>(null);
+  const stepCalendarView = useRef<View>(null);
+  const calendarFocusPending = useRef(false);
+  const editingStep = stepDraft?.id ? steps.find((step) => step.id === stepDraft.id) : undefined;
+
+  function revealStepCalendar() {
+    setTimeout(() => (stepCalendarView.current ?? stepEditorView.current)?.measureInWindow((_x, y) => {
+      scroll.current?.scrollTo({ y: Math.max(0, scrollOffset.current + y - 110), animated: true });
+    }), Platform.OS === 'ios' ? 220 : 160);
+  }
 
   async function saveStep() {
     if (!stepDraft?.title.trim()) return;
@@ -214,8 +227,45 @@ function GoalDetailPage({ colors, goal, onBack, onDeleteGoal, onDeleteStep, onSa
     setStepPickerOpen(false);
   }
 
+  const stepEditor = stepDraft ? (
+    <View ref={stepEditorView} style={[styles.stepComposer, { borderColor: colors.separator }]}>
+      <View style={styles.stepComposerRow}>
+        {editingStep ? (
+          <Pressable accessibilityLabel={editingStep.completed ? `Mark ${editingStep.title} incomplete` : `Complete ${editingStep.title}`} onPress={() => void onToggleStep(editingStep)} style={[styles.stepComposerCheck, { borderColor: editingStep.completed ? colors.blue : colors.tertiary }, editingStep.completed && { backgroundColor: colors.blue }]}>{editingStep.completed && <Text style={styles.checkmark}>✓</Text>}</Pressable>
+        ) : (
+          <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.stepComposerCheck, { borderColor: colors.tertiary }]} />
+        )}
+        <TextInput autoFocus onChangeText={(title) => setStepDraft({ ...stepDraft, title })} placeholder="What needs to happen?" placeholderTextColor={colors.tertiary} style={[styles.stepInput, { color: colors.text }]} value={stepDraft.title} />
+        <Pressable accessibilityLabel="Schedule this task" onPress={() => {
+          const opening = !stepPickerOpen;
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          Keyboard.dismiss();
+          if (opening && !stepDraft.scheduledDate) setStepDraft({ ...stepDraft, scheduledDate: today });
+          calendarFocusPending.current = opening;
+          setStepPickerOpen(opening);
+        }} style={[styles.stepScheduleOrb, { backgroundColor: stepPickerOpen || stepDraft.scheduledDate ? colors.blueSoft : colors.card }]}>
+          <Text style={[styles.stepScheduleText, { color: colors.blue }]}>Schedule</Text>
+        </Pressable>
+      </View>
+      {stepPickerOpen && <View onLayout={() => { if (calendarFocusPending.current) { calendarFocusPending.current = false; revealStepCalendar(); } }} ref={stepCalendarView} style={[styles.stepSchedulePanel, { backgroundColor: colors.card }]}>
+        <View style={styles.stepScheduleHeader}>
+          <View style={styles.cardCopy}><Text style={[styles.stepScheduleLabel, { color: colors.secondary }]}>SCHEDULED FOR</Text><Text style={[styles.stepScheduleDate, { color: colors.text }]}>{formatLongDate(stepDraft.scheduledDate ?? today)}</Text></View>
+          <Pressable hitSlop={8} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setStepDraft({ ...stepDraft, scheduledDate: undefined }); setStepPickerOpen(false); }}><Text style={[styles.stepScheduleClear, { color: colors.secondary }]}>Remove</Text></Pressable>
+        </View>
+        <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} minimumDate={dateFromISO(today)} mode="date" onChange={(_, selected) => { if (Platform.OS !== 'ios') setStepPickerOpen(false); if (selected) setStepDraft({ ...stepDraft, scheduledDate: localISO(selected) }); }} value={dateFromISO(stepDraft.scheduledDate ?? today)} />
+      </View>}
+      {!stepPickerOpen && stepDraft.scheduledDate && <Text style={[styles.stepScheduledSummary, { color: colors.secondary }]}>Scheduled {formatLongDate(stepDraft.scheduledDate)}</Text>}
+      <View style={styles.editorActions}>
+        {editingStep && <Pressable onPress={() => Alert.alert('Remove this task?', 'It will also be removed from its scheduled day.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => { await onDeleteStep(editingStep); setStepDraft(null); setStepPickerOpen(false); } }])}><Text style={[styles.deleteAction, { color: colors.red }]}>Remove</Text></Pressable>}
+        <View style={styles.actionSpacer} />
+        <Pressable onPress={() => { setStepDraft(null); setStepPickerOpen(false); }}><Text style={[styles.cancelAction, { color: colors.secondary }]}>Cancel</Text></Pressable>
+        <Pressable disabled={!stepDraft.title.trim()} onPress={() => void saveStep()} style={[styles.smallSave, { backgroundColor: colors.blue, opacity: stepDraft.title.trim() ? 1 : 0.4 }]}><Text style={styles.saveText}>Save</Text></Pressable>
+      </View>
+    </View>
+  ) : null;
+
   return (
-    <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.workspaceContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.screen}>
+    <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.workspaceContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} ref={scroll} scrollEventThrottle={16} showsVerticalScrollIndicator={false} style={styles.screen}>
       <PageBackButton colors={colors} label="Goals & Routines" onBack={onBack} />
       <View style={[styles.goalWorkspaceTitle, { backgroundColor: colors.yellowSoft }]}>
         <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} accomplished`} hitSlop={8} onPress={() => void onToggleGoal()} style={[styles.workspaceStar, { backgroundColor: goal.completed ? '#FFFFFF' : colors.yellow }]}><Text style={[styles.workspaceStarText, { color: goal.completed ? '#FFB000' : '#FFFFFF' }]}>★</Text></Pressable>
@@ -229,32 +279,11 @@ function GoalDetailPage({ colors, goal, onBack, onDeleteGoal, onDeleteStep, onSa
       <View style={styles.goalTasksSection}>
         <SectionHeading action="Add task" colors={colors} onAction={() => { setStepDraft({ goalId: goal.id, title: '' }); setStepPickerOpen(false); }} subtitle="Small steps that move this goal forward." title="Tasks" />
         <View style={[styles.goalTaskList, { borderColor: colors.separator }]}>
-          {steps.map((step) => <Pressable accessibilityLabel={step.completed ? `Mark ${step.title} incomplete` : `Complete ${step.title}`} key={step.id} onLongPress={() => void onDeleteStep(step)} onPress={() => void onToggleStep(step)} style={[styles.goalTaskRow, { borderColor: colors.separator }]}><View style={[styles.goalTaskCheck, { borderColor: step.completed ? colors.blue : colors.tertiary }, step.completed && { backgroundColor: colors.blue }]}>{step.completed && <Text style={styles.checkmark}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.projectTitle, { color: step.completed ? colors.tertiary : colors.text }, step.completed && styles.completed]}>{step.title}</Text>{step.scheduledDate && <Text style={[styles.projectDate, { color: step.scheduledDate < today && !step.completed ? colors.red : colors.secondary }]}>Scheduled {formatLongDate(step.scheduledDate)}</Text>}</View></Pressable>)}
+          {steps.map((step) => stepDraft?.id === step.id ? <View key={step.id}>{stepEditor}</View> : <View key={step.id} style={[styles.goalTaskRow, { borderColor: colors.separator }]}><Pressable accessibilityLabel={step.completed ? `Mark ${step.title} incomplete` : `Complete ${step.title}`} hitSlop={7} onPress={() => void onToggleStep(step)} style={[styles.goalTaskCheck, { borderColor: step.completed ? colors.blue : colors.tertiary }, step.completed && { backgroundColor: colors.blue }]}>{step.completed && <Text style={styles.checkmark}>✓</Text>}</Pressable><Pressable accessibilityLabel={`Edit ${step.title}`} onPress={() => { setStepDraft({ id: step.id, goalId: step.goalId, title: step.title, scheduledDate: step.scheduledDate }); setStepPickerOpen(false); }} style={styles.goalTaskBody}><Text style={[styles.projectTitle, { color: step.completed ? colors.tertiary : colors.text }, step.completed && styles.completed]}>{step.title}</Text>{step.scheduledDate && <Text style={[styles.projectDate, { color: step.scheduledDate < today && !step.completed ? colors.red : colors.secondary }]}>Scheduled {formatLongDate(step.scheduledDate)}</Text>}</Pressable></View>)}
           {!steps.length && !stepDraft && <Text style={[styles.goalTaskEmpty, { color: colors.secondary }]}>No tasks yet. Add the first thing that needs to happen.</Text>}
-          {stepDraft && <View style={[styles.stepComposer, { borderColor: colors.separator }]}>
-            <View style={styles.stepComposerRow}>
-              <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.stepComposerCheck, { borderColor: colors.tertiary }]} />
-              <TextInput autoFocus onChangeText={(title) => setStepDraft({ ...stepDraft, title })} placeholder="What needs to happen?" placeholderTextColor={colors.tertiary} style={[styles.stepInput, { color: colors.text }]} value={stepDraft.title} />
-              <Pressable accessibilityLabel="Schedule this task" onPress={() => {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                if (!stepPickerOpen && !stepDraft.scheduledDate) setStepDraft({ ...stepDraft, scheduledDate: today });
-                setStepPickerOpen((open) => !open);
-              }} style={[styles.stepScheduleOrb, { backgroundColor: stepPickerOpen || stepDraft.scheduledDate ? colors.blueSoft : colors.card }]}>
-                <Text style={[styles.stepScheduleText, { color: colors.blue }]}>Schedule</Text>
-              </Pressable>
-            </View>
-            {stepPickerOpen && <View style={[styles.stepSchedulePanel, { backgroundColor: colors.card }]}>
-              <View style={styles.stepScheduleHeader}>
-                <View style={styles.cardCopy}><Text style={[styles.stepScheduleLabel, { color: colors.secondary }]}>SCHEDULED FOR</Text><Text style={[styles.stepScheduleDate, { color: colors.text }]}>{formatLongDate(stepDraft.scheduledDate ?? today)}</Text></View>
-                <Pressable hitSlop={8} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setStepDraft({ ...stepDraft, scheduledDate: undefined }); setStepPickerOpen(false); }}><Text style={[styles.stepScheduleClear, { color: colors.secondary }]}>Remove</Text></Pressable>
-              </View>
-              <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} minimumDate={dateFromISO(today)} mode="date" onChange={(_, selected) => { if (Platform.OS !== 'ios') setStepPickerOpen(false); if (selected) setStepDraft({ ...stepDraft, scheduledDate: localISO(selected) }); }} value={dateFromISO(stepDraft.scheduledDate ?? today)} />
-            </View>}
-            {!stepPickerOpen && stepDraft.scheduledDate && <Text style={[styles.stepScheduledSummary, { color: colors.secondary }]}>Scheduled {formatLongDate(stepDraft.scheduledDate)}</Text>}
-            <EditorActions colors={colors} onCancel={() => { setStepDraft(null); setStepPickerOpen(false); }} onSave={() => void saveStep()} saveDisabled={!stepDraft.title.trim()} />
-          </View>}
+          {stepDraft && !stepDraft.id && stepEditor}
         </View>
-        <Text style={[styles.goalTaskHint, { color: colors.tertiary }]}>Schedule a task when you want it to also appear on a day. Long-press one to remove it.</Text>
+        <Text style={[styles.goalTaskHint, { color: colors.tertiary }]}>Schedule a task when you want it to also appear on a day. Tap a task to edit it.</Text>
       </View>
     </ScrollView>
   );
@@ -290,13 +319,32 @@ function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, o
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(() => habitDraftFor(habit));
+  const [liveDraft, setLiveDraft] = useState(() => habitDraftFor(habit));
   const [schedulePicker, setSchedulePicker] = useState<'time' | 'duration' | null>(null);
+  const liveDraftRef = useRef(liveDraft);
+  const pendingQuickSaves = useRef(0);
+  const quickSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  useEffect(() => {
+    if (pendingQuickSaves.current) return;
+    const next = habitDraftFor(habit);
+    liveDraftRef.current = next;
+    setLiveDraft(next);
+  }, [habit]);
+  const liveHabit = { ...habit, ...liveDraft };
   const todayCompleted = activity.some((entry) => entry.date === today && entry.completed);
-  const dueToday = isHabitScheduledOn(habit, today);
-  const eventDuration = habitEventDuration(habit.startTime, habit.endTime);
+  const dueToday = isHabitScheduledOn(liveHabit, today);
+  const eventDuration = habitEventDuration(liveDraft.startTime, liveDraft.endTime);
 
   async function updateHabit(change: Partial<HabitDraft>) {
-    await onSave({ ...habitDraftFor(habit), ...change });
+    const next = { ...liveDraftRef.current, ...change };
+    liveDraftRef.current = next;
+    setLiveDraft(next);
+    pendingQuickSaves.current += 1;
+    quickSaveQueue.current = quickSaveQueue.current
+      .catch(() => undefined)
+      .then(() => onSave(next).then(() => undefined))
+      .finally(() => { pendingQuickSaves.current -= 1; });
+    await quickSaveQueue.current;
   }
 
   async function changeItemKind(kind: ItemKind) {
@@ -304,45 +352,45 @@ function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, o
     setSchedulePicker(null);
     await updateHabit({
       itemKind: kind,
-      startTime: kind === 'event' ? habit.startTime ?? '7:00 AM' : undefined,
-      endTime: kind === 'event' ? habit.endTime ?? '8:00 AM' : undefined,
+      startTime: kind === 'event' ? liveDraft.startTime ?? '7:00 AM' : undefined,
+      endTime: kind === 'event' ? liveDraft.endTime ?? '8:00 AM' : undefined,
     });
   }
 
   return (
     <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.habitDetailContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.screen}>
       <PageBackButton colors={colors} label="Goals & Routines" onBack={onBack} />
-      <View style={styles.habitDetailTitleRow}><View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: colors.blue }]}>ROUTINE</Text><Text style={[styles.habitDetailTitle, { color: colors.text }]}>{habit.name}</Text><Text style={[styles.workspaceMeta, { color: colors.secondary }]}>{habit.itemKind === 'event' ? `${habit.startTime ?? 'Timed'} event` : 'Creates a task'} on scheduled days</Text></View>{!editing && <Pressable hitSlop={8} onPress={() => { setDraft(habitDraftFor(habit)); setEditing(true); }}><Text style={[styles.editAction, { color: colors.blue }]}>Edit</Text></Pressable>}</View>
+      <View style={styles.habitDetailTitleRow}><View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: colors.blue }]}>ROUTINE</Text><Text style={[styles.habitDetailTitle, { color: colors.text }]}>{liveDraft.name}</Text><Text style={[styles.workspaceMeta, { color: colors.secondary }]}>{liveDraft.itemKind === 'event' ? `${liveDraft.startTime ?? 'Timed'} event` : 'Creates a task'} on scheduled days</Text></View>{!editing && <Pressable hitSlop={8} onPress={() => { setDraft(liveDraftRef.current); setEditing(true); }}><Text style={[styles.editAction, { color: colors.blue }]}>Edit</Text></Pressable>}</View>
       {editing && <HabitComposer colors={colors} draft={draft} onCancel={() => setEditing(false)} onDelete={onArchive} onSave={async (nextDraft) => { await onSave(nextDraft); setEditing(false); }} onSetDraft={setDraft} today={today} />}
 
-      {!editing && dueToday && <Pressable onPress={() => void onToggleDate(today)} style={[styles.todayCheckIn, { backgroundColor: todayCompleted ? colors.blue : colors.blueSoft }]}><View style={[styles.todayCheckCircle, { borderColor: todayCompleted ? '#FFFFFF' : colors.blue }, todayCompleted && { backgroundColor: '#FFFFFF' }]}>{todayCompleted && <Text style={[styles.todayCheckmark, { color: colors.blue }]}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.todayCheckTitle, { color: todayCompleted ? '#FFFFFF' : colors.blue }]}>{todayCompleted ? 'Completed today' : 'Complete today'}</Text><Text style={[styles.todayCheckMeta, { color: todayCompleted ? 'rgba(255,255,255,0.78)' : colors.secondary }]}>Updates the {habit.itemKind} and this tracker together</Text></View></Pressable>}
+      {!editing && dueToday && <Pressable onPress={() => void onToggleDate(today)} style={[styles.todayCheckIn, { backgroundColor: todayCompleted ? colors.blue : colors.blueSoft }]}><View style={[styles.todayCheckCircle, { borderColor: todayCompleted ? '#FFFFFF' : colors.blue }, todayCompleted && { backgroundColor: '#FFFFFF' }]}>{todayCompleted && <Text style={[styles.todayCheckmark, { color: colors.blue }]}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.todayCheckTitle, { color: todayCompleted ? '#FFFFFF' : colors.blue }]}>{todayCompleted ? 'Completed today' : 'Complete today'}</Text><Text style={[styles.todayCheckMeta, { color: todayCompleted ? 'rgba(255,255,255,0.78)' : colors.secondary }]}>Updates the {liveDraft.itemKind} and this tracker together</Text></View></Pressable>}
 
       <HabitTracker activity={activity} colors={colors} habit={habit} onToggleDate={onToggleDate} onToggleSkip={onToggleSkip} today={today} />
 
       <View style={styles.habitInfoSection}>
         <SectionHeading colors={colors} subtitle="Tap a day to turn it on or off." title="Schedule" />
-        <WeekdayPicker colors={colors} selected={habit.weekdays} onChange={(weekdays) => { if (weekdays.length) void updateHabit({ weekdays }); }} />
+        <WeekdayPicker colors={colors} selected={liveDraft.weekdays} onChange={(weekdays) => { if (weekdays.length) void updateHabit({ weekdays }); }} />
         <View style={[styles.behaviorCard, { backgroundColor: colors.card }]}>
           <Text style={[styles.behaviorTitle, { color: colors.text }]}>Create on scheduled days</Text>
           <View style={styles.kindRow}>
             {(['task', 'event'] as ItemKind[]).map((kind) => (
-              <Pressable key={kind} onPress={() => void changeItemKind(kind)} style={[styles.kindPill, { backgroundColor: habit.itemKind === kind ? colors.blue : colors.background }]}>
-                <Text style={[styles.kindText, { color: habit.itemKind === kind ? '#FFFFFF' : colors.secondary }]}>{kind === 'task' ? 'Task' : 'Event'}</Text>
+              <Pressable key={kind} onPress={() => void changeItemKind(kind)} style={[styles.kindPill, { backgroundColor: liveDraft.itemKind === kind ? colors.blue : colors.background }]}>
+                <Text style={[styles.kindText, { color: liveDraft.itemKind === kind ? '#FFFFFF' : colors.secondary }]}>{kind === 'task' ? 'Task' : 'Event'}</Text>
               </Pressable>
             ))}
           </View>
-          {habit.itemKind === 'event' && (
+          {liveDraft.itemKind === 'event' && (
             <View style={[styles.eventSettings, { borderTopColor: colors.separator }]}>
               <Pressable onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setSchedulePicker((open) => open === 'time' ? null : 'time'); }} style={styles.behaviorSettingRow}>
                 <View><Text style={[styles.behaviorSettingTitle, { color: colors.text }]}>Starts</Text><Text style={[styles.behaviorSettingMeta, { color: colors.secondary }]}>On every scheduled day</Text></View>
-                <Text style={[styles.behaviorSettingValue, { color: colors.blue }]}>{habit.startTime ?? '7:00 AM'}</Text>
+                <Text style={[styles.behaviorSettingValue, { color: colors.blue }]}>{liveDraft.startTime ?? '7:00 AM'}</Text>
               </Pressable>
-              {schedulePicker === 'time' && <DateTimePicker display={Platform.OS === 'ios' ? 'spinner' : 'default'} mode="time" onChange={(_, selected) => { if (!selected) return; const startTime = formatTime(selected); void updateHabit({ startTime, endTime: habitEventEndTime(startTime, eventDuration) }); }} value={dateForTime(habit.startTime)} />}
+              {schedulePicker === 'time' && <DateTimePicker display={Platform.OS === 'ios' ? 'spinner' : 'default'} mode="time" onChange={(_, selected) => { if (!selected) return; const startTime = formatTime(selected); void updateHabit({ startTime, endTime: habitEventEndTime(startTime, eventDuration) }); }} value={dateForTime(liveDraft.startTime)} />}
               <Pressable onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setSchedulePicker((open) => open === 'duration' ? null : 'duration'); }} style={[styles.behaviorSettingRow, { borderTopColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }]}>
                 <View><Text style={[styles.behaviorSettingTitle, { color: colors.text }]}>Length</Text><Text style={[styles.behaviorSettingMeta, { color: colors.secondary }]}>How long to protect</Text></View>
                 <Text style={[styles.behaviorSettingValue, { color: colors.blue }]}>{durationLabel(eventDuration)}</Text>
               </Pressable>
-              {schedulePicker === 'duration' && <View style={styles.durationOptions}>{EVENT_DURATIONS.map((minutes) => { const selected = eventDuration === minutes; return <Pressable key={minutes} onPress={() => { void updateHabit({ endTime: habitEventEndTime(habit.startTime, minutes) }); setSchedulePicker(null); }} style={[styles.durationOption, { backgroundColor: selected ? colors.blue : colors.background }]}><Text style={[styles.durationOptionText, { color: selected ? '#FFFFFF' : colors.secondary }]}>{durationLabel(minutes)}</Text></Pressable>; })}</View>}
+              {schedulePicker === 'duration' && <View style={styles.durationOptions}>{EVENT_DURATIONS.map((minutes) => { const selected = eventDuration === minutes; return <Pressable key={minutes} onPress={() => { void updateHabit({ endTime: habitEventEndTime(liveDraft.startTime, minutes) }); setSchedulePicker(null); }} style={[styles.durationOption, { backgroundColor: selected ? colors.blue : colors.background }]}><Text style={[styles.durationOptionText, { color: selected ? '#FFFFFF' : colors.secondary }]}>{durationLabel(minutes)}</Text></Pressable>; })}</View>}
               <Text style={[styles.behaviorMeta, { color: colors.secondary }]}>After the event passes, Calendream can ask whether you completed it.</Text>
             </View>
           )}
@@ -531,6 +579,7 @@ const styles = StyleSheet.create({
   goalTaskList: { borderTopWidth: StyleSheet.hairlineWidth },
   goalTaskRow: { minHeight: 54, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
   goalTaskCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  goalTaskBody: { flex: 1, minHeight: 54, justifyContent: 'center' },
   goalTaskEmpty: { fontSize: 13, lineHeight: 18, paddingVertical: 18 },
   goalTaskHint: { textAlign: 'center', fontSize: 11, lineHeight: 16, marginTop: 14 },
   checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },

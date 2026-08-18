@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
+import { useSQLiteContext } from 'expo-sqlite';
 
 import type { Goal, GoalDraft, GoalHabitLink, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ISOWeekday, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
-import { scheduledHabitDates } from '../features/goals/habitSchedule';
+import { archiveRoutineRecord, reconcileRoutineItems, saveRoutineRecord } from '../database/routineStore';
 import { matchingSnippet } from '../shared/search';
 
 export type { ItemDraft } from '../models/planning';
@@ -147,61 +147,6 @@ function addDays(isoDate: string, amount: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-async function ensureHabitTasks(db: SQLiteDatabase, startDate: string, endDate: string) {
-  const habits = await db.getAllAsync<{ id: string; name: string; schedule_json: string; start_date: string; end_date: string | null; item_kind: Habit['itemKind']; start_time: string | null; end_time: string | null }>(
-    `SELECT id, name, schedule_json, start_date, end_date, item_kind, start_time, end_time FROM habits
-     WHERE archived_at IS NULL AND start_date <= ? AND (end_date IS NULL OR end_date >= ?)`,
-    endDate,
-    startDate,
-  );
-  const existingRows = await db.getAllAsync<{ habit_id: string; anchor_start: string }>(
-    `SELECT habit_id, anchor_start FROM items
-     WHERE deleted_at IS NULL AND habit_id IS NOT NULL AND anchor_start >= ? AND anchor_start <= ?`,
-    startDate,
-    endDate,
-  );
-  const skipRows = await db.getAllAsync<{ habit_id: string; date: string }>(
-    'SELECT habit_id, date FROM habit_skips WHERE date >= ? AND date <= ?',
-    startDate,
-    endDate,
-  );
-  const existing = new Set(existingRows.map((row) => `${row.habit_id}:${row.anchor_start}`));
-  const skipped = new Set(skipRows.map((row) => `${row.habit_id}:${row.date}`));
-  const inserts: { habitId: string; name: string; date: string; itemKind: Habit['itemKind']; startTime: string | null; endTime: string | null }[] = [];
-
-  for (const habit of habits) {
-    let weekdays: ISOWeekday[] = [];
-    try { weekdays = JSON.parse(habit.schedule_json) as ISOWeekday[]; } catch { weekdays = []; }
-    const dates = scheduledHabitDates({ weekdays, startDate: habit.start_date, endDate: habit.end_date ?? undefined }, startDate, endDate);
-    for (const scheduledDate of dates) {
-      const key = `${habit.id}:${scheduledDate}`;
-      if (!existing.has(key) && !skipped.has(key)) {
-        inserts.push({ habitId: habit.id, name: habit.name, date: scheduledDate, itemKind: habit.item_kind ?? 'task', startTime: habit.start_time, endTime: habit.end_time });
-        existing.add(key);
-      }
-    }
-  }
-
-  if (!inserts.length) return;
-  const now = new Date().toISOString();
-  await db.withTransactionAsync(async () => {
-    for (const entry of inserts) {
-      await db.runAsync(
-        `INSERT INTO items
-          (id, kind, title, anchor_start, anchor_end, precision, altitude, habit_id,
-           start_time, end_time, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?,
-           COALESCE((SELECT MAX(sort_order) + 1 FROM items WHERE kind = ? AND anchor_start = ?), 0), ?, ?)`,
-        makeId(), entry.itemKind, entry.name, entry.date, entry.date,
-        entry.itemKind === 'event' ? 'time' : 'day', entry.habitId,
-        entry.itemKind === 'event' ? entry.startTime : null,
-        entry.itemKind === 'event' ? entry.endTime : null,
-        entry.itemKind, entry.date, now, now,
-      );
-    }
-  });
-}
-
 export function useTodayData(date: string, reviewDate = date) {
   const db = useSQLiteContext();
   const [items, setItems] = useState<PlanningItem[]>([]);
@@ -219,7 +164,9 @@ export function useTodayData(date: string, reviewDate = date) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    await ensureHabitTasks(db, reviewDate, addDays(reviewDate, 90));
+    const routineHorizon = addDays(reviewDate, 90);
+    await reconcileRoutineItems(db, reviewDate, routineHorizon);
+    if (date > routineHorizon) await reconcileRoutineItems(db, date, date);
 
     const [todayRows, upcomingRows, overdueRows, goalRows, habitRows, goalStepRows, activityRows, skipRows, failureRows, linkRows, page, morningReview, libraryEntry] = await Promise.all([
       db.getAllAsync<ItemRow>(
@@ -345,29 +292,56 @@ export function useTodayData(date: string, reviewDate = date) {
   const saveItem = useCallback(async (draft: ItemDraft) => {
     const now = new Date().toISOString();
     if (draft.id) {
-      await db.runAsync(
-        `UPDATE items
-         SET kind = ?, title = ?, anchor_start = ?, anchor_end = ?,
-             precision = ?, altitude = ?, start_time = ?, end_time = ?, notes = ?, location = ?,
-             location_name = ?, location_latitude = ?, location_longitude = ?, event_type = ?, updated_at = ?
-         WHERE id = ?`,
-        draft.kind,
-        draft.title.trim(),
-        draft.date,
-        draft.endDate ?? draft.date,
-        draft.precision ?? (draft.kind === 'event' && draft.time ? 'time' : 'day'),
-        draft.altitude ?? (draft.kind === 'event' ? 1 : 0),
-        draft.kind === 'event' ? draft.time?.trim() || null : null,
-        draft.kind === 'event' ? draft.endTime?.trim() || null : null,
-        draft.notes?.trim() || null,
-        draft.location?.trim() || null,
-        draft.locationPlace?.name ?? null,
-        draft.locationPlace?.latitude ?? null,
-        draft.locationPlace?.longitude ?? null,
-        draft.kind === 'event' ? draft.eventType ?? 'event' : 'event',
-        now,
-        draft.id,
+      const itemId = draft.id;
+      const existing = await db.getFirstAsync<{ habit_id: string | null; anchor_start: string | null }>(
+        'SELECT habit_id, anchor_start FROM items WHERE id = ?',
+        itemId,
       );
+      await db.withTransactionAsync(async () => {
+        await db.runAsync(
+          `UPDATE items
+           SET kind = ?, title = ?, anchor_start = ?, anchor_end = ?,
+               precision = ?, altitude = ?, start_time = ?, end_time = ?, notes = ?, location = ?,
+               location_name = ?, location_latitude = ?, location_longitude = ?, event_type = ?, updated_at = ?
+           WHERE id = ?`,
+          draft.kind,
+          draft.title.trim(),
+          draft.date,
+          draft.endDate ?? draft.date,
+          draft.precision ?? (draft.kind === 'event' && draft.time ? 'time' : 'day'),
+          draft.altitude ?? (draft.kind === 'event' ? 1 : 0),
+          draft.kind === 'event' ? draft.time?.trim() || null : null,
+          draft.kind === 'event' ? draft.endTime?.trim() || null : null,
+          draft.notes?.trim() || null,
+          draft.location?.trim() || null,
+          draft.locationPlace?.name ?? null,
+          draft.locationPlace?.latitude ?? null,
+          draft.locationPlace?.longitude ?? null,
+          draft.kind === 'event' ? draft.eventType ?? 'event' : 'event',
+          now,
+          itemId,
+        );
+        await db.runAsync(
+          `UPDATE goal_steps SET title = ?, scheduled_date = ?, updated_at = ?
+           WHERE item_id = ? AND deleted_at IS NULL`,
+          draft.title.trim(),
+          draft.date,
+          now,
+          itemId,
+        );
+        if (existing?.habit_id && existing.anchor_start && existing.anchor_start !== draft.date) {
+          // A moved routine occurrence becomes an intentional one-off. Remember
+          // the original date as skipped so reconciliation cannot recreate it.
+          await db.runAsync(
+            'INSERT OR IGNORE INTO habit_skips (habit_id, date, created_at) VALUES (?, ?, ?)',
+            existing.habit_id,
+            existing.anchor_start,
+            now,
+          );
+          await db.runAsync('DELETE FROM habit_failures WHERE habit_id = ? AND date = ?', existing.habit_id, existing.anchor_start);
+          await db.runAsync('UPDATE items SET habit_id = NULL, updated_at = ? WHERE id = ?', now, itemId);
+        }
+      });
     } else {
       await db.runAsync(
         `INSERT INTO items
@@ -455,6 +429,9 @@ export function useTodayData(date: string, reviewDate = date) {
   }, [db]);
 
   const loadRange = useCallback(async (startDate: string, endDate: string): Promise<TimelineSnapshot> => {
+    const routineStart = startDate > reviewDate ? startDate : reviewDate;
+    const routineEnd = endDate < addDays(reviewDate, 365) ? endDate : addDays(reviewDate, 365);
+    if (routineStart <= routineEnd) await reconcileRoutineItems(db, routineStart, routineEnd);
     const [rows, goalRows, pages] = await Promise.all([db.getAllAsync<ItemRow>(
       `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
               start_time, end_time, completed_at, notes, location, habit_id, sort_order,
@@ -486,7 +463,7 @@ export function useTodayData(date: string, reviewDate = date) {
       goals: goalRows.map(toGoal),
       reflections: Object.fromEntries(pages.map((page) => [page.date, page.reflection])),
     };
-  }, [db]);
+  }, [db, reviewDate]);
 
   const toggleGoal = useCallback(async (goal: Goal) => {
     const now = new Date().toISOString();
@@ -529,27 +506,58 @@ export function useTodayData(date: string, reviewDate = date) {
     await db.withTransactionAsync(async () => {
       await db.runAsync(
         `UPDATE items SET deleted_at = ?, updated_at = ?
-         WHERE completed_at IS NULL AND id IN (
+         WHERE (completed_at IS NULL OR anchor_start >= ?) AND id IN (
            SELECT item_id FROM goal_steps WHERE goal_id = ? AND deleted_at IS NULL
          )`,
         now,
         now,
+        reviewDate,
         id,
       );
       await db.runAsync('UPDATE goal_steps SET deleted_at = ?, updated_at = ? WHERE goal_id = ?', now, now, id);
+      await db.runAsync('DELETE FROM goal_habits WHERE goal_id = ?', id);
       await db.runAsync('UPDATE goals SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, id);
     });
     await refresh();
-  }, [db, refresh]);
+  }, [db, refresh, reviewDate]);
 
   const saveGoalStep = useCallback(async (draft: GoalStepDraft) => {
     const now = new Date().toISOString();
-    const itemId = makeId();
-    const stepId = makeId();
     const scheduledDate = draft.scheduledDate ?? null;
     // The original local schema keeps this column non-null; an empty value means
     // the step belongs to the goal but has not been placed on a calendar day.
     const storedScheduledDate = scheduledDate ?? '';
+    if (draft.id) {
+      const stepId = draft.id;
+      const existing = await db.getFirstAsync<{ item_id: string }>(
+        'SELECT item_id FROM goal_steps WHERE id = ? AND deleted_at IS NULL',
+        stepId,
+      );
+      if (!existing) return;
+      await db.withTransactionAsync(async () => {
+        await db.runAsync(
+          'UPDATE goal_steps SET title = ?, scheduled_date = ?, updated_at = ? WHERE id = ?',
+          draft.title.trim(),
+          storedScheduledDate,
+          now,
+          stepId,
+        );
+        await db.runAsync(
+          `UPDATE items SET title = ?, anchor_start = ?, anchor_end = ?, updated_at = ?, deleted_at = NULL
+           WHERE id = ?`,
+          draft.title.trim(),
+          scheduledDate,
+          scheduledDate,
+          now,
+          existing.item_id,
+        );
+      });
+      await refresh();
+      return;
+    }
+
+    const itemId = makeId();
+    const stepId = makeId();
     await db.withTransactionAsync(async () => {
       await db.runAsync(
         `INSERT INTO items
@@ -590,39 +598,7 @@ export function useTodayData(date: string, reviewDate = date) {
   }, [db, refresh]);
 
   const saveHabit = useCallback(async (draft: HabitDraft) => {
-    const now = new Date().toISOString();
-    const schedule = JSON.stringify([...draft.weekdays].sort((a, b) => a - b));
-    const habitId = draft.id ?? makeId();
-    if (draft.id) {
-      await db.withTransactionAsync(async () => {
-        await db.runAsync(
-          `UPDATE habits SET name = ?, schedule_json = ?, start_date = ?, end_date = ?, cue = ?, item_kind = ?, start_time = ?, end_time = ?, updated_at = ?
-           WHERE id = ?`,
-          draft.name.trim(), schedule, draft.startDate, draft.endDate ?? null, draft.cue?.trim() || null,
-          draft.itemKind, draft.itemKind === 'event' ? draft.startTime ?? null : null,
-          draft.itemKind === 'event' ? draft.endTime ?? null : null, now, habitId,
-        );
-        await db.runAsync(
-          `UPDATE items SET deleted_at = ?, updated_at = ?
-           WHERE habit_id = ? AND anchor_start >= ? AND completed_at IS NULL AND deleted_at IS NULL`,
-          now, now, habitId, reviewDate,
-        );
-        await db.runAsync(
-          `UPDATE items SET title = ?, updated_at = ?
-           WHERE habit_id = ? AND completed_at IS NOT NULL AND deleted_at IS NULL`,
-          draft.name.trim(), now, habitId,
-        );
-      });
-    } else {
-      await db.runAsync(
-        `INSERT INTO habits
-          (id, name, schedule_json, start_date, end_date, cue, item_kind, start_time, end_time, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        habitId, draft.name.trim(), schedule, draft.startDate, draft.endDate ?? null, draft.cue?.trim() || null,
-        draft.itemKind, draft.itemKind === 'event' ? draft.startTime ?? null : null,
-        draft.itemKind === 'event' ? draft.endTime ?? null : null, now, now,
-      );
-    }
+    const habitId = await saveRoutineRecord(db, draft, reviewDate, { makeId });
     await refresh();
     return habitId;
   }, [db, refresh, reviewDate]);
@@ -716,15 +692,8 @@ export function useTodayData(date: string, reviewDate = date) {
   const toggleHabit = useCallback(async (habit: Habit) => toggleHabitDate(habit, date), [date, toggleHabitDate]);
 
   const archiveHabit = useCallback(async (id: string) => {
-    const now = new Date().toISOString();
-    await db.withTransactionAsync(async () => {
-      await db.runAsync('UPDATE habits SET archived_at = ?, updated_at = ? WHERE id = ?', now, now, id);
-      await db.runAsync(
-        `UPDATE items SET deleted_at = ?, updated_at = ?
-         WHERE habit_id = ? AND anchor_start >= ? AND completed_at IS NULL AND deleted_at IS NULL`,
-        now, now, id, reviewDate,
-      );
-    });
+    await archiveRoutineRecord(db, id, reviewDate);
+    await db.runAsync('DELETE FROM goal_habits WHERE habit_id = ?', id);
     await refresh();
   }, [db, refresh, reviewDate]);
 
@@ -746,12 +715,23 @@ export function useTodayData(date: string, reviewDate = date) {
 
   const deleteItem = useCallback(async (id: string) => {
     const now = new Date().toISOString();
-    await db.runAsync(
-      'UPDATE items SET deleted_at = ?, updated_at = ? WHERE id = ?',
-      now,
-      now,
+    const item = await db.getFirstAsync<{ habit_id: string | null; anchor_start: string | null }>(
+      'SELECT habit_id, anchor_start FROM items WHERE id = ?',
       id,
     );
+    await db.withTransactionAsync(async () => {
+      await db.runAsync('UPDATE items SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, id);
+      await db.runAsync('UPDATE goal_steps SET deleted_at = ?, updated_at = ? WHERE item_id = ? AND deleted_at IS NULL', now, now, id);
+      if (item?.habit_id && item.anchor_start) {
+        await db.runAsync(
+          'INSERT OR IGNORE INTO habit_skips (habit_id, date, created_at) VALUES (?, ?, ?)',
+          item.habit_id,
+          item.anchor_start,
+          now,
+        );
+        await db.runAsync('DELETE FROM habit_failures WHERE habit_id = ? AND date = ?', item.habit_id, item.anchor_start);
+      }
+    });
     await refresh();
   }, [db, refresh]);
 
@@ -800,26 +780,56 @@ export function useTodayData(date: string, reviewDate = date) {
 
   const moveOverdueTask = useCallback(async (id: string, targetDate: string) => {
     const now = new Date().toISOString();
-    await db.runAsync(
-      `UPDATE items SET anchor_start = ?, anchor_end = ?, updated_at = ?
-       WHERE id = ?`,
-      targetDate,
-      targetDate,
-      now,
+    const item = await db.getFirstAsync<{ habit_id: string | null; anchor_start: string | null }>(
+      'SELECT habit_id, anchor_start FROM items WHERE id = ?',
       id,
     );
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `UPDATE items SET anchor_start = ?, anchor_end = ?, habit_id = NULL, updated_at = ?
+         WHERE id = ?`,
+        targetDate,
+        targetDate,
+        now,
+        id,
+      );
+      await db.runAsync(
+        'UPDATE goal_steps SET scheduled_date = ?, updated_at = ? WHERE item_id = ? AND deleted_at IS NULL',
+        targetDate,
+        now,
+        id,
+      );
+      if (item?.habit_id && item.anchor_start) {
+        await db.runAsync(
+          'INSERT OR REPLACE INTO habit_failures (habit_id, date, created_at) VALUES (?, ?, ?)',
+          item.habit_id,
+          item.anchor_start,
+          now,
+        );
+      }
+    });
     await markMorningReviewed();
     await refresh();
   }, [db, markMorningReviewed, refresh]);
 
   const dismissOverdueTask = useCallback(async (id: string) => {
     const now = new Date().toISOString();
-    await db.runAsync(
-      'UPDATE items SET deleted_at = ?, updated_at = ? WHERE id = ?',
-      now,
-      now,
+    const item = await db.getFirstAsync<{ habit_id: string | null; anchor_start: string | null }>(
+      'SELECT habit_id, anchor_start FROM items WHERE id = ?',
       id,
     );
+    await db.withTransactionAsync(async () => {
+      await db.runAsync('UPDATE items SET deleted_at = ?, updated_at = ? WHERE id = ?', now, now, id);
+      await db.runAsync('UPDATE goal_steps SET deleted_at = ?, updated_at = ? WHERE item_id = ? AND deleted_at IS NULL', now, now, id);
+      if (item?.habit_id && item.anchor_start) {
+        await db.runAsync(
+          'INSERT OR REPLACE INTO habit_failures (habit_id, date, created_at) VALUES (?, ?, ?)',
+          item.habit_id,
+          item.anchor_start,
+          now,
+        );
+      }
+    });
     await markMorningReviewed();
     await refresh();
   }, [db, markMorningReviewed, refresh]);
