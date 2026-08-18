@@ -135,6 +135,7 @@ export function useTodayData(date: string, _reviewDate = date) {
           notes: draft.notes,
           location: draft.location,
           locationPlace: draft.locationPlace,
+          meetingUrl: draft.meetingUrl,
           eventType: draft.eventType ?? (draft.id ? current.find((existing) => existing.id === draft.id)?.eventType : undefined),
         };
         return draft.id
@@ -280,6 +281,15 @@ export function useTodayData(date: string, _reviewDate = date) {
           skipped: true,
         }]);
       }
+    },
+    findItemForRemoval: async (query: string, targetDate: string) => {
+      const needle = query.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const candidates = allItems.filter((item) => item.anchorStart === targetDate).map((item) => {
+        const title = item.title.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+        const score = title === needle ? 3 : title.includes(needle) ? 2 : needle.includes(title) ? 1 : 0;
+        return { item, score };
+      }).filter(({ score }) => score > 0).sort((a, b) => b.score - a.score);
+      return candidates[0]?.item ?? null;
     },
     saveJournal: async (value: string) => setJournals((current) => ({ ...current, [date]: value })),
     saveJournalToLibrary: async (value: string) => {

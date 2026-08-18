@@ -26,6 +26,7 @@ interface ItemRow {
   location_latitude: number | null;
   location_longitude: number | null;
   event_type: PlanningItem['eventType'];
+  meeting_url: string | null;
 }
 
 interface GoalRow {
@@ -86,6 +87,7 @@ function toItem(row: ItemRow): PlanningItem {
       longitude: row.location_longitude,
     } : undefined,
     eventType: row.event_type ?? 'event',
+    meetingUrl: row.meeting_url ?? undefined,
   };
 }
 
@@ -141,6 +143,10 @@ function makeId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function normalizedTitle(value: string) {
+  return value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
 function addDays(isoDate: string, amount: number) {
   const [year, month, day] = isoDate.split('-').map(Number);
   const date = new Date(year, month - 1, day + amount);
@@ -172,7 +178,7 @@ export function useTodayData(date: string, reviewDate = date) {
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
                 start_time, end_time, completed_at, notes, location, habit_id, sort_order,
-                location_name, location_latitude, location_longitude, event_type
+                location_name, location_latitude, location_longitude, event_type, meeting_url
          FROM items
          WHERE deleted_at IS NULL AND anchor_start = ?
          ORDER BY CASE kind WHEN 'event' THEN 0 ELSE 1 END,
@@ -184,7 +190,7 @@ export function useTodayData(date: string, reviewDate = date) {
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
                 start_time, end_time, completed_at, notes, location, habit_id, sort_order,
-                location_name, location_latitude, location_longitude, event_type
+                location_name, location_latitude, location_longitude, event_type, meeting_url
          FROM items
          WHERE deleted_at IS NULL AND kind = 'event'
            AND anchor_start > ? AND anchor_start <= ?
@@ -196,7 +202,7 @@ export function useTodayData(date: string, reviewDate = date) {
       db.getAllAsync<ItemRow>(
         `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
                 start_time, end_time, completed_at, notes, location, habit_id, sort_order,
-                location_name, location_latitude, location_longitude, event_type
+                location_name, location_latitude, location_longitude, event_type, meeting_url
          FROM items
          WHERE deleted_at IS NULL AND kind = 'task'
            AND completed_at IS NULL AND anchor_start < ?
@@ -302,7 +308,7 @@ export function useTodayData(date: string, reviewDate = date) {
           `UPDATE items
            SET kind = ?, title = ?, anchor_start = ?, anchor_end = ?,
                precision = ?, altitude = ?, start_time = ?, end_time = ?, notes = ?, location = ?,
-               location_name = ?, location_latitude = ?, location_longitude = ?, event_type = ?, updated_at = ?
+               location_name = ?, location_latitude = ?, location_longitude = ?, event_type = ?, meeting_url = ?, updated_at = ?
            WHERE id = ?`,
           draft.kind,
           draft.title.trim(),
@@ -318,6 +324,7 @@ export function useTodayData(date: string, reviewDate = date) {
           draft.locationPlace?.latitude ?? null,
           draft.locationPlace?.longitude ?? null,
           draft.kind === 'event' ? draft.eventType ?? 'event' : 'event',
+          draft.kind === 'event' ? draft.meetingUrl?.trim() || null : null,
           now,
           itemId,
         );
@@ -347,8 +354,8 @@ export function useTodayData(date: string, reviewDate = date) {
         `INSERT INTO items
           (id, kind, title, anchor_start, anchor_end, precision, altitude,
            start_time, end_time, notes, location, location_name, location_latitude,
-           location_longitude, event_type, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+           location_longitude, event_type, meeting_url, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
            COALESCE((SELECT MAX(sort_order) + 1 FROM items WHERE kind = ? AND anchor_start = ?), 0), ?, ?)`,
         makeId(),
         draft.kind,
@@ -365,6 +372,7 @@ export function useTodayData(date: string, reviewDate = date) {
         draft.locationPlace?.latitude ?? null,
         draft.locationPlace?.longitude ?? null,
         draft.kind === 'event' ? draft.eventType ?? 'event' : 'event',
+        draft.kind === 'event' ? draft.meetingUrl?.trim() || null : null,
         draft.kind,
         draft.date,
         now,
@@ -435,7 +443,7 @@ export function useTodayData(date: string, reviewDate = date) {
     const [rows, goalRows, pages] = await Promise.all([db.getAllAsync<ItemRow>(
       `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
               start_time, end_time, completed_at, notes, location, habit_id, sort_order,
-              location_name, location_latitude, location_longitude, event_type
+              location_name, location_latitude, location_longitude, event_type, meeting_url
        FROM items
        WHERE deleted_at IS NULL
          AND anchor_start IS NOT NULL
@@ -735,6 +743,29 @@ export function useTodayData(date: string, reviewDate = date) {
     await refresh();
   }, [db, refresh]);
 
+  const findItemForRemoval = useCallback(async (query: string, targetDate: string) => {
+    const rows = await db.getAllAsync<ItemRow>(
+      `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
+              start_time, end_time, completed_at, notes, location, habit_id, sort_order,
+              location_name, location_latitude, location_longitude, event_type, meeting_url
+       FROM items
+       WHERE deleted_at IS NULL AND anchor_start = ?
+       ORDER BY CASE kind WHEN 'event' THEN 0 ELSE 1 END, start_time, created_at`,
+      targetDate,
+    );
+    const needle = normalizedTitle(query);
+    if (!needle) return null;
+    const ranked = rows
+      .map((row) => {
+        const title = normalizedTitle(row.title);
+        const score = title === needle ? 3 : title.includes(needle) ? 2 : needle.includes(title) ? 1 : 0;
+        return { row, score };
+      })
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score);
+    return ranked[0] ? toItem(ranked[0].row) : null;
+  }, [db]);
+
   const saveJournal = useCallback(async (reflection: string) => {
     const now = new Date().toISOString();
     await db.runAsync(
@@ -870,6 +901,7 @@ export function useTodayData(date: string, reviewDate = date) {
     unlinkHabitFromGoal,
     archiveHabit,
     deleteItem,
+    findItemForRemoval,
     saveJournal,
     saveJournalToLibrary,
     moveOverdueTask,

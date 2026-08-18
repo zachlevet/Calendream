@@ -41,6 +41,7 @@ import {
 import { eventPhase, timeMinutes } from '@/shared/time';
 import { orderedWeekdayLabels, weekdayOffset } from '@/shared/week';
 import { openItemInMaps } from '@/services/maps';
+import { normalizeWebUrl, openMeetingUrl } from '@/services/links';
 import { palette, type AppColors } from '@/theme/colors';
 import CalendreamMapKit from '../../../modules/calendream-mapkit/src/CalendreamMapKitModule';
 import type { MapSuggestion } from '../../../modules/calendream-mapkit/src/CalendreamMapKit.types';
@@ -94,6 +95,7 @@ export function TodayScreen() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [timelineRevision, setTimelineRevision] = useState(0);
   const [timelineEntryRevision, setTimelineEntryRevision] = useState(0);
+  const [timelineFocusDate, setTimelineFocusDate] = useState(today);
   const [journal, setJournal] = useState('');
   const [briefingSessionActive, setBriefingSessionActive] = useState(false);
   const [inlineEditor, setInlineEditor] = useState<EditorState>(null);
@@ -240,6 +242,7 @@ export function TodayScreen() {
       notes: item.notes,
       location: item.location,
       locationPlace: item.locationPlace,
+      meetingUrl: item.meetingUrl,
     });
     setInlineEditor({ kind: item.kind, item });
   }
@@ -310,6 +313,16 @@ export function TodayScreen() {
     Keyboard.dismiss();
     setCalendarOpen(false);
     if (searchOpen) closeSearch();
+    setTimelineEntryRevision((revision) => revision + 1);
+    setTimelineFocusDate(today);
+    setDestination('timeline');
+  }
+
+  function openTimelineDate(date: string) {
+    Keyboard.dismiss();
+    setCalendarOpen(false);
+    if (searchOpen) closeSearch();
+    setTimelineFocusDate(date);
     setTimelineEntryRevision((revision) => revision + 1);
     setDestination('timeline');
   }
@@ -448,7 +461,7 @@ export function TodayScreen() {
                 return (
                   <Pressable
                     key={item.id}
-                    onPress={() => setEditor({ kind: 'event', item })}
+                    onPress={() => openTimelineDate(item.anchorStart ?? selectedDate)}
                     style={[styles.upcomingPill, { backgroundColor: trip ? colors.orangeSoft : colors.blueSoft }]}
                   >
                     <Text style={[styles.upcomingText, { color: trip ? colors.orange : colors.blue }]} numberOfLines={1}>{label}</Text>
@@ -496,6 +509,9 @@ export function TodayScreen() {
                 onAction={() => void toggleNewInlineEditor('event')}
                 title="Events"
               />
+              {!events.length && inlineEditor?.kind !== 'event' && (
+                <EmptySectionPrompt colors={colors} kind="event" onPress={() => void toggleNewInlineEditor('event')} />
+              )}
               {events.map((event) => {
                 const habitEntries = event.habitId
                   ? data.habitActivity.filter((entry) => entry.habitId === event.habitId && entry.date === selectedDate)
@@ -525,6 +541,7 @@ export function TodayScreen() {
                         </Text>
                       )}
                     </View>
+                    {(event.location || event.meetingUrl) && <View style={styles.eventActions}>
                     {event.location && (
                       <Pressable
                         accessibilityLabel={`Open ${event.location} in Maps`}
@@ -538,6 +555,20 @@ export function TodayScreen() {
                         <Text style={[styles.mapsButtonText, { color: colors.blue }]}>Maps</Text>
                       </Pressable>
                     )}
+                    {event.meetingUrl && (
+                      <Pressable
+                        accessibilityLabel={`Join ${event.title}`}
+                        hitSlop={8}
+                        onPress={(pressEvent) => {
+                          pressEvent.stopPropagation();
+                          void openMeetingUrl(event.meetingUrl);
+                        }}
+                        style={[styles.mapsButton, { backgroundColor: colors.blueSoft }]}
+                      >
+                        <Text style={[styles.mapsButtonText, { color: colors.blue }]}>Join</Text>
+                      </Pressable>
+                    )}
+                    </View>}
                   </Pressable>
                 </SwipeDeleteRow>
                   {showHabitCheckIn && (
@@ -567,6 +598,9 @@ export function TodayScreen() {
                 onAction={() => void toggleNewInlineEditor('task')}
                 title="Tasks"
               />
+              {!tasks.length && inlineEditor?.kind !== 'task' && (
+                <EmptySectionPrompt colors={colors} kind="task" onPress={() => void toggleNewInlineEditor('task')} />
+              )}
               {tasks.map((task, index) => (
                 <Fragment key={task.id}>
                   <SwipeDeleteRow colors={colors} label={task.title} onDelete={() => confirmRemoveItem(task)}>
@@ -602,6 +636,7 @@ export function TodayScreen() {
           colors={colors}
           dataRevision={timelineRevision}
           key={`timeline-home-${timelineEntryRevision}`}
+          initialDate={timelineFocusDate}
           loadRange={data.loadRange}
           onSaveItem={async (draft) => {
             await data.saveItem(draft);
@@ -706,6 +741,8 @@ export function TodayScreen() {
         initialKind={capturePreset?.kind}
         key={`${quickCaptureOpen}-${capturePreset?.date ?? selectedDate}-${capturePreset?.endDate ?? 'single'}-${capturePreset?.kind ?? 'automatic'}`}
         onClose={closeQuickCapture}
+        onDeleteItem={removeItem}
+        onFindRemoval={data.findItemForRemoval}
         onSave={async (draft) => {
           await data.saveItem(draft);
           setTimelineRevision((revision) => revision + 1);
@@ -1010,6 +1047,17 @@ function TodayGoalPill({ goal, colors, onOpen }: { goal: Goal; colors: AppColors
   );
 }
 
+function EmptySectionPrompt({ kind, colors, onPress }: { kind: 'event' | 'task'; colors: AppColors; onPress: () => void }) {
+  return (
+    <Pressable accessibilityLabel={`Add your first ${kind}`} onPress={onPress} style={({ pressed }) => [styles.emptySectionPrompt, { borderColor: colors.separator }, pressed && styles.pressed]}>
+      <Text style={[styles.emptySectionText, { color: colors.tertiary }]}>Add your first {kind}</Text>
+      <View style={[styles.emptySectionOrb, { backgroundColor: colors.blueSoft }]}>
+        <Text style={[styles.emptySectionPlus, { color: colors.blue }]}>+</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function InlineComposer({ kind, today, colors, initial, onCancel, onDelete, onDraftChange, onReveal, onSave }: {
   kind: 'task' | 'event';
   today: string;
@@ -1026,6 +1074,7 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDelete, onDr
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [location, setLocation] = useState(initial?.location ?? '');
   const [locationPlace, setLocationPlace] = useState<LocationPlace | undefined>(initial?.locationPlace);
+  const [meetingUrl, setMeetingUrl] = useState(initial?.meetingUrl ?? '');
   const [timeOpen, setTimeOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const composerLayout = useRef({ y: 0, height: 0 });
@@ -1036,13 +1085,13 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDelete, onDr
 
   useEffect(() => {
     if (!onDraftChange) return;
-    onDraftChange({ id: initial?.id, kind, title, date: today, endDate: initial?.anchorEnd ?? undefined, precision: initial?.precision, altitude: initial?.altitude, eventType: initial?.eventType, time, endTime: initial?.endTime, notes, location, locationPlace });
-  }, [initial?.altitude, initial?.anchorEnd, initial?.endTime, initial?.eventType, initial?.id, initial?.precision, kind, location, locationPlace, notes, onDraftChange, time, title, today]);
+    onDraftChange({ id: initial?.id, kind, title, date: today, endDate: initial?.anchorEnd ?? undefined, precision: initial?.precision, altitude: initial?.altitude, eventType: initial?.eventType, time, endTime: initial?.endTime, notes, location, locationPlace, meetingUrl });
+  }, [initial?.altitude, initial?.anchorEnd, initial?.endTime, initial?.eventType, initial?.id, initial?.precision, kind, location, locationPlace, meetingUrl, notes, onDraftChange, time, title, today]);
 
   async function submit() {
     if (!title.trim() || saving) return;
     setSaving(true);
-    await onSave({ id: initial?.id, kind, title, date: today, endDate: initial?.anchorEnd ?? undefined, precision: initial?.precision, altitude: initial?.altitude, eventType: initial?.eventType, time, endTime: initial?.endTime, notes, location, locationPlace });
+    await onSave({ id: initial?.id, kind, title, date: today, endDate: initial?.anchorEnd ?? undefined, precision: initial?.precision, altitude: initial?.altitude, eventType: initial?.eventType, time, endTime: initial?.endTime, notes, location, locationPlace, meetingUrl });
   }
 
   function focusComposer() {
@@ -1114,6 +1163,7 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDelete, onDr
           value={location}
         />
       )}
+      {kind === 'event' && <MeetingLinkInput colors={colors} onFocus={focusComposer} onTextChange={setMeetingUrl} value={meetingUrl} />}
       <View style={[styles.inlineActions, initial && styles.inlineEditActions]}>
         {initial ? (onDelete ? (
             <Pressable accessibilityLabel={`Delete ${kind}`} hitSlop={8} onPress={onDelete} style={[styles.inlineDelete, { backgroundColor: colors.background }]}>
@@ -1149,6 +1199,7 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
   const [notes, setNotes] = useState(item?.notes ?? '');
   const [location, setLocation] = useState(item?.location ?? '');
   const [locationPlace, setLocationPlace] = useState<LocationPlace | undefined>(item?.locationPlace);
+  const [meetingUrl, setMeetingUrl] = useState(item?.meetingUrl ?? '');
   const [dateOpen, setDateOpen] = useState(false);
   const [timeOpen, setTimeOpen] = useState(false);
   const initialMonth = dateFromISO(item?.anchorStart ?? today);
@@ -1159,7 +1210,7 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
   async function submit() {
     if (!valid || saving) return;
     setSaving(true);
-    await onSave({ id: item?.id, kind, title, date, endDate: item?.anchorEnd ?? undefined, precision: item?.precision, altitude: item?.altitude, eventType: item?.eventType, time, endTime: item?.endTime, notes, location, locationPlace });
+    await onSave({ id: item?.id, kind, title, date, endDate: item?.anchorEnd ?? undefined, precision: item?.precision, altitude: item?.altitude, eventType: item?.eventType, time, endTime: item?.endTime, notes, location, locationPlace, meetingUrl });
   }
 
   function confirmDelete() {
@@ -1255,6 +1306,7 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
                 value={location}
               />
             )}
+            {kind === 'event' && <MeetingLinkInput colors={colors} labeled onTextChange={setMeetingUrl} value={meetingUrl} />}
           </View>
 
           {item && (
@@ -1266,6 +1318,37 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
         </SafeAreaView>
       </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+function MeetingLinkInput({ value, colors, labeled, onFocus, onTextChange }: {
+  value: string;
+  colors: AppColors;
+  labeled?: boolean;
+  onFocus?: () => void;
+  onTextChange: (value: string) => void;
+}) {
+  const validUrl = normalizeWebUrl(value);
+  return (
+    <View style={[labeled ? styles.inputRow : styles.locationInputRow, styles.meetingLinkRow, { borderColor: colors.separator }]}>
+      {labeled && <Text style={[styles.inputLabel, { color: colors.secondary }]}>LINK</Text>}
+      <TextInput
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="url"
+        onChangeText={onTextChange}
+        onFocus={onFocus}
+        placeholder="Video call link (optional)"
+        placeholderTextColor={colors.tertiary}
+        style={[labeled ? styles.fieldInput : styles.locationInput, styles.meetingLinkInput, { color: colors.text }]}
+        value={value}
+      />
+      {validUrl && (
+        <Pressable accessibilityLabel="Open meeting link" hitSlop={8} onPress={() => void openMeetingUrl(validUrl)} style={[styles.linkOpenButton, { backgroundColor: colors.blueSoft }]}>
+          <Text style={[styles.mapsButtonText, { color: colors.blue }]}>Open</Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -1592,6 +1675,10 @@ const styles = StyleSheet.create({
   sectionHeader: { marginTop: 5, height: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4 },
   sectionAction: { fontSize: 14, fontWeight: '600' },
+  emptySectionPrompt: { minHeight: 48, borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, paddingLeft: 14, paddingRight: 8, marginBottom: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  emptySectionText: { fontSize: 15, fontWeight: '500' },
+  emptySectionOrb: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  emptySectionPlus: { fontSize: 23, lineHeight: 24, fontWeight: '500' },
   eventRow: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
   eventTime: { width: 68, fontSize: 13, fontVariant: ['tabular-nums'] },
   eventRule: { width: 3, height: 27, borderRadius: 2, marginRight: 11 },
@@ -1602,6 +1689,7 @@ const styles = StyleSheet.create({
   habitEventChoiceText: { fontSize: 11, fontWeight: '800' },
   habitEventMissed: { marginLeft: 68, marginTop: 4, marginBottom: 5, fontSize: 10 },
   mapsButton: { height: 28, borderRadius: 14, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
+  eventActions: { flexDirection: 'row', alignItems: 'center' },
   mapsButtonText: { fontSize: 12, fontWeight: '700' },
   rowCopy: { flex: 1, paddingVertical: 6 },
   rowTitle: { fontSize: 16, fontWeight: '500', letterSpacing: -0.15 },
@@ -1628,6 +1716,9 @@ const styles = StyleSheet.create({
   inlineField: { height: 42, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 15 },
   locationInputRow: { minHeight: 42, borderBottomWidth: StyleSheet.hairlineWidth, justifyContent: 'center' },
   locationInput: { minHeight: 42, fontSize: 15 },
+  meetingLinkRow: { flexDirection: 'row', alignItems: 'center' },
+  meetingLinkInput: { flex: 1 },
+  linkOpenButton: { height: 28, borderRadius: 14, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   locationLayerActive: { zIndex: 100 },
   locationSuggestions: { position: 'absolute', left: 0, right: 0, borderRadius: 16, overflow: 'hidden', zIndex: 100, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 14 },
   locationSuggestionsInline: { top: 48 },

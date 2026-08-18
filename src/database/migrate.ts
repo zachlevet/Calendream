@@ -18,6 +18,7 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       completed_at TEXT,
       notes TEXT,
       location TEXT,
+      meeting_url TEXT,
       habit_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -140,6 +141,9 @@ export async function migrateDatabase(db: SQLiteDatabase) {
   }
   if (!itemColumns.some((column) => column.name === 'end_time')) {
     await db.execAsync('ALTER TABLE items ADD COLUMN end_time TEXT');
+  }
+  if (!itemColumns.some((column) => column.name === 'meeting_url')) {
+    await db.execAsync('ALTER TABLE items ADD COLUMN meeting_url TEXT');
   }
   const habitColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(habits)');
   if (!habitColumns.some((column) => column.name === 'cue')) {

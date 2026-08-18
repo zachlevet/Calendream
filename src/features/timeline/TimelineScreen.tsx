@@ -14,6 +14,7 @@ import { buildTimelinePeriods, dateAtPeriodProgress, isGoalRelevantAtZoom, isGoa
 interface TimelineScreenProps {
   colors: AppColors;
   dataRevision: number;
+  initialDate?: string;
   today: string;
   loadRange: (startDate: string, endDate: string) => Promise<TimelineSnapshot>;
   onSaveItem: (draft: ItemDraft) => Promise<void>;
@@ -58,7 +59,7 @@ function yForDate(position: PeriodPosition, date: string) {
   return position.y + progressThroughPeriod(position.start, position.end, date) * position.height;
 }
 
-export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveItem, onOpenGoal, onToggleTask, onOpenDay, renderInlineEditor }: TimelineScreenProps) {
+export function TimelineScreen({ colors, dataRevision, initialDate, today, loadRange, onSaveItem, onOpenGoal, onToggleTask, onOpenDay, renderInlineEditor }: TimelineScreenProps) {
   const [zoom, setZoom] = useState<TimelineZoom>('today');
   const [snapshot, setSnapshot] = useState<TimelineSnapshot>({ items: [], goals: [], reflections: {} });
   const [loading, setLoading] = useState(true);
@@ -71,7 +72,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   const editorView = useRef<View>(null);
   const scrollOffset = useRef(0);
   const currentPeriod = useRef<PeriodPosition | null>(null);
-  const focusDate = useRef(today);
+  const focusDate = useRef(initialDate ?? today);
   const alignPeriodFromStart = useRef(false);
   const periodPositions = useRef(new Map<string, PeriodPosition>());
   const keyboardTop = useRef(Dimensions.get('window').height);
@@ -124,7 +125,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
       return;
     }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setInlineDraft({ id: item.id, kind: item.kind, title: item.title, date: item.anchorStart ?? today, endDate: item.anchorEnd ?? undefined, precision: item.precision, altitude: item.altitude, eventType: item.eventType, time: item.startTime, endTime: item.endTime, notes: item.notes, location: item.location, locationPlace: item.locationPlace });
+    setInlineDraft({ id: item.id, kind: item.kind, title: item.title, date: item.anchorStart ?? today, endDate: item.anchorEnd ?? undefined, precision: item.precision, altitude: item.altitude, eventType: item.eventType, time: item.startTime, endTime: item.endTime, notes: item.notes, location: item.location, locationPlace: item.locationPlace, meetingUrl: item.meetingUrl });
     setEditingItem(item);
     setEditingSlot(slot);
   }, [closeInlineEditor, editingItem, editingSlot, inlineDraft, onSaveItem, today]);
@@ -359,11 +360,11 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
         <CurrentMarker colors={colors} label={period.eyebrow ?? 'Today'} />
       ) : <Text style={[styles.dayEyebrow, { color: dayAccent }]}>{period.eyebrow}</Text>}
       <Pressable onPress={() => onOpenDay(date)}>
-        <Text style={[styles.dayTitle, { color: colors.text }]}>{period.title}</Text>
-        {period.subtitle && <Text style={[styles.daySubtitle, { color: colors.secondary }]}>{period.subtitle}</Text>}
+        <Text style={[styles.dayTitle, { color: date < today ? colors.tertiary : colors.text }]}>{period.title}</Text>
+        {period.subtitle && <Text style={[styles.daySubtitle, { color: date < today ? colors.tertiary : colors.secondary }]}>{period.subtitle}</Text>}
       </Pressable>
 
-      <GoalSection colors={colors} goals={goals} onOpen={onOpenGoal} />
+      <GoalSection colors={colors} compact goals={goals} onOpen={onOpenGoal} />
 
       <TimelineSectionHeader colors={colors} onPress={() => onOpenDay(date)} title="Events" />
       {events.length ? events.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}>{item.id === eventBoundaryId && <CurrentMomentDivider colors={colors} />}<TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <>{period.current && <CurrentMomentDivider colors={colors} />}<Text style={[styles.openRow, { color: colors.tertiary }]}>No events planned</Text></>}
@@ -415,14 +416,14 @@ function WeekPage({ period, items, goals, today, colors, editingItem, editingSlo
         <Text style={[styles.weekTitle, { color: colors.text }]}>{monthWeekLabel(period.start)}</Text>
         <Text style={[styles.periodSubtitle, { color: colors.secondary }]}>{period.title}</Text>
       </View>
-      <GoalSection colors={colors} goals={goals} onOpen={onOpenGoal} />
+      <GoalSection colors={colors} compact goals={goals} onOpen={onOpenGoal} />
       {!days.length && <Text style={[styles.emptyWeek, { color: colors.tertiary }]}>No events or tasks yet, let’s get planning :)</Text>}
       {days.map(({ date, items: dayItems }) => {
         const boundaryAtStart = weekBoundary?.date === date && weekBoundary.item.id === dayItems[0]?.id;
         return (
           <View key={date} style={[styles.weekDay, { borderColor: colors.separator }, boundaryAtStart && styles.weekDayAtMoment]}>
             <Pressable accessibilityLabel={`Open ${date}`} onPress={() => onOpenDay(date)} style={styles.weekDateButton}>
-              <TimelineDateGutter colors={colors} date={date} today={today} />
+              <TimelineDateGutter colors={colors} date={date} subdued={date < today} today={today} />
             </Pressable>
             <View style={styles.weekDayItems}>
               {dayItems.map((item) => { const slot = `week-${date}-${item.id}`; const boundary = weekBoundary?.date === date && weekBoundary.item.id === item.id; return <View key={`${date}-${item.id}`}>{boundary && <CurrentMomentDivider colors={colors} week />}<CompactItem colors={colors} hideTopBorder={boundary} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; })}
@@ -563,7 +564,7 @@ function YearPage({ period, items, goals, loading, today, colors, editingItem, e
                     {event.id === yearBoundaryId && <CurrentMomentDivider colors={colors} />}
                     <Pressable onPress={() => onEditItem(event, slot)} style={styles.yearMoment}>
                       <View style={[isTrip(event) ? styles.yearTripMark : styles.yearEventDot, { backgroundColor: isTrip(event) ? (eventPhase(event) === 'past' ? colors.tertiary : colors.orange) : eventAccent(event, colors) }]} />
-                      <Text numberOfLines={1} style={[styles.yearEventText, { color: eventPhase(event) === 'past' || pastMonth ? colors.secondary : colors.text }]}>{event.title}</Text>
+                      <Text numberOfLines={1} style={[styles.yearEventText, { color: eventPhase(event) === 'past' || pastMonth ? colors.tertiary : colors.text }]}>{event.title}</Text>
                       <Text style={[styles.yearMomentDate, { color: eventPhase(event) === 'past' ? colors.tertiary : isTrip(event) ? colors.orange : colors.secondary }]}>{isTrip(event) ? eventRange(event) : formatShortDate(event.anchorStart)}</Text>
                     </Pressable>
                     {editingItem?.id === event.id && editingSlot === slot && <View style={styles.yearInlineEditor}>{inlineEditor}</View>}
@@ -592,8 +593,20 @@ function CurrentMomentDivider({ colors, week = false }: { colors: AppColors; wee
   return <View accessibilityLabel="Current moment" style={[styles.currentMomentDivider, week && styles.currentMomentDividerWeek, { backgroundColor: colors.red }]} />;
 }
 
-function GoalSection({ goals, colors, onOpen }: { goals: Goal[]; colors: AppColors; onOpen: (goal: Goal) => void }) {
+function GoalSection({ goals, colors, compact = false, onOpen }: { goals: Goal[]; colors: AppColors; compact?: boolean; onOpen: (goal: Goal) => void }) {
   if (!goals.length) return null;
+  if (compact) {
+    return (
+      <ScrollView horizontal contentContainerStyle={styles.compactGoalList} showsHorizontalScrollIndicator={false} style={styles.compactGoalScroller}>
+        {goals.map((goal) => (
+          <Pressable accessibilityLabel={`Open goal ${goal.title}`} key={goal.id} onPress={() => onOpen(goal)} style={[styles.compactGoalPill, { backgroundColor: colors.yellowSoft }]}>
+            <Text style={[styles.compactGoalStar, { color: colors.yellow }]}>☆</Text>
+            <Text numberOfLines={1} style={[styles.compactGoalTitle, { color: colors.yellow }]}>{goal.title}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+    );
+  }
   return <View style={styles.goalSection}>{goals.map((goal) => <GoalBlurb colors={colors} goal={goal} key={goal.id} onOpen={() => onOpen(goal)} />)}</View>;
 }
 
@@ -671,10 +684,10 @@ function EditorialEventRow({ event, period, today, colors, onPress, tripRailMode
       </View>
       <View style={styles.editorialEventBody}>
         <View style={styles.editorialEventHeading}>
-          <Text numberOfLines={2} style={[styles.editorialEventTitle, { color: subdued ? colors.secondary : colors.text }]}>{event.title}</Text>
+        <Text numberOfLines={2} style={[styles.editorialEventTitle, { color: subdued ? colors.tertiary : colors.text }]}>{event.title}</Text>
           <Text style={[styles.editorialEventMeta, { color: subdued ? colors.tertiary : trip ? colors.orange : colors.secondary }]}>{trip ? eventRange(event) : event.startTime || 'All day'}</Text>
         </View>
-        {(event.location || event.notes) && <Text numberOfLines={1} style={[styles.editorialEventNote, { color: colors.secondary }]}>{[event.location, event.notes].filter(Boolean).join(' · ')}</Text>}
+        {(event.location || event.notes) && <Text numberOfLines={1} style={[styles.editorialEventNote, { color: subdued ? colors.tertiary : colors.secondary }]}>{[event.location, event.notes].filter(Boolean).join(' · ')}</Text>}
       </View>
     </Pressable>
   );
@@ -682,12 +695,13 @@ function EditorialEventRow({ event, period, today, colors, onPress, tripRailMode
 
 function EditorialCompactEvent({ event, colors, onPress }: { event: PlanningItem; colors: AppColors; onPress: () => void }) {
   const trip = isTrip(event);
+  const past = eventPhase(event) === 'past';
   return (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.editorialCompact, pressed && { opacity: 0.58 }]}>
-      <View style={[trip ? styles.compactTripMark : styles.compactEventMark, { backgroundColor: eventPhase(event) === 'past' ? colors.tertiary : trip ? colors.orange : eventAccent(event, colors) }]} />
+      <View style={[trip ? styles.compactTripMark : styles.compactEventMark, { backgroundColor: past ? colors.tertiary : trip ? colors.orange : eventAccent(event, colors) }]} />
       <View style={styles.editorialCompactCopy}>
-        <Text numberOfLines={1} style={[styles.editorialCompactTitle, { color: eventPhase(event) === 'past' ? colors.secondary : colors.text }]}>{event.title}</Text>
-        <Text style={[styles.editorialCompactMeta, { color: colors.secondary }]}>{trip ? eventRange(event) : formatShortDate(event.anchorStart)}</Text>
+        <Text numberOfLines={1} style={[styles.editorialCompactTitle, { color: past ? colors.tertiary : colors.text }]}>{event.title}</Text>
+        <Text style={[styles.editorialCompactMeta, { color: past ? colors.tertiary : colors.secondary }]}>{trip ? eventRange(event) : formatShortDate(event.anchorStart)}</Text>
       </View>
     </Pressable>
   );
@@ -695,7 +709,7 @@ function EditorialCompactEvent({ event, colors, onPress }: { event: PlanningItem
 
 function TimelineItem({ item, colors, onPress, onToggleTask }: { item: PlanningItem; colors: AppColors; onPress: () => void; onToggleTask: () => void }) {
   const recessed = Boolean(item.completed) || (item.kind === 'event' && eventPhase(item) === 'past');
-  return <Pressable onPress={onPress} style={({ pressed }) => [styles.timelineItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>{item.kind === 'task' ? <Pressable accessibilityLabel={item.completed ? `Mark ${item.title} incomplete` : `Complete ${item.title}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); onToggleTask(); }} style={[styles.checkbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>{item.completed && <Text style={styles.checkmark}>✓</Text>}</Pressable> : <><Text style={[styles.eventTime, { color: recessed ? colors.tertiary : colors.secondary }]}>{item.startTime || 'All day'}</Text><View style={[styles.itemRule, { backgroundColor: eventAccent(item, colors) }]} /></>}<View style={styles.itemCopy}><Text style={[styles.itemTitle, { color: recessed ? colors.tertiary : colors.text }, item.completed && styles.taskCompleted]}>{item.title}</Text>{item.notes && <Text numberOfLines={1} style={[styles.itemNote, { color: recessed ? colors.tertiary : colors.secondary }]}>{item.notes}</Text>}</View></Pressable>;
+  return <Pressable onPress={onPress} style={({ pressed }) => [styles.timelineItem, { borderColor: colors.separator }, pressed && { opacity: 0.55 }]}>{item.kind === 'task' ? <Pressable accessibilityLabel={item.completed ? `Mark ${item.title} incomplete` : `Complete ${item.title}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); onToggleTask(); }} style={[styles.checkbox, { borderColor: colors.tertiary }, item.completed && { backgroundColor: colors.tertiary }]}>{item.completed && <Text style={styles.checkmark}>✓</Text>}</Pressable> : <><Text style={[styles.eventTime, { color: recessed ? colors.tertiary : colors.secondary }]}>{item.startTime || 'All day'}</Text><View style={[styles.itemRule, { backgroundColor: eventAccent(item, colors) }]} /></>}<View style={styles.itemCopy}><Text style={[styles.itemTitle, { color: recessed ? colors.tertiary : colors.text }, item.completed && styles.taskCompleted]}>{item.title}</Text>{item.notes && <Text numberOfLines={1} style={[styles.itemNote, { color: recessed ? colors.tertiary : colors.secondary }]}>{item.notes}</Text>}</View></Pressable>;
 }
 
 function CompactItem({ item, colors, hideTopBorder = false, onPress, onToggleTask }: { item: PlanningItem; colors: AppColors; hideTopBorder?: boolean; onPress: () => void; onToggleTask: () => void }) {
@@ -706,7 +720,7 @@ function CompactItem({ item, colors, hideTopBorder = false, onPress, onToggleTas
     <Pressable onPress={onPress} style={({ pressed }) => [styles.compactItem, { borderColor: colors.separator }, hideTopBorder && styles.compactItemAtMoment, pressed && { opacity: 0.55 }]}>
       {item.kind === 'task' ? (
         <>
-          <Pressable accessibilityLabel={item.completed ? `Mark ${item.title} incomplete` : `Complete ${item.title}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); onToggleTask(); }} style={[styles.weekTaskCheckbox, { borderColor: item.completed ? colors.blue : colors.tertiary }, item.completed && { backgroundColor: colors.blue }]}>
+          <Pressable accessibilityLabel={item.completed ? `Mark ${item.title} incomplete` : `Complete ${item.title}`} hitSlop={8} onPress={(event) => { event.stopPropagation(); onToggleTask(); }} style={[styles.weekTaskCheckbox, { borderColor: colors.tertiary }, item.completed && { backgroundColor: colors.tertiary }]}>
             {item.completed && <Text style={styles.checkmark}>✓</Text>}
           </Pressable>
           <Text numberOfLines={1} style={[styles.compactTitle, { color: item.completed ? colors.tertiary : colors.text }, item.completed && styles.taskCompleted]}>{item.title}</Text>
@@ -714,7 +728,7 @@ function CompactItem({ item, colors, hideTopBorder = false, onPress, onToggleTas
       ) : (
         <>
           <View style={[styles.itemRule, { backgroundColor: eventColor }]} />
-          <Text numberOfLines={1} style={[styles.compactTitle, { color: past ? colors.secondary : colors.text }]}>{item.title}</Text>
+          <Text numberOfLines={1} style={[styles.compactTitle, { color: past ? colors.tertiary : colors.text }]}>{item.title}</Text>
           <Text style={[styles.compactMeta, { color: past ? colors.tertiary : trip ? eventColor : colors.secondary }]}>{item.startTime ?? 'All day'}</Text>
         </>
       )}
@@ -777,6 +791,11 @@ const styles = StyleSheet.create({
   periodSummary: { fontSize: 12, fontWeight: '600', marginTop: 4 },
   editorialEmpty: { fontSize: 15, lineHeight: 21, paddingVertical: 18 },
   goalSection: { marginBottom: 2 },
+  compactGoalScroller: { marginHorizontal: -18, marginTop: 7, marginBottom: 4 },
+  compactGoalList: { paddingHorizontal: 18, gap: 7 },
+  compactGoalPill: { minHeight: 28, maxWidth: 245, borderRadius: 14, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  compactGoalStar: { fontSize: 15, lineHeight: 17, fontWeight: '700' },
+  compactGoalTitle: { flexShrink: 1, fontSize: 13, fontWeight: '600' },
   goalBlurb: { minHeight: 42, borderRadius: 13, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 9, paddingVertical: 5, marginBottom: 5 },
   goalStar: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center', marginRight: 6 },
   goalStarIcon: { fontSize: 18, lineHeight: 20, fontWeight: '600' },

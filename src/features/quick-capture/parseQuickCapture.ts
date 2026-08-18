@@ -1,8 +1,10 @@
 import { addLocalDays, dateFromISO, localISO } from '../../shared/date.ts';
 
 export type CaptureKind = 'task' | 'event' | 'trip';
+export type CaptureAction = 'create' | 'remove';
 
 export interface QuickCaptureResult {
+  action: CaptureAction;
   kind: CaptureKind;
   title: string;
   date: string;
@@ -11,11 +13,13 @@ export interface QuickCaptureResult {
 }
 
 const TRIP_WORDS = /\b(trip|vacation|travel|weekend away|road trip)\b/i;
+const REMOVE_EXPRESSION = /^\s*(?:remove|delete|cancel)\s+(?:the\s+)?/i;
 const TIME_EXPRESSION = /\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i;
 const MONTH_RANGE_EXPRESSION = /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?\s*[-–—]\s*(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b/i;
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 
 export function parseQuickCapture(input: string, defaultDate: string): QuickCaptureResult {
+  const action: CaptureAction = REMOVE_EXPRESSION.test(input) ? 'remove' : 'create';
   const timeMatch = input.match(TIME_EXPRESSION);
   const hour = Number(timeMatch?.[1]);
   const minute = timeMatch?.[2] ?? '00';
@@ -30,13 +34,15 @@ export function parseQuickCapture(input: string, defaultDate: string): QuickCapt
   const date = rangeStart ?? (/\btomorrow\b/i.test(input) ? addLocalDays(defaultDate, 1) : defaultDate);
   const kind: CaptureKind = TRIP_WORDS.test(input) ? 'trip' : time ? 'event' : 'task';
   const title = input
+    .replace(REMOVE_EXPRESSION, '')
     .replace(TIME_EXPRESSION, '')
     .replace(MONTH_RANGE_EXPRESSION, '')
     .replace(/\b(today|tomorrow)\b/gi, '')
+    .replace(/\b(?:for|on)\s*$/i, '')
     .replace(/\s{2,}/g, ' ')
     .replace(/\s+([,.!?])/g, '$1')
     .replace(/[,.!?]+$/, '')
     .trim();
 
-  return { kind, title, date, ...(rangeEnd ? { endDate: rangeEnd } : {}), time };
+  return { action, kind, title, date, ...(rangeEnd ? { endDate: rangeEnd } : {}), time };
 }

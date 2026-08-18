@@ -23,6 +23,7 @@ export interface ItemDraft {
   notes?: string;
   location?: string;
   locationPlace?: LocationPlace;
+  meetingUrl?: string;
   altitude?: PlanningItem['altitude'];
   endDate?: string;
   precision?: TimePrecision;
@@ -45,6 +46,7 @@ export interface PlanningItem {
   notes?: string;
   location?: string;
   locationPlace?: LocationPlace;
+  meetingUrl?: string;
   sortOrder?: number;
   eventType?: EventType;
 }

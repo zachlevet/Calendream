@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, LayoutAnimation, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
 
-import type { ItemDraft } from '@/models/planning';
+import type { ItemDraft, PlanningItem } from '@/models/planning';
 import { formatDestination, formatShortDate } from '@/shared/date';
 import type { AppColors } from '@/theme/colors';
 import { type CaptureKind, parseQuickCapture } from './parseQuickCapture';
@@ -16,12 +16,14 @@ interface QuickCaptureSheetProps {
   initialKind?: CaptureKind;
   visible: boolean;
   onClose: () => void;
+  onDeleteItem: (id: string) => Promise<void>;
+  onFindRemoval: (query: string, date: string) => Promise<PlanningItem | null>;
   onSave: (draft: ItemDraft) => Promise<void>;
 }
 
 const KINDS: CaptureKind[] = ['task', 'event', 'trip'];
 
-export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, initialKind, visible, onClose, onSave }: QuickCaptureSheetProps) {
+export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, initialKind, visible, onClose, onDeleteItem, onFindRemoval, onSave }: QuickCaptureSheetProps) {
   const [text, setText] = useState('');
   const [override, setOverride] = useState<CaptureKind | null>(initialKind ?? null);
   const [choosingKind, setChoosingKind] = useState(false);
@@ -53,6 +55,19 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
   async function submit() {
     if (!parsed.title || saving || (ambiguousTime && !timePeriod)) return;
     setSaving(true);
+    if (parsed.action === 'remove') {
+      const match = await onFindRemoval(parsed.title, captureDate);
+      setSaving(false);
+      if (!match) {
+        Alert.alert('Nothing found', `Calendream couldn’t find “${parsed.title}” on ${formatShortDate(captureDate)}.`);
+        return;
+      }
+      Alert.alert(`Remove ${match.kind}?`, `“${match.title}” will be removed from ${formatShortDate(captureDate)}.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => void onDeleteItem(match.id).then(close) },
+      ]);
+      return;
+    }
     await onSave({
       kind: kind === 'task' ? 'task' : 'event',
       title: parsed.title,
@@ -125,7 +140,7 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
                 </View>
               )}
               {parsed.time && kind !== 'task' && <Text style={[styles.time, { color: colors.secondary }]}>{parsed.time}</Text>}
-              <Pressable
+              {parsed.action === 'create' ? <Pressable
                 accessibilityLabel={`Detected as ${kind}. Tap to change.`}
                 onPress={() => {
                   LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -134,8 +149,12 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
                 style={[styles.kindOrb, { backgroundColor: kind === 'trip' ? colors.orangeSoft : kind === 'event' ? colors.blueSoft : colors.card }]}
               >
                 <Text style={[styles.kindText, { color: kind === 'trip' ? colors.orange : kind === 'event' ? colors.blue : colors.secondary }]}>{kind}</Text>
-              </Pressable>
-              {choosingKind && KINDS.filter((option) => option !== kind).map((option) => (
+              </Pressable> : (
+                <View style={[styles.kindOrb, { backgroundColor: colors.redSoft }]}>
+                  <Text style={[styles.kindText, { color: colors.red }]}>remove</Text>
+                </View>
+              )}
+              {parsed.action === 'create' && choosingKind && KINDS.filter((option) => option !== kind).map((option) => (
                 <Pressable
                   accessibilityLabel={`Change to ${option}`}
                   key={option}
@@ -160,7 +179,7 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
               onPress={() => void submit()}
               style={[styles.addButton, { backgroundColor: parsed.title && !(ambiguousTime && !timePeriod) ? colors.red : colors.tertiary }]}
             >
-              <Text style={styles.addButtonText}>{saving ? '…' : '↑'}</Text>
+              <Text style={styles.addButtonText}>{saving ? '…' : parsed.action === 'remove' ? '−' : '↑'}</Text>
             </Pressable>
           </View>
         </View>
