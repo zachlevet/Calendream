@@ -145,7 +145,7 @@ export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, o
           style={({ pressed }) => [styles.planOverview, { backgroundColor: colors.card }, pressed && styles.planOverviewPressed]}
         >
           <View style={styles.planOverviewIdentity}>
-            <Text style={[styles.planIdentityTitle, { color: colors.red }]}>Plan</Text>
+            <Text style={[styles.planIdentityTitle, { color: colors.text }]}>Plan</Text>
             <Text style={[styles.planIdentityMeta, { color: colors.secondary }]}>{goals.filter((goal) => !goal.completed).length} goals · {habits.length} routines</Text>
           </View>
           <View style={styles.plansLink}>
