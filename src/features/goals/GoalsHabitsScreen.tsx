@@ -217,22 +217,24 @@ function GoalDetailPage({ colors, goal, onBack, onDeleteGoal, onDeleteStep, onSa
   return (
     <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.workspaceContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.screen}>
       <PageBackButton colors={colors} label="Your Plans" onBack={onBack} />
-      <View style={styles.goalWorkspaceTitle}>
-        <Pressable onPress={() => void onToggleGoal()} style={[styles.workspaceStar, { borderColor: colors.yellow, backgroundColor: goal.completed ? colors.yellow : colors.yellowSoft }]}><Text style={[styles.workspaceStarText, { color: goal.completed ? '#FFFFFF' : colors.yellow }]}>{goal.completed ? '★' : '☆'}</Text></Pressable>
-        <View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: colors.yellow }]}>{goal.horizon.toUpperCase()} GOAL</Text><Text style={[styles.workspaceTitle, { color: colors.text }]}>{goal.title}</Text><Text style={[styles.workspaceMeta, { color: colors.secondary }]}>{goal.completionDate ? `Completion date ${formatLongDate(goal.completionDate)}` : 'No fixed completion date'}</Text></View>
-        {!editing && <Pressable hitSlop={8} onPress={() => { setDraft(goalDraftFor(goal)); setEditing(true); }}><Text style={[styles.editAction, { color: colors.blue }]}>Edit</Text></Pressable>}
+      <View style={[styles.goalWorkspaceTitle, { backgroundColor: colors.yellowSoft }]}>
+        <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} accomplished`} hitSlop={8} onPress={() => void onToggleGoal()} style={[styles.workspaceStar, { backgroundColor: goal.completed ? '#FFFFFF' : colors.yellow }]}><Text style={[styles.workspaceStarText, { color: goal.completed ? '#FFB000' : '#FFFFFF' }]}>★</Text></Pressable>
+        <View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: colors.yellow }]}>{goal.horizon.toUpperCase()} GOAL</Text><Text style={[styles.workspaceTitle, { color: colors.yellow }]}>{goal.title}</Text><Text style={[styles.workspaceMeta, { color: colors.yellow }]}>{goal.completionDate ? `Completion date ${formatLongDate(goal.completionDate)}` : 'No fixed completion date'}</Text></View>
+        {!editing && <Pressable hitSlop={8} onPress={() => { setDraft(goalDraftFor(goal)); setEditing(true); }} style={styles.goalEditButton}><Text style={[styles.editAction, { color: colors.yellow }]}>Edit</Text></Pressable>}
       </View>
 
       {editing && <View style={[styles.editSurface, { backgroundColor: colors.yellowSoft }]}><GoalForm colors={colors} draft={draft} onChange={setDraft} today={today} /><View style={styles.editorActions}><Pressable onPress={() => Alert.alert('Remove this goal?', 'Its linked tasks will also be removed from future days.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => void onDeleteGoal() }])}><Text style={[styles.deleteAction, { color: colors.red }]}>Remove</Text></Pressable><View style={styles.actionSpacer} /><Pressable onPress={() => setEditing(false)}><Text style={[styles.cancelAction, { color: colors.secondary }]}>Cancel</Text></Pressable><Pressable onPress={async () => { await onSaveGoal(draft); setEditing(false); }} style={[styles.smallSave, { backgroundColor: colors.yellow }]}><Text style={styles.saveText}>Save</Text></Pressable></View></View>}
       {!editing && goal.notes && <Text style={[styles.goalNotes, { color: colors.secondary }]}>{goal.notes}</Text>}
 
-      <SectionHeading action="Add task" colors={colors} onAction={() => setStepDraft({ goalId: goal.id, title: '', scheduledDate: today })} subtitle="Small steps that move this goal forward." title="Tasks" />
-      <View style={[styles.goalTaskList, { borderColor: colors.separator }]}>
-        {steps.map((step) => <Pressable accessibilityLabel={step.completed ? `Mark ${step.title} incomplete` : `Complete ${step.title}`} key={step.id} onLongPress={() => void onDeleteStep(step)} onPress={() => void onToggleStep(step)} style={[styles.goalTaskRow, { borderColor: colors.separator }]}><View style={[styles.goalTaskCheck, { borderColor: step.completed ? colors.blue : colors.tertiary }, step.completed && { backgroundColor: colors.blue }]}>{step.completed && <Text style={styles.checkmark}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.projectTitle, { color: step.completed ? colors.tertiary : colors.text }, step.completed && styles.completed]}>{step.title}</Text><Text style={[styles.projectDate, { color: step.scheduledDate < today && !step.completed ? colors.red : colors.secondary }]}>Scheduled {formatLongDate(step.scheduledDate)}</Text></View></Pressable>)}
-        {!steps.length && !stepDraft && <Text style={[styles.goalTaskEmpty, { color: colors.secondary }]}>No tasks yet. Add the first thing that needs to happen.</Text>}
-        {stepDraft && <View style={[styles.stepComposer, { borderColor: colors.separator }]}><TextInput autoFocus onChangeText={(title) => setStepDraft({ ...stepDraft, title })} placeholder="What needs to happen?" placeholderTextColor={colors.tertiary} style={[styles.stepInput, { color: colors.text }]} value={stepDraft.title} /><Pressable onPress={() => setStepPickerOpen((open) => !open)} style={styles.dateRow}><Text style={[styles.fieldLabel, { color: colors.secondary }]}>Schedule for</Text><Text style={[styles.dateValue, { color: colors.blue }]}>{formatLongDate(stepDraft.scheduledDate)}</Text></Pressable>{stepPickerOpen && <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} minimumDate={dateFromISO(today)} mode="date" onChange={(_, selected) => { if (Platform.OS !== 'ios') setStepPickerOpen(false); if (selected) setStepDraft({ ...stepDraft, scheduledDate: localISO(selected) }); }} value={dateFromISO(stepDraft.scheduledDate)} />}<EditorActions colors={colors} onCancel={() => { setStepDraft(null); setStepPickerOpen(false); }} onSave={() => void saveStep()} saveDisabled={!stepDraft.title.trim()} /></View>}
+      <View style={styles.goalTasksSection}>
+        <SectionHeading action="Add task" colors={colors} onAction={() => setStepDraft({ goalId: goal.id, title: '', scheduledDate: today })} subtitle="Small steps that move this goal forward." title="Tasks" />
+        <View style={[styles.goalTaskList, { borderColor: colors.separator }]}>
+          {steps.map((step) => <Pressable accessibilityLabel={step.completed ? `Mark ${step.title} incomplete` : `Complete ${step.title}`} key={step.id} onLongPress={() => void onDeleteStep(step)} onPress={() => void onToggleStep(step)} style={[styles.goalTaskRow, { borderColor: colors.separator }]}><View style={[styles.goalTaskCheck, { borderColor: step.completed ? colors.blue : colors.tertiary }, step.completed && { backgroundColor: colors.blue }]}>{step.completed && <Text style={styles.checkmark}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.projectTitle, { color: step.completed ? colors.tertiary : colors.text }, step.completed && styles.completed]}>{step.title}</Text><Text style={[styles.projectDate, { color: step.scheduledDate < today && !step.completed ? colors.red : colors.secondary }]}>Scheduled {formatLongDate(step.scheduledDate)}</Text></View></Pressable>)}
+          {!steps.length && !stepDraft && <Text style={[styles.goalTaskEmpty, { color: colors.secondary }]}>No tasks yet. Add the first thing that needs to happen.</Text>}
+          {stepDraft && <View style={[styles.stepComposer, { borderColor: colors.separator }]}><TextInput autoFocus onChangeText={(title) => setStepDraft({ ...stepDraft, title })} placeholder="What needs to happen?" placeholderTextColor={colors.tertiary} style={[styles.stepInput, { color: colors.text }]} value={stepDraft.title} /><Pressable onPress={() => setStepPickerOpen((open) => !open)} style={styles.dateRow}><Text style={[styles.fieldLabel, { color: colors.secondary }]}>Schedule for</Text><Text style={[styles.dateValue, { color: colors.blue }]}>{formatLongDate(stepDraft.scheduledDate)}</Text></Pressable>{stepPickerOpen && <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} minimumDate={dateFromISO(today)} mode="date" onChange={(_, selected) => { if (Platform.OS !== 'ios') setStepPickerOpen(false); if (selected) setStepDraft({ ...stepDraft, scheduledDate: localISO(selected) }); }} value={dateFromISO(stepDraft.scheduledDate)} />}<EditorActions colors={colors} onCancel={() => { setStepDraft(null); setStepPickerOpen(false); }} onSave={() => void saveStep()} saveDisabled={!stepDraft.title.trim()} /></View>}
+        </View>
+        <Text style={[styles.goalTaskHint, { color: colors.tertiary }]}>These also appear as tasks on their scheduled days. Long-press one to remove it.</Text>
       </View>
-      <Text style={[styles.goalTaskHint, { color: colors.tertiary }]}>These also appear as tasks on their scheduled days. Long-press one to remove it.</Text>
     </ScrollView>
   );
 }
@@ -495,14 +497,16 @@ const styles = StyleSheet.create({
   primaryButton: { minHeight: 50, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginTop: 17 },
   primaryButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   workspaceContent: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 112 },
-  goalWorkspaceTitle: { minHeight: 85, flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingTop: 1, marginBottom: 7 },
-  workspaceStar: { width: 35, height: 35, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
-  workspaceStarText: { fontSize: 22, lineHeight: 24 },
-  workspaceTitle: { fontSize: 27, lineHeight: 31, fontWeight: '700', letterSpacing: -0.75, marginTop: 3 },
-  workspaceMeta: { fontSize: 11, lineHeight: 15, marginTop: 4 },
-  editAction: { fontSize: 13, fontWeight: '700', marginTop: 7 },
+  goalWorkspaceTitle: { minHeight: 96, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 14, paddingVertical: 13, marginBottom: 8 },
+  workspaceStar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  workspaceStarText: { fontSize: 23, lineHeight: 25 },
+  workspaceTitle: { fontSize: 22, lineHeight: 26, fontWeight: '700', letterSpacing: -0.55, marginTop: 3 },
+  workspaceMeta: { fontSize: 10, lineHeight: 14, marginTop: 4, opacity: 0.78 },
+  goalEditButton: { minHeight: 38, minWidth: 42, alignItems: 'center', justifyContent: 'center' },
+  editAction: { fontSize: 13, fontWeight: '700' },
   editSurface: { borderRadius: 20, paddingHorizontal: 13, paddingBottom: 8, marginBottom: 11 },
   goalNotes: { fontSize: 14, lineHeight: 20, marginBottom: 12 },
+  goalTasksSection: { marginTop: 9 },
   goalTaskList: { borderTopWidth: StyleSheet.hairlineWidth },
   goalTaskRow: { minHeight: 54, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
   goalTaskCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 10 },

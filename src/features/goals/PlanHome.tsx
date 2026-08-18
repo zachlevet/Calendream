@@ -288,8 +288,11 @@ export function YourPlansHome({ colors, goals, habits, onBack, onOpenGoal, onOpe
   onOpenHabit: (id: string) => void;
   onStartChat: () => void;
 }) {
-  const primaryGoals = goals.filter((goal) => goal.horizon !== 'someday');
-  const somedayGoals = goals.filter((goal) => goal.horizon === 'someday');
+  const primaryGoals = goals.filter((goal) => !goal.completed && goal.horizon !== 'someday');
+  const somedayGoals = goals.filter((goal) => !goal.completed && goal.horizon === 'someday');
+  const completedGoals = goals
+    .filter((goal) => goal.completed)
+    .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
   return (
     <ScrollView contentContainerStyle={styles.libraryContent} showsVerticalScrollIndicator={false} style={styles.flex}>
       <Pressable onPress={onBack} style={[styles.backButton, { backgroundColor: colors.card }]}><Text style={[styles.backText, { color: colors.blue }]}>‹ Plan</Text></Pressable>
@@ -319,8 +322,17 @@ export function YourPlansHome({ colors, goals, habits, onBack, onOpenGoal, onOpe
       {somedayGoals.length > 0 && <><LibraryHeading colors={colors} title="Someday" /><View style={[styles.somedayList, { borderColor: colors.separator }]}>{somedayGoals.map((goal) => <Pressable key={goal.id} onPress={() => onOpenGoal(goal.id)} style={styles.somedayRow}><Text style={[styles.somedayStar, { color: colors.yellow }]}>☆</Text><Text style={[styles.somedayTitle, { color: colors.text }]}>{goal.title}</Text><Text style={[styles.chevron, { color: colors.tertiary }]}>›</Text></Pressable>)}</View></>}
 
       <Pressable onPress={onStartChat} style={[styles.askButton, { borderColor: colors.separator }]}><Text style={[styles.askButtonText, { color: colors.blue }]}>＋ Make a plan with Calendream</Text></Pressable>
+
+      {completedGoals.length > 0 && <><LibraryHeading colors={colors} title="Completed goals" /><View style={[styles.archiveList, { backgroundColor: colors.card }]}>{completedGoals.map((goal, index) => <Pressable key={goal.id} onPress={() => onOpenGoal(goal.id)} style={[styles.archiveRow, index > 0 && { borderTopColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }]}><Text style={styles.archiveStar}>★</Text><View style={styles.copy}><Text style={[styles.archiveTitle, { color: colors.text }]}>{goal.title}</Text><Text style={[styles.archiveDate, { color: colors.secondary }]}>{formatCompletedGoalDate(goal)}</Text></View><Text style={[styles.chevron, { color: colors.tertiary }]}>›</Text></Pressable>)}</View></>}
     </ScrollView>
   );
+}
+
+function formatCompletedGoalDate(goal: Goal) {
+  if (!goal.completedAt) return 'Completed';
+  const date = new Date(goal.completedAt);
+  if (Number.isNaN(date.getTime())) return 'Completed';
+  return `Completed ${new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(date)}`;
 }
 
 function PlanGoalRow({ colors, goal, index, onPress }: { colors: AppColors; goal: Goal; index: number; onPress: () => void }) {
@@ -420,4 +432,9 @@ const styles = StyleSheet.create({
   somedayTitle: { flex: 1, fontSize: 14, fontWeight: '600' },
   askButton: { minHeight: 48, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', marginTop: 13 },
   askButtonText: { fontSize: 14, fontWeight: '700' },
+  archiveList: { borderRadius: 18, paddingHorizontal: 12, overflow: 'hidden', marginBottom: 9 },
+  archiveRow: { minHeight: 51, flexDirection: 'row', alignItems: 'center' },
+  archiveStar: { width: 30, color: '#FFB000', fontSize: 20 },
+  archiveTitle: { fontSize: 14, lineHeight: 18, fontWeight: '600' },
+  archiveDate: { fontSize: 9, lineHeight: 13, marginTop: 2, fontWeight: '600' },
 });

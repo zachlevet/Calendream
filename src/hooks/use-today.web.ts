@@ -134,7 +134,11 @@ export function useTodayData(date: string, _reviewDate = date) {
       }
     },
     toggleGoal: async (goal: Goal) => {
-      setAllGoals((current) => current.map((existing) => existing.id === goal.id ? { ...existing, completed: !existing.completed } : existing));
+      setAllGoals((current) => current.map((existing) => existing.id === goal.id ? {
+        ...existing,
+        completed: !existing.completed,
+        completedAt: existing.completed ? undefined : new Date().toISOString(),
+      } : existing));
     },
     saveGoal: async (draft: GoalDraft) => {
       const id = draft.id ?? `${Date.now()}-goal`;

@@ -58,6 +58,7 @@ export interface Goal {
   targetDate: string;
   completionDate?: string;
   completed?: boolean;
+  completedAt?: string;
   notes?: string;
   linkedHabitId?: string;
 }

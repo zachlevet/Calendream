@@ -99,6 +99,7 @@ function toGoal(row: GoalRow): Goal {
     targetDate: row.target_date,
     completionDate: row.completion_date ?? undefined,
     completed: Boolean(row.completed_at),
+    completedAt: row.completed_at ?? undefined,
     notes: row.notes ?? undefined,
     linkedHabitId: row.linked_habit_id ?? undefined,
   };
