@@ -292,12 +292,34 @@ export function YourPlansHome({ colors, goals, habits, onBack, onOpenGoal, onOpe
   const completedGoals = goals
     .filter((goal) => goal.completed)
     .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
+  const activeGoalCount = primaryGoals.length + somedayGoals.length;
   return (
     <ScrollView contentContainerStyle={styles.libraryContent} showsVerticalScrollIndicator={false} style={styles.flex}>
       <Pressable onPress={onBack} style={[styles.backButton, { backgroundColor: colors.card }]}><Text style={[styles.backText, { color: colors.blue }]}>‹ Plan</Text></Pressable>
       <View style={styles.libraryHeader}>
         <Text style={[styles.libraryTitle, { color: colors.text }]}>Goals & Routines</Text>
         <Text style={[styles.librarySubtitle, { color: colors.secondary }]}>Everything you’ve asked Calendream to keep in motion.</Text>
+        <View style={[styles.librarySummary, { backgroundColor: colors.card }]}>
+          <View style={styles.librarySummaryItem}>
+            <View style={[styles.librarySummaryIcon, { backgroundColor: colors.yellowSoft }]}>
+              <Text style={[styles.librarySummaryStar, { color: colors.yellow }]}>☆</Text>
+            </View>
+            <View>
+              <Text style={[styles.librarySummaryValue, { color: colors.text }]}>{activeGoalCount} {activeGoalCount === 1 ? 'goal' : 'goals'}</Text>
+              <Text style={[styles.librarySummaryLabel, { color: colors.secondary }]}>IN VIEW</Text>
+            </View>
+          </View>
+          <View style={[styles.librarySummaryDivider, { backgroundColor: colors.separator }]} />
+          <View style={styles.librarySummaryItem}>
+            <View style={[styles.librarySummaryIcon, { backgroundColor: colors.blueSoft }]}>
+              <View style={[styles.librarySummaryDot, { backgroundColor: colors.blue }]} />
+            </View>
+            <View>
+              <Text style={[styles.librarySummaryValue, { color: colors.text }]}>{habits.length} {habits.length === 1 ? 'routine' : 'routines'}</Text>
+              <Text style={[styles.librarySummaryLabel, { color: colors.secondary }]}>ON CALENDAR</Text>
+            </View>
+          </View>
+        </View>
       </View>
 
       <LibraryHeading colors={colors} title="Goals" />
@@ -408,9 +430,17 @@ const styles = StyleSheet.create({
   libraryContent: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 112 },
   backButton: { height: 36, borderRadius: 18, paddingHorizontal: 12, alignSelf: 'flex-start', alignItems: 'center', justifyContent: 'center' },
   backText: { fontSize: 14, fontWeight: '700' },
-  libraryHeader: { marginTop: 18, marginBottom: 14 },
+  libraryHeader: { marginTop: 18, marginBottom: 16 },
   libraryTitle: { fontSize: 31, lineHeight: 36, fontWeight: '700', letterSpacing: -0.9 },
   librarySubtitle: { maxWidth: 330, fontSize: 13, lineHeight: 18, marginTop: 4 },
+  librarySummary: { minHeight: 56, borderRadius: 18, flexDirection: 'row', alignItems: 'center', marginTop: 16, paddingHorizontal: 13 },
+  librarySummaryItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  librarySummaryIcon: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  librarySummaryStar: { fontSize: 20, lineHeight: 22, fontWeight: '700' },
+  librarySummaryDot: { width: 9, height: 9, borderRadius: 5 },
+  librarySummaryValue: { fontSize: 13, lineHeight: 16, fontWeight: '700' },
+  librarySummaryLabel: { fontSize: 8, lineHeight: 11, fontWeight: '800', letterSpacing: 0.7, marginTop: 1 },
+  librarySummaryDivider: { width: StyleSheet.hairlineWidth, height: 28, marginHorizontal: 11 },
   libraryHeading: { minHeight: 39, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   libraryHeadingText: { fontSize: 19, fontWeight: '700', letterSpacing: -0.3 },
   libraryAction: { fontSize: 12, fontWeight: '700' },
