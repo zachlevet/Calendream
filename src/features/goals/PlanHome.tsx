@@ -139,13 +139,19 @@ export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, o
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={122} style={styles.flex}>
       <View style={styles.planHeader}>
-        <View style={[styles.planIdentity, { backgroundColor: colors.red }]}>
-          <Text style={styles.planIdentityTitle}>Plan</Text>
-          <Text style={styles.planIdentityMeta}>{goals.filter((goal) => !goal.completed).length} goals · {habits.length} routines</Text>
-        </View>
-        <Pressable accessibilityLabel="Open goals and routines" onPress={onOpenPlans} style={[styles.plansButton, { backgroundColor: colors.card }]}>
-          <Text style={[styles.plansAction, { color: colors.blue }]}>Goals</Text>
-          <Text style={[styles.plansChevron, { color: colors.blue }]}>›</Text>
+        <Pressable
+          accessibilityLabel="Open goals and routines"
+          onPress={onOpenPlans}
+          style={({ pressed }) => [styles.planOverview, { backgroundColor: colors.card }, pressed && styles.planOverviewPressed]}
+        >
+          <View style={styles.planOverviewIdentity}>
+            <Text style={[styles.planIdentityTitle, { color: colors.red }]}>Plan</Text>
+            <Text style={[styles.planIdentityMeta, { color: colors.secondary }]}>{goals.filter((goal) => !goal.completed).length} goals · {habits.length} routines</Text>
+          </View>
+          <View style={styles.plansLink}>
+            <Text style={[styles.plansAction, { color: colors.blue }]}>Goals</Text>
+            <Text style={[styles.plansChevron, { color: colors.blue }]}>›</Text>
+          </View>
         </Pressable>
       </View>
 
@@ -370,11 +376,13 @@ function LibraryEmpty({ colors, text }: { colors: AppColors; text: string }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  planHeader: { minHeight: 58, paddingHorizontal: 18, paddingTop: 7, paddingBottom: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  planIdentity: { minHeight: 40, borderRadius: 20, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  planIdentityTitle: { color: '#FFFFFF', fontSize: 14, lineHeight: 17, fontWeight: '800' },
-  planIdentityMeta: { color: 'rgba(255,255,255,0.82)', fontSize: 10, lineHeight: 13, fontWeight: '700' },
-  plansButton: { minHeight: 40, borderRadius: 20, paddingLeft: 14, paddingRight: 12, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  planHeader: { paddingHorizontal: 18, paddingTop: 7, paddingBottom: 7 },
+  planOverview: { minHeight: 58, borderRadius: 20, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center' },
+  planOverviewPressed: { opacity: 0.72 },
+  planOverviewIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  planIdentityTitle: { fontSize: 15, lineHeight: 18, fontWeight: '800' },
+  planIdentityMeta: { fontSize: 10, lineHeight: 13, fontWeight: '700' },
+  plansLink: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 5 },
   plansAction: { fontSize: 14, fontWeight: '700' },
   plansChevron: { fontSize: 19, lineHeight: 20, marginTop: -1 },
   chatContent: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 6, paddingBottom: 16 },

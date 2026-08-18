@@ -19,6 +19,7 @@
 
 - Versioned migrations and safe backup/export
 - Authentication and cloud sync
+- Replace the rules-based Plan parser with a calendar-aware mini-model assistant behind the backend: natural conversation, scoped calendar-reading tools, confirmed write actions, and durable conversation state
 - TestFlight distribution
 - Error reporting, analytics with consent, and accessibility review
 
