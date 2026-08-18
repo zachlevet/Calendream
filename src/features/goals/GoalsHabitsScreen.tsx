@@ -15,7 +15,6 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import type {
   Goal,
   GoalDraft,
-  GoalHabitLink,
   GoalHorizon,
   GoalScope,
   GoalStep,
@@ -36,10 +35,10 @@ import { PlanChatHome, YourPlansHome } from './PlanHome';
 interface GoalsHabitsScreenProps {
   colors: AppColors;
   goalSteps: GoalStep[];
-  goalHabitLinks: GoalHabitLink[];
   goals: Goal[];
   habitActivity: HabitActivity[];
   habits: Habit[];
+  initialGoalId?: string | null;
   today: string;
   onArchiveHabit: (id: string) => Promise<void>;
   onDeleteGoal: (id: string) => Promise<void>;
@@ -48,12 +47,10 @@ interface GoalsHabitsScreenProps {
   onSaveGoalStep: (draft: GoalStepDraft) => Promise<void>;
   onSaveHabit: (draft: HabitDraft) => Promise<string>;
   onSaveItem: (draft: ItemDraft) => Promise<void>;
-  onLinkHabitToGoal: (goalId: string, habitId: string) => Promise<void>;
   onToggleGoal: (goal: Goal) => Promise<void>;
   onToggleGoalStep: (step: GoalStep) => Promise<void>;
   onToggleHabitDate: (habit: Habit, date: string) => Promise<void>;
   onToggleHabitSkip: (habit: Habit, date: string) => Promise<void>;
-  onUnlinkHabitFromGoal: (goalId: string, habitId: string) => Promise<void>;
 }
 
 const WEEKDAYS: { value: ISOWeekday; label: string }[] = [
@@ -117,24 +114,15 @@ function habitDraftFor(habit: Habit): HabitDraft {
   };
 }
 
-function newHabitDraft(today: string): HabitDraft {
-  return {
-    name: '',
-    weekdays: [weekdayFor(today)],
-    startDate: today,
-    itemKind: 'task',
-  };
-}
-
 export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
   const {
-    colors, goalHabitLinks, goalSteps, goals, habitActivity, habits, today,
-    onArchiveHabit, onDeleteGoal, onDeleteGoalStep, onLinkHabitToGoal,
+    colors, goalSteps, goals, habitActivity, habits, initialGoalId, today,
+    onArchiveHabit, onDeleteGoal, onDeleteGoalStep,
     onSaveGoal, onSaveGoalStep, onSaveHabit, onToggleGoal, onToggleGoalStep,
-    onSaveItem, onToggleHabitDate, onToggleHabitSkip, onUnlinkHabitFromGoal,
+    onSaveItem, onToggleHabitDate, onToggleHabitSkip,
   } = props;
-  const [section, setSection] = useState<'chat' | 'plans'>('chat');
-  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
+  const [section, setSection] = useState<'chat' | 'plans'>(initialGoalId ? 'plans' : 'chat');
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(initialGoalId ?? null);
   const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
 
   const selectedGoal = goals.find((goal) => goal.id === selectedGoalId);
@@ -143,18 +131,13 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
       <GoalDetailPage
         colors={colors}
         goal={selectedGoal}
-        habits={habits}
-        links={goalHabitLinks.filter((link) => link.goalId === selectedGoal.id)}
         onBack={() => { setSelectedGoalId(null); setSection('plans'); }}
-        onCreateHabit={onSaveHabit}
         onDeleteGoal={async () => { await onDeleteGoal(selectedGoal.id); setSelectedGoalId(null); }}
         onDeleteStep={onDeleteGoalStep}
-        onLinkHabit={(habitId) => onLinkHabitToGoal(selectedGoal.id, habitId)}
         onSaveGoal={onSaveGoal}
         onSaveStep={onSaveGoalStep}
         onToggleGoal={() => onToggleGoal(selectedGoal)}
         onToggleStep={onToggleGoalStep}
-        onUnlinkHabit={(habitId) => onUnlinkHabitFromGoal(selectedGoal.id, habitId)}
         steps={goalSteps.filter((step) => step.goalId === selectedGoal.id)}
         today={today}
       />
@@ -206,21 +189,16 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
   );
 }
 
-function GoalDetailPage({ colors, goal, habits, links, onBack, onCreateHabit, onDeleteGoal, onDeleteStep, onLinkHabit, onSaveGoal, onSaveStep, onToggleGoal, onToggleStep, onUnlinkHabit, steps, today }: {
+function GoalDetailPage({ colors, goal, onBack, onDeleteGoal, onDeleteStep, onSaveGoal, onSaveStep, onToggleGoal, onToggleStep, steps, today }: {
   colors: AppColors;
   goal: Goal;
-  habits: Habit[];
-  links: GoalHabitLink[];
   onBack: () => void;
-  onCreateHabit: (draft: HabitDraft) => Promise<string>;
   onDeleteGoal: () => Promise<void>;
   onDeleteStep: (step: GoalStep) => Promise<void>;
-  onLinkHabit: (habitId: string) => Promise<void>;
   onSaveGoal: (draft: GoalDraft) => Promise<string>;
   onSaveStep: (draft: GoalStepDraft) => Promise<void>;
   onToggleGoal: () => Promise<void>;
   onToggleStep: (step: GoalStep) => Promise<void>;
-  onUnlinkHabit: (habitId: string) => Promise<void>;
   steps: GoalStep[];
   today: string;
 }) {
@@ -228,12 +206,6 @@ function GoalDetailPage({ colors, goal, habits, links, onBack, onCreateHabit, on
   const [draft, setDraft] = useState(() => goalDraftFor(goal));
   const [stepDraft, setStepDraft] = useState<GoalStepDraft | null>(null);
   const [stepPickerOpen, setStepPickerOpen] = useState(false);
-  const [habitChooserOpen, setHabitChooserOpen] = useState(false);
-  const [creatingHabit, setCreatingHabit] = useState(false);
-  const completed = steps.filter((step) => step.completed).length;
-  const progress = steps.length ? Math.round((completed / steps.length) * 100) : 0;
-  const linkedHabits = links.map((link) => habits.find((habit) => habit.id === link.habitId)).filter((habit): habit is Habit => Boolean(habit));
-  const availableHabits = habits.filter((habit) => !links.some((link) => link.habitId === habit.id));
 
   async function saveStep() {
     if (!stepDraft?.title.trim()) return;
@@ -251,22 +223,16 @@ function GoalDetailPage({ colors, goal, habits, links, onBack, onCreateHabit, on
         {!editing && <Pressable hitSlop={8} onPress={() => { setDraft(goalDraftFor(goal)); setEditing(true); }}><Text style={[styles.editAction, { color: colors.blue }]}>Edit</Text></Pressable>}
       </View>
 
-      {editing && <View style={[styles.editSurface, { backgroundColor: colors.yellowSoft }]}><GoalForm colors={colors} draft={draft} onChange={setDraft} today={today} /><View style={styles.editorActions}><Pressable onPress={() => Alert.alert('Remove this goal?', 'Subgoals will be removed from future days.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => void onDeleteGoal() }])}><Text style={[styles.deleteAction, { color: colors.red }]}>Remove</Text></Pressable><View style={styles.actionSpacer} /><Pressable onPress={() => setEditing(false)}><Text style={[styles.cancelAction, { color: colors.secondary }]}>Cancel</Text></Pressable><Pressable onPress={async () => { await onSaveGoal(draft); setEditing(false); }} style={[styles.smallSave, { backgroundColor: colors.yellow }]}><Text style={styles.saveText}>Save</Text></Pressable></View></View>}
+      {editing && <View style={[styles.editSurface, { backgroundColor: colors.yellowSoft }]}><GoalForm colors={colors} draft={draft} onChange={setDraft} today={today} /><View style={styles.editorActions}><Pressable onPress={() => Alert.alert('Remove this goal?', 'Its linked tasks will also be removed from future days.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => void onDeleteGoal() }])}><Text style={[styles.deleteAction, { color: colors.red }]}>Remove</Text></Pressable><View style={styles.actionSpacer} /><Pressable onPress={() => setEditing(false)}><Text style={[styles.cancelAction, { color: colors.secondary }]}>Cancel</Text></Pressable><Pressable onPress={async () => { await onSaveGoal(draft); setEditing(false); }} style={[styles.smallSave, { backgroundColor: colors.yellow }]}><Text style={styles.saveText}>Save</Text></Pressable></View></View>}
       {!editing && goal.notes && <Text style={[styles.goalNotes, { color: colors.secondary }]}>{goal.notes}</Text>}
 
-      {steps.length > 0 && <View style={[styles.goalOverview, { backgroundColor: colors.yellowSoft }]}><View><Text style={[styles.overviewValue, { color: colors.yellow }]}>{progress}%</Text><Text style={[styles.overviewLabel, { color: colors.yellow }]}>COMPLETE</Text></View><View style={[styles.overviewDivider, { backgroundColor: goalDivider(colors) }]} /><View style={styles.cardCopy}><Text style={[styles.overviewNext, { color: colors.text }]}>{completed} of {steps.length} subgoals complete</Text><View style={[styles.progressTrack, { backgroundColor: goalDivider(colors) }]}><View style={[styles.progressFill, { backgroundColor: colors.yellow, width: `${progress}%` }]} /></View></View></View>}
-
-      <SectionHeading action="Add subgoal" colors={colors} onAction={() => setStepDraft({ goalId: goal.id, title: '', scheduledDate: today })} subtitle="Add smaller goals and assign them to a day as tasks." title="Subgoals" />
-      {steps.map((step) => <Pressable key={step.id} onLongPress={() => void onDeleteStep(step)} onPress={() => void onToggleStep(step)} style={[styles.subgoalRow, { borderColor: colors.separator }]}><View style={[styles.subgoalCheck, { borderColor: step.completed ? colors.yellow : colors.tertiary }, step.completed && { backgroundColor: colors.yellow }]}>{step.completed && <Text style={styles.checkmark}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.projectTitle, { color: step.completed ? colors.tertiary : colors.text }, step.completed && styles.completed]}>{step.title}</Text><Text style={[styles.projectDate, { color: step.scheduledDate < today && !step.completed ? colors.red : colors.secondary }]}>{formatLongDate(step.scheduledDate)}</Text></View></Pressable>)}
-      {!steps.length && !stepDraft && <Empty colors={colors} text="No subgoals yet. Add one small, concrete step and give it a day." />}
-      {stepDraft && <View style={[styles.stepComposer, { borderColor: colors.separator }]}><TextInput autoFocus onChangeText={(title) => setStepDraft({ ...stepDraft, title })} placeholder="A smaller goal or next action" placeholderTextColor={colors.tertiary} style={[styles.stepInput, { color: colors.text }]} value={stepDraft.title} /><Pressable onPress={() => setStepPickerOpen((open) => !open)} style={styles.dateRow}><Text style={[styles.fieldLabel, { color: colors.secondary }]}>Add to day</Text><Text style={[styles.dateValue, { color: colors.blue }]}>{formatLongDate(stepDraft.scheduledDate)}</Text></Pressable>{stepPickerOpen && <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} minimumDate={dateFromISO(today)} mode="date" onChange={(_, selected) => { if (Platform.OS !== 'ios') setStepPickerOpen(false); if (selected) setStepDraft({ ...stepDraft, scheduledDate: localISO(selected) }); }} value={dateFromISO(stepDraft.scheduledDate)} />}<EditorActions colors={colors} onCancel={() => { setStepDraft(null); setStepPickerOpen(false); }} onSave={() => void saveStep()} saveDisabled={!stepDraft.title.trim()} /></View>}
-
-      <SectionHeading action="Link habit" colors={colors} onAction={() => setHabitChooserOpen((open) => !open)} subtitle="Recurring rhythms that help this goal happen." title="Supporting habits" />
-      {linkedHabits.map((habit) => <Pressable key={habit.id} onLongPress={() => void onUnlinkHabit(habit.id)} style={[styles.linkedHabitRow, { backgroundColor: colors.blueSoft }]}><View style={[styles.dashboardHabitDot, { backgroundColor: colors.blue }]} /><View style={styles.cardCopy}><Text style={[styles.projectTitle, { color: colors.text }]}>{habit.name}</Text><Text style={[styles.projectDate, { color: colors.secondary }]}>{habit.weekdays.length} days each week · {habit.itemKind}</Text></View><Text style={[styles.linkedLabel, { color: colors.blue }]}>LINKED</Text></Pressable>)}
-      {!linkedHabits.length && !habitChooserOpen && <Empty colors={colors} text="Link a habit to connect your weekly rhythm to this larger goal." />}
-      {habitChooserOpen && <View style={[styles.habitChooser, { backgroundColor: colors.card }]}>{availableHabits.map((habit) => <Pressable key={habit.id} onPress={() => { void onLinkHabit(habit.id); setHabitChooserOpen(false); }} style={[styles.chooserRow, { borderColor: colors.separator }]}><Text style={[styles.projectTitle, { color: colors.text }]}>{habit.name}</Text><Text style={[styles.linkAction, { color: colors.blue }]}>Link</Text></Pressable>)}<Pressable onPress={() => { setHabitChooserOpen(false); setCreatingHabit(true); }} style={styles.chooserRow}><Text style={[styles.projectTitle, { color: colors.blue }]}>＋ Add a new habit</Text></Pressable></View>}
-      {creatingHabit && <HabitComposer colors={colors} draft={newHabitDraft(today)} onCancel={() => setCreatingHabit(false)} onSave={async (habitDraft) => { const id = await onCreateHabit(habitDraft); await onLinkHabit(id); setCreatingHabit(false); }} today={today} />}
-      <Text style={[styles.hint, { color: colors.tertiary }]}>Long-press a subgoal or linked habit to remove it.</Text>
+      <SectionHeading action="Add task" colors={colors} onAction={() => setStepDraft({ goalId: goal.id, title: '', scheduledDate: today })} subtitle="Small steps that move this goal forward." title="Tasks" />
+      <View style={[styles.goalTaskList, { borderColor: colors.separator }]}>
+        {steps.map((step) => <Pressable accessibilityLabel={step.completed ? `Mark ${step.title} incomplete` : `Complete ${step.title}`} key={step.id} onLongPress={() => void onDeleteStep(step)} onPress={() => void onToggleStep(step)} style={[styles.goalTaskRow, { borderColor: colors.separator }]}><View style={[styles.goalTaskCheck, { borderColor: step.completed ? colors.blue : colors.tertiary }, step.completed && { backgroundColor: colors.blue }]}>{step.completed && <Text style={styles.checkmark}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.projectTitle, { color: step.completed ? colors.tertiary : colors.text }, step.completed && styles.completed]}>{step.title}</Text><Text style={[styles.projectDate, { color: step.scheduledDate < today && !step.completed ? colors.red : colors.secondary }]}>Scheduled {formatLongDate(step.scheduledDate)}</Text></View></Pressable>)}
+        {!steps.length && !stepDraft && <Text style={[styles.goalTaskEmpty, { color: colors.secondary }]}>No tasks yet. Add the first thing that needs to happen.</Text>}
+        {stepDraft && <View style={[styles.stepComposer, { borderColor: colors.separator }]}><TextInput autoFocus onChangeText={(title) => setStepDraft({ ...stepDraft, title })} placeholder="What needs to happen?" placeholderTextColor={colors.tertiary} style={[styles.stepInput, { color: colors.text }]} value={stepDraft.title} /><Pressable onPress={() => setStepPickerOpen((open) => !open)} style={styles.dateRow}><Text style={[styles.fieldLabel, { color: colors.secondary }]}>Schedule for</Text><Text style={[styles.dateValue, { color: colors.blue }]}>{formatLongDate(stepDraft.scheduledDate)}</Text></Pressable>{stepPickerOpen && <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} minimumDate={dateFromISO(today)} mode="date" onChange={(_, selected) => { if (Platform.OS !== 'ios') setStepPickerOpen(false); if (selected) setStepDraft({ ...stepDraft, scheduledDate: localISO(selected) }); }} value={dateFromISO(stepDraft.scheduledDate)} />}<EditorActions colors={colors} onCancel={() => { setStepDraft(null); setStepPickerOpen(false); }} onSave={() => void saveStep()} saveDisabled={!stepDraft.title.trim()} /></View>}
+      </View>
+      <Text style={[styles.goalTaskHint, { color: colors.tertiary }]}>These also appear as tasks on their scheduled days. Long-press one to remove it.</Text>
     </ScrollView>
   );
 }
@@ -439,14 +405,6 @@ function TrackerStat({ colors, label, value }: { colors: AppColors; label: strin
   return <View style={styles.trackerStat}><Text style={[styles.trackerStatValue, { color: colors.blue }]}>{value}</Text><Text style={[styles.trackerStatLabel, { color: colors.tertiary }]}>{label}</Text></View>;
 }
 
-function Empty({ text, colors }: { text: string; colors: AppColors }) {
-  return <View style={[styles.empty, { backgroundColor: colors.card }]}><Text style={[styles.emptyText, { color: colors.secondary }]}>{text}</Text></View>;
-}
-
-function goalDivider(colors: AppColors) {
-  return colors.yellowSoft === '#FFF9DC' ? 'rgba(199,141,0,0.18)' : 'rgba(255,214,10,0.20)';
-}
-
 function dateForTime(value?: string) {
   const minutes = timeMinutes(value ?? '7:00 AM');
   const date = new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60);
@@ -476,7 +434,6 @@ const styles = StyleSheet.create({
   goalPanel: { borderRadius: 18, paddingHorizontal: 12, marginBottom: 10, overflow: 'hidden' },
   dashboardRow: { minHeight: 53, flexDirection: 'row', alignItems: 'center' },
   dashboardGoalStar: { width: 28, fontSize: 21 },
-  dashboardHabitDot: { width: 9, height: 9, borderRadius: 5, marginRight: 12 },
   dashboardTitle: { fontSize: 14, lineHeight: 18, fontWeight: '700' },
   dashboardMeta: { fontSize: 9, lineHeight: 13, marginTop: 2, fontWeight: '600' },
   dashboardRate: { marginLeft: 9, fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] },
@@ -533,8 +490,6 @@ const styles = StyleSheet.create({
   sectionHeadingTitle: { fontSize: 18, lineHeight: 21, fontWeight: '700', letterSpacing: -0.25 },
   sectionHeadingSubtitle: { fontSize: 10, lineHeight: 14, marginTop: 2, maxWidth: 285 },
   sectionHeadingAction: { fontSize: 12, fontWeight: '700', marginLeft: 10 },
-  habitChooser: { borderRadius: 16, paddingHorizontal: 12, marginBottom: 8, overflow: 'hidden' },
-  chooserRow: { minHeight: 46, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   choiceCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   choiceCheck: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
   primaryButton: { minHeight: 50, borderRadius: 17, alignItems: 'center', justifyContent: 'center', marginTop: 17 },
@@ -548,15 +503,11 @@ const styles = StyleSheet.create({
   editAction: { fontSize: 13, fontWeight: '700', marginTop: 7 },
   editSurface: { borderRadius: 20, paddingHorizontal: 13, paddingBottom: 8, marginBottom: 11 },
   goalNotes: { fontSize: 14, lineHeight: 20, marginBottom: 12 },
-  goalOverview: { minHeight: 70, borderRadius: 18, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 5 },
-  overviewValue: { fontSize: 24, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  overviewLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 0.65 },
-  overviewDivider: { width: StyleSheet.hairlineWidth, height: 38 },
-  overviewNext: { fontSize: 13, fontWeight: '700' },
-  progressTrack: { height: 3, borderRadius: 2, overflow: 'hidden', marginTop: 7 },
-  progressFill: { height: 3, borderRadius: 2 },
-  subgoalRow: { minHeight: 48, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
-  subgoalCheck: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 9 },
+  goalTaskList: { borderTopWidth: StyleSheet.hairlineWidth },
+  goalTaskRow: { minHeight: 54, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' },
+  goalTaskCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  goalTaskEmpty: { fontSize: 13, lineHeight: 18, paddingVertical: 18 },
+  goalTaskHint: { textAlign: 'center', fontSize: 11, lineHeight: 16, marginTop: 14 },
   checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   projectTitle: { fontSize: 14, lineHeight: 18, fontWeight: '600' },
   projectDate: { fontSize: 10, marginTop: 2 },
@@ -566,9 +517,6 @@ const styles = StyleSheet.create({
   dateRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   fieldLabel: { fontSize: 13 },
   dateValue: { fontSize: 13, fontWeight: '700' },
-  linkedHabitRow: { minHeight: 52, borderRadius: 15, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 7 },
-  linkedLabel: { fontSize: 8, fontWeight: '800', letterSpacing: 0.55 },
-  linkAction: { fontSize: 12, fontWeight: '700' },
   habitLibraryRow: { minHeight: 59, flexDirection: 'row', alignItems: 'center' },
   habitTitle: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
   habitDetailContent: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 112 },
@@ -626,7 +574,5 @@ const styles = StyleSheet.create({
   cancelAction: { fontSize: 13, fontWeight: '600' },
   smallSave: { height: 32, borderRadius: 16, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
   saveText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
-  empty: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 15, marginBottom: 7 },
-  emptyText: { fontSize: 13, lineHeight: 18 },
   hint: { textAlign: 'center', fontSize: 11, lineHeight: 16, marginTop: 18 },
 });

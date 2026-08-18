@@ -82,6 +82,7 @@ export function TodayScreen() {
   const data = useTodayData(selectedDate, today);
   const searchAll = data.searchAll;
   const [destination, setDestination] = useState<Destination>('today');
+  const [planGoalId, setPlanGoalId] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>(null);
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
   const [capturePreset, setCapturePreset] = useState<CapturePreset | null>(null);
@@ -301,10 +302,21 @@ export function TodayScreen() {
 
   function openGoalsAndHabits() {
     setSelectedDate(today);
+    setPlanGoalId(null);
     setCalendarOpen(false);
     setSearchOpen(false);
     setInlineEditor(null);
     setEditor(null);
+    setDestination('goals');
+  }
+
+  function openGoal(goal: Goal) {
+    Keyboard.dismiss();
+    setCalendarOpen(false);
+    setSearchOpen(false);
+    setInlineEditor(null);
+    setEditor(null);
+    setPlanGoalId(goal.id);
     setDestination('goals');
   }
 
@@ -434,7 +446,7 @@ export function TodayScreen() {
 
           {prioritizedGoals.length > 0 && (
             <ScrollView horizontal contentContainerStyle={styles.goalReminderList} showsHorizontalScrollIndicator={false} style={styles.goalReminderScroller}>
-              {prioritizedGoals.map((goal) => <TodayGoalPill colors={colors} goal={goal} key={goal.id} onToggle={() => void data.toggleGoal(goal)} />)}
+              {prioritizedGoals.map((goal) => <TodayGoalPill colors={colors} goal={goal} key={goal.id} onOpen={() => openGoal(goal)} />)}
             </ScrollView>
           )}
 
@@ -577,10 +589,7 @@ export function TodayScreen() {
             await data.saveItem(draft);
             setTimelineRevision((revision) => revision + 1);
           }}
-          onToggleGoal={async (goal) => {
-            await data.toggleGoal(goal);
-            setTimelineRevision((revision) => revision + 1);
-          }}
+          onOpenGoal={openGoal}
           onToggleTask={async (item) => {
             await data.toggleTask(item);
             setTimelineRevision((revision) => revision + 1);
@@ -607,15 +616,14 @@ export function TodayScreen() {
       ) : (
         <GoalsHabitsScreen
           colors={colors}
-          goalHabitLinks={data.goalHabitLinks}
           goalSteps={data.goalSteps}
           goals={data.allGoals}
           habitActivity={data.habitActivity}
           habits={data.habits}
+          initialGoalId={planGoalId}
           onArchiveHabit={data.archiveHabit}
           onDeleteGoal={data.deleteGoal}
           onDeleteGoalStep={data.deleteGoalStep}
-          onLinkHabitToGoal={data.linkHabitToGoal}
           onSaveGoal={data.saveGoal}
           onSaveGoalStep={data.saveGoalStep}
           onSaveHabit={data.saveHabit}
@@ -627,7 +635,6 @@ export function TodayScreen() {
           onToggleGoalStep={data.toggleGoalStep}
           onToggleHabitDate={data.toggleHabitDate}
           onToggleHabitSkip={data.toggleHabitSkip}
-          onUnlinkHabitFromGoal={data.unlinkHabitFromGoal}
           today={today}
         />
       )}
@@ -944,9 +951,9 @@ function InlineTimePicker({ value, colors, onChange }: {
   );
 }
 
-function TodayGoalPill({ goal, colors, onToggle }: { goal: Goal; colors: AppColors; onToggle: () => void }) {
+function TodayGoalPill({ goal, colors, onOpen }: { goal: Goal; colors: AppColors; onOpen: () => void }) {
   return (
-    <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} achieved`} onPress={onToggle} style={[styles.todayGoalPill, { backgroundColor: colors.yellowSoft }]}>
+    <Pressable accessibilityLabel={`Open goal ${goal.title}`} onPress={onOpen} style={[styles.todayGoalPill, { backgroundColor: colors.yellowSoft }]}>
       <Text style={[styles.todayGoalPillStar, { color: colors.yellow }]}>{goal.completed ? '★' : '☆'}</Text>
       <Text numberOfLines={1} style={[styles.todayGoalPillText, { color: colors.yellow }, goal.completed && styles.completed]}>{goal.title}</Text>
     </Pressable>

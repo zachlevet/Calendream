@@ -17,7 +17,7 @@ interface TimelineScreenProps {
   today: string;
   loadRange: (startDate: string, endDate: string) => Promise<TimelineSnapshot>;
   onSaveItem: (draft: ItemDraft) => Promise<void>;
-  onToggleGoal: (goal: Goal) => Promise<void>;
+  onOpenGoal: (goal: Goal) => void;
   onToggleTask: (item: PlanningItem) => Promise<void>;
   onOpenDay: (date: string) => void;
   renderInlineEditor: (options: TimelineInlineEditorOptions) => ReactNode;
@@ -58,7 +58,7 @@ function yForDate(position: PeriodPosition, date: string) {
   return position.y + progressThroughPeriod(position.start, position.end, date) * position.height;
 }
 
-export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveItem, onToggleGoal, onToggleTask, onOpenDay, renderInlineEditor }: TimelineScreenProps) {
+export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveItem, onOpenGoal, onToggleTask, onOpenDay, renderInlineEditor }: TimelineScreenProps) {
   const [zoom, setZoom] = useState<TimelineZoom>('today');
   const [snapshot, setSnapshot] = useState<TimelineSnapshot>({ items: [], goals: [], reflections: {} });
   const [loading, setLoading] = useState(true);
@@ -239,7 +239,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
                 inlineEditor={inlineEditor}
                 onEditItem={(item, slot) => void editInline(item, slot)}
                 onOpenDay={onOpenDay}
-                onToggleGoal={(goal) => void onToggleGoal(goal)}
+                onOpenGoal={onOpenGoal}
                 onToggleTask={(item) => void onToggleTask(item)}
                 onZoomToDate={(date, nextZoom) => changeZoom(nextZoom, date)}
                 period={period}
@@ -287,7 +287,7 @@ export function TimelineScreen({ colors, dataRevision, today, loadRange, onSaveI
   );
 }
 
-function Period({ period, zoom, items, goals, loading, reflection, today, colors, editingItem, editingSlot, inlineEditor, onPeriodLayout, onEditItem, onOpenDay, onToggleGoal, onToggleTask, onZoomToDate }: {
+function Period({ period, zoom, items, goals, loading, reflection, today, colors, editingItem, editingSlot, inlineEditor, onPeriodLayout, onEditItem, onOpenDay, onOpenGoal, onToggleTask, onZoomToDate }: {
   period: TimelinePeriod;
   zoom: TimelineZoom;
   items: PlanningItem[];
@@ -302,7 +302,7 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
   onPeriodLayout: (period: TimelinePeriod, y: number, height: number) => void;
   onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
-  onToggleGoal: (goal: Goal) => void;
+  onOpenGoal: (goal: Goal) => void;
   onToggleTask: (item: PlanningItem) => void;
   onZoomToDate: (date: string, zoom: TimelineZoom) => void;
 }) {
@@ -319,21 +319,21 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
       style={[styles.period, presentStyle]}
     >
       {zoom === 'today' ? (
-        <DayPage {...shared} date={period.start} goals={currentGoals} items={visibleItems} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} onToggleTask={onToggleTask} period={period} reflection={reflection} today={today} />
+        <DayPage {...shared} date={period.start} goals={currentGoals} items={visibleItems} onOpenDay={onOpenDay} onOpenGoal={onOpenGoal} onToggleTask={onToggleTask} period={period} reflection={reflection} today={today} />
       ) : zoom === 'week' ? (
-        <WeekPage {...shared} goals={currentGoals} items={visibleItems} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} onToggleTask={onToggleTask} period={period} today={today} />
+        <WeekPage {...shared} goals={currentGoals} items={visibleItems} onOpenDay={onOpenDay} onOpenGoal={onOpenGoal} onToggleTask={onToggleTask} period={period} today={today} />
       ) : zoom === 'month' ? (
-        <MonthPage {...shared} goals={currentGoals} items={visibleItems} loading={loading} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} onZoomToDate={onZoomToDate} period={period} today={today} />
+        <MonthPage {...shared} goals={currentGoals} items={visibleItems} loading={loading} onOpenDay={onOpenDay} onOpenGoal={onOpenGoal} onZoomToDate={onZoomToDate} period={period} today={today} />
       ) : zoom === 'quarter' ? (
-        <QuarterPage {...shared} goals={currentGoals} items={visibleItems} loading={loading} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} onZoomToDate={onZoomToDate} period={period} today={today} />
+        <QuarterPage {...shared} goals={currentGoals} items={visibleItems} loading={loading} onOpenDay={onOpenDay} onOpenGoal={onOpenGoal} onZoomToDate={onZoomToDate} period={period} today={today} />
       ) : (
-        <YearPage {...shared} goals={currentGoals} items={visibleItems} loading={loading} onOpenDay={onOpenDay} onToggleGoal={onToggleGoal} onZoomToDate={onZoomToDate} period={period} today={today} />
+        <YearPage {...shared} goals={currentGoals} items={visibleItems} loading={loading} onOpenDay={onOpenDay} onOpenGoal={onOpenGoal} onZoomToDate={onZoomToDate} period={period} today={today} />
       )}
     </View>
   );
 }
 
-function DayPage({ date, period, items, goals, reflection, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay, onToggleGoal, onToggleTask }: {
+function DayPage({ date, period, items, goals, reflection, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay, onOpenGoal, onToggleTask }: {
   date: string;
   period: TimelinePeriod;
   items: PlanningItem[];
@@ -346,7 +346,7 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
   inlineEditor: ReactNode;
   onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
-  onToggleGoal: (goal: Goal) => void;
+  onOpenGoal: (goal: Goal) => void;
   onToggleTask: (item: PlanningItem) => void;
 }) {
   const events = items.filter((item) => item.kind === 'event');
@@ -363,7 +363,7 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
         {period.subtitle && <Text style={[styles.daySubtitle, { color: colors.secondary }]}>{period.subtitle}</Text>}
       </Pressable>
 
-      <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
+      <GoalSection colors={colors} goals={goals} onOpen={onOpenGoal} />
 
       <TimelineSectionHeader colors={colors} onPress={() => onOpenDay(date)} title="Events" />
       {events.length ? events.map((item) => { const slot = `day-${date}-${item.id}`; return <View key={item.id}>{item.id === eventBoundaryId && <CurrentMomentDivider colors={colors} />}<TimelineItem colors={colors} item={item} onPress={() => onEditItem(item, slot)} onToggleTask={() => onToggleTask(item)} />{editingItem?.id === item.id && editingSlot === slot && inlineEditor}</View>; }) : <>{period.current && <CurrentMomentDivider colors={colors} />}<Text style={[styles.openRow, { color: colors.tertiary }]}>No events planned</Text></>}
@@ -383,7 +383,7 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
   );
 }
 
-function WeekPage({ period, items, goals, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay, onToggleGoal, onToggleTask }: {
+function WeekPage({ period, items, goals, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay, onOpenGoal, onToggleTask }: {
   period: TimelinePeriod;
   items: PlanningItem[];
   goals: Goal[];
@@ -394,7 +394,7 @@ function WeekPage({ period, items, goals, today, colors, editingItem, editingSlo
   inlineEditor: ReactNode;
   onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
-  onToggleGoal: (goal: Goal) => void;
+  onOpenGoal: (goal: Goal) => void;
   onToggleTask: (item: PlanningItem) => void;
 }) {
   const days = Array.from({ length: 7 }, (_, index) => addLocalDays(period.start, index))
@@ -415,7 +415,7 @@ function WeekPage({ period, items, goals, today, colors, editingItem, editingSlo
         <Text style={[styles.weekTitle, { color: colors.text }]}>{monthWeekLabel(period.start)}</Text>
         <Text style={[styles.periodSubtitle, { color: colors.secondary }]}>{period.title}</Text>
       </View>
-      <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
+      <GoalSection colors={colors} goals={goals} onOpen={onOpenGoal} />
       {!days.length && <Text style={[styles.emptyWeek, { color: colors.tertiary }]}>No events or tasks yet, let’s get planning :)</Text>}
       {days.map(({ date, items: dayItems }) => {
         const boundaryAtStart = weekBoundary?.date === date && weekBoundary.item.id === dayItems[0]?.id;
@@ -447,11 +447,11 @@ interface EditorialPeriodProps {
   inlineEditor: ReactNode;
   onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
-  onToggleGoal: (goal: Goal) => void;
+  onOpenGoal: (goal: Goal) => void;
   onZoomToDate: (date: string, zoom: TimelineZoom) => void;
 }
 
-function MonthPage({ period, items, goals, loading, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onToggleGoal, onZoomToDate }: EditorialPeriodProps) {
+function MonthPage({ period, items, goals, loading, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenGoal, onZoomToDate }: EditorialPeriodProps) {
   const events = items.filter((item) => item.kind === 'event' && overlaps(item, period)).sort(compareAnchors);
   const trips = events.filter(isTrip).length;
   const nestedEventIds = new Set(events.filter((event) => !isTrip(event) && events.some((trip) => isTrip(trip) && trip.anchorStart !== null && trip.anchorEnd !== null && event.anchorStart !== null && event.anchorStart >= trip.anchorStart && event.anchorStart <= trip.anchorEnd)).map((event) => event.id));
@@ -470,7 +470,7 @@ function MonthPage({ period, items, goals, loading, today, colors, editingItem, 
         <Text style={[styles.periodSummary, { color: colors.secondary }]}>{summaryLabel(events.length - trips, 'event')} · {summaryLabel(trips, 'trip')} · {summaryLabel(goals.length, 'goal')}</Text>
       </View>
 
-      <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
+      <GoalSection colors={colors} goals={goals} onOpen={onOpenGoal} />
 
       {!loading && !events.length && !goals.length ? <Text style={[styles.editorialEmpty, { color: colors.tertiary }]}>An open month. Let’s make something happen.</Text> : (
         <View style={styles.monthSpine}>
@@ -489,7 +489,7 @@ function MonthPage({ period, items, goals, loading, today, colors, editingItem, 
   );
 }
 
-function QuarterPage({ period, items, goals, loading, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onToggleGoal, onZoomToDate }: EditorialPeriodProps) {
+function QuarterPage({ period, items, goals, loading, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenGoal, onZoomToDate }: EditorialPeriodProps) {
   const events = items.filter((item) => item.kind === 'event').sort(compareAnchors);
   const quarterBoundaryId = period.current ? events.find((event) => !isPastAtMoment(event, today))?.id : undefined;
   const months = Array.from({ length: 3 }, (_, index) => {
@@ -506,7 +506,7 @@ function QuarterPage({ period, items, goals, loading, today, colors, editingItem
         <Text style={[styles.periodTitle, { color: colors.text }]}>{period.title} <Text style={[styles.periodSubtitle, { color: colors.secondary }]}>{period.subtitle}</Text></Text>
         <Text style={[styles.periodSummary, { color: colors.secondary }]}>{summaryLabel(events.length, 'major event')} · {summaryLabel(goals.length, 'goal')}</Text>
       </View>
-      <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
+      <GoalSection colors={colors} goals={goals} onOpen={onOpenGoal} />
       {!loading && !events.length && !goals.length && <Text style={[styles.editorialEmpty, { color: colors.tertiary }]}>A clear quarter. Plenty of room to plan.</Text>}
       <View style={styles.quarterMonths}>
         {months.map((month) => (
@@ -524,7 +524,7 @@ function QuarterPage({ period, items, goals, loading, today, colors, editingItem
   );
 }
 
-function YearPage({ period, items, goals, loading, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onToggleGoal, onZoomToDate }: EditorialPeriodProps) {
+function YearPage({ period, items, goals, loading, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenGoal, onZoomToDate }: EditorialPeriodProps) {
   const events = items.filter((item) => item.kind === 'event').sort(compareAnchors);
   const year = Number(period.title);
   const months = Array.from({ length: 12 }, (_, month) => {
@@ -541,7 +541,7 @@ function YearPage({ period, items, goals, loading, today, colors, editingItem, e
         <Text style={[styles.yearTitle, { color: colors.text }]}>{period.title}</Text>
         <Text style={[styles.periodSummary, { color: colors.secondary }]}>{summaryLabel(events.length, 'moment')} · {summaryLabel(goals.length, 'goal')}</Text>
       </View>
-      <GoalSection colors={colors} goals={goals} onToggle={onToggleGoal} />
+      <GoalSection colors={colors} goals={goals} onOpen={onOpenGoal} />
       {!loading && !events.length && !goals.length && <Text style={[styles.editorialEmpty, { color: colors.tertiary }]}>An unwritten year.</Text>}
       <View style={styles.yearIndex}>
         {months.map((month) => {
@@ -592,23 +592,23 @@ function CurrentMomentDivider({ colors, week = false }: { colors: AppColors; wee
   return <View accessibilityLabel="Current moment" style={[styles.currentMomentDivider, week && styles.currentMomentDividerWeek, { backgroundColor: colors.red }]} />;
 }
 
-function GoalSection({ goals, colors, onToggle }: { goals: Goal[]; colors: AppColors; onToggle: (goal: Goal) => void }) {
+function GoalSection({ goals, colors, onOpen }: { goals: Goal[]; colors: AppColors; onOpen: (goal: Goal) => void }) {
   if (!goals.length) return null;
-  return <View style={styles.goalSection}>{goals.map((goal) => <GoalBlurb colors={colors} goal={goal} key={goal.id} onToggle={() => onToggle(goal)} />)}</View>;
+  return <View style={styles.goalSection}>{goals.map((goal) => <GoalBlurb colors={colors} goal={goal} key={goal.id} onOpen={() => onOpen(goal)} />)}</View>;
 }
 
-function GoalBlurb({ goal, colors, onToggle }: { goal: Goal; colors: AppColors; onToggle: () => void }) {
+function GoalBlurb({ goal, colors, onOpen }: { goal: Goal; colors: AppColors; onOpen: () => void }) {
   const scope = `${goal.scope[0].toUpperCase()}${goal.scope.slice(1)} goal · through ${formatShortDate(goal.targetDate)}`;
   return (
-    <View style={[styles.goalBlurb, { backgroundColor: colors.yellowSoft }]}>
-      <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} achieved`} hitSlop={8} onPress={onToggle} style={styles.goalStar}>
+    <Pressable accessibilityLabel={`Open goal ${goal.title}`} onPress={onOpen} style={[styles.goalBlurb, { backgroundColor: colors.yellowSoft }]}>
+      <View style={styles.goalStar}>
         <Text style={[styles.goalStarIcon, { color: colors.yellow }]}>{goal.completed ? '★' : '☆'}</Text>
-      </Pressable>
+      </View>
       <View style={styles.goalCopy}>
         <Text style={[styles.goalScope, { color: colors.yellow }]}>{scope}</Text>
         <Text style={[styles.goalTitle, { color: colors.yellow }, goal.completed && styles.goalCompleted]}>{goal.title}</Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
