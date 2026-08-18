@@ -139,13 +139,12 @@ export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, o
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={122} style={styles.flex}>
       <View style={styles.planHeader}>
-        <View>
-          <Text style={[styles.planTitle, { color: colors.text }]}>Plan</Text>
-          <Text style={[styles.planSubtitle, { color: colors.secondary }]}>{goals.filter((goal) => !goal.completed).length} goals · {habits.length} routines</Text>
+        <View style={[styles.planIdentity, { backgroundColor: colors.red }]}>
+          <Text style={styles.planIdentityTitle}>Plan</Text>
+          <Text style={styles.planIdentityMeta}>{goals.filter((goal) => !goal.completed).length} goals · {habits.length} routines</Text>
         </View>
-        <Pressable accessibilityLabel="Open your plans" onPress={onOpenPlans} style={[styles.plansButton, { backgroundColor: colors.card }]}>
-          <Text style={[styles.plansButtonIcon, { color: colors.blue }]}>≡</Text>
-          <Text style={[styles.plansAction, { color: colors.blue }]}>Your Plans</Text>
+        <Pressable accessibilityLabel="Open goals and routines" onPress={onOpenPlans} style={[styles.plansButton, { backgroundColor: colors.card }]}>
+          <Text style={[styles.plansAction, { color: colors.blue }]}>Goals</Text>
           <Text style={[styles.plansChevron, { color: colors.blue }]}>›</Text>
         </Pressable>
       </View>
@@ -297,7 +296,7 @@ export function YourPlansHome({ colors, goals, habits, onBack, onOpenGoal, onOpe
     <ScrollView contentContainerStyle={styles.libraryContent} showsVerticalScrollIndicator={false} style={styles.flex}>
       <Pressable onPress={onBack} style={[styles.backButton, { backgroundColor: colors.card }]}><Text style={[styles.backText, { color: colors.blue }]}>‹ Plan</Text></Pressable>
       <View style={styles.libraryHeader}>
-        <Text style={[styles.libraryTitle, { color: colors.text }]}>Your Plans</Text>
+        <Text style={[styles.libraryTitle, { color: colors.text }]}>Goals & Routines</Text>
         <Text style={[styles.librarySubtitle, { color: colors.secondary }]}>Everything you’ve asked Calendream to keep in motion.</Text>
       </View>
 
@@ -349,11 +348,11 @@ function LibraryEmpty({ colors, text }: { colors: AppColors; text: string }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  planHeader: { minHeight: 65, paddingHorizontal: 18, paddingTop: 8, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  planTitle: { fontSize: 31, lineHeight: 35, fontWeight: '700', letterSpacing: -0.9 },
-  planSubtitle: { fontSize: 12, lineHeight: 16, marginTop: 2, fontWeight: '600' },
-  plansButton: { minHeight: 38, borderRadius: 19, paddingLeft: 11, paddingRight: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  plansButtonIcon: { fontSize: 14, lineHeight: 16, fontWeight: '800' },
+  planHeader: { minHeight: 58, paddingHorizontal: 18, paddingTop: 7, paddingBottom: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  planIdentity: { minHeight: 40, borderRadius: 20, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  planIdentityTitle: { color: '#FFFFFF', fontSize: 14, lineHeight: 17, fontWeight: '800' },
+  planIdentityMeta: { color: 'rgba(255,255,255,0.82)', fontSize: 10, lineHeight: 13, fontWeight: '700' },
+  plansButton: { minHeight: 40, borderRadius: 20, paddingLeft: 14, paddingRight: 12, flexDirection: 'row', alignItems: 'center', gap: 5 },
   plansAction: { fontSize: 14, fontWeight: '700' },
   plansChevron: { fontSize: 19, lineHeight: 20, marginTop: -1 },
   chatContent: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 6, paddingBottom: 16 },

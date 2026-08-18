@@ -216,7 +216,7 @@ function GoalDetailPage({ colors, goal, onBack, onDeleteGoal, onDeleteStep, onSa
 
   return (
     <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.workspaceContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.screen}>
-      <PageBackButton colors={colors} label="Your Plans" onBack={onBack} />
+      <PageBackButton colors={colors} label="Goals & Routines" onBack={onBack} />
       <View style={[styles.goalWorkspaceTitle, { backgroundColor: colors.yellowSoft }]}>
         <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} accomplished`} hitSlop={8} onPress={() => void onToggleGoal()} style={[styles.workspaceStar, { backgroundColor: goal.completed ? '#FFFFFF' : colors.yellow }]}><Text style={[styles.workspaceStarText, { color: goal.completed ? '#FFB000' : '#FFFFFF' }]}>★</Text></Pressable>
         <View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: colors.yellow }]}>{goal.horizon.toUpperCase()} GOAL</Text><Text style={[styles.workspaceTitle, { color: colors.yellow }]}>{goal.title}</Text><Text style={[styles.workspaceMeta, { color: colors.yellow }]}>{goal.completionDate ? `Completion date ${formatLongDate(goal.completionDate)}` : 'No fixed completion date'}</Text></View>
@@ -290,7 +290,7 @@ function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, o
 
   return (
     <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.habitDetailContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.screen}>
-      <PageBackButton colors={colors} label="Your Plans" onBack={onBack} />
+      <PageBackButton colors={colors} label="Goals & Routines" onBack={onBack} />
       <View style={styles.habitDetailTitleRow}><View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: colors.blue }]}>ROUTINE</Text><Text style={[styles.habitDetailTitle, { color: colors.text }]}>{habit.name}</Text><Text style={[styles.workspaceMeta, { color: colors.secondary }]}>{habit.itemKind === 'event' ? `${habit.startTime ?? 'Timed'} event` : 'Creates a task'} on scheduled days</Text></View>{!editing && <Pressable hitSlop={8} onPress={() => { setDraft(habitDraftFor(habit)); setEditing(true); }}><Text style={[styles.editAction, { color: colors.blue }]}>Edit</Text></Pressable>}</View>
       {editing && <HabitComposer colors={colors} draft={draft} onCancel={() => setEditing(false)} onDelete={onArchive} onSave={async (nextDraft) => { await onSave(nextDraft); setEditing(false); }} onSetDraft={setDraft} today={today} />}
 
