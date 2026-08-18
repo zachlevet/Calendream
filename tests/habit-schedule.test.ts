@@ -40,4 +40,5 @@ test('routine event duration supports ordinary and overnight events', () => {
 test('routine event end time follows its selected duration', () => {
   assert.equal(habitEventEndTime('7:30 AM', 90), '9:00 AM');
   assert.equal(habitEventEndTime('11:30 PM', 60), '12:30 AM');
+  assert.equal(habitEventEndTime('7:10 AM', 135), '9:25 AM');
 });

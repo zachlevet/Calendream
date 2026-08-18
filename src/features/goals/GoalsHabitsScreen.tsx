@@ -69,6 +69,15 @@ function durationLabel(minutes: number) {
   return `${Math.floor(minutes / 60)} hr ${minutes % 60} min`;
 }
 
+function dateForDuration(minutes: number) {
+  const safeMinutes = Math.min(23 * 60 + 55, Math.max(5, minutes));
+  return new Date(2000, 0, 1, Math.floor(safeMinutes / 60), safeMinutes % 60);
+}
+
+function durationFromDate(date: Date) {
+  return Math.max(5, date.getHours() * 60 + date.getMinutes());
+}
+
 function weekdayFor(date: string): ISOWeekday {
   return isoWeekdayForDate(date);
 }
@@ -321,6 +330,8 @@ function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, o
   const [draft, setDraft] = useState(() => habitDraftFor(habit));
   const [liveDraft, setLiveDraft] = useState(() => habitDraftFor(habit));
   const [schedulePicker, setSchedulePicker] = useState<'time' | 'duration' | null>(null);
+  const [customDuration, setCustomDuration] = useState(() => habitEventDuration(habit.startTime, habit.endTime));
+  const [customDurationOpen, setCustomDurationOpen] = useState(false);
   const liveDraftRef = useRef(liveDraft);
   const pendingQuickSaves = useRef(0);
   const quickSaveQueue = useRef<Promise<void>>(Promise.resolve());
@@ -350,6 +361,7 @@ function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, o
   async function changeItemKind(kind: ItemKind) {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSchedulePicker(null);
+    setCustomDurationOpen(false);
     await updateHabit({
       itemKind: kind,
       startTime: kind === 'event' ? liveDraft.startTime ?? '7:00 AM' : undefined,
@@ -386,11 +398,47 @@ function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, o
                 <Text style={[styles.behaviorSettingValue, { color: colors.blue }]}>{liveDraft.startTime ?? '7:00 AM'}</Text>
               </Pressable>
               {schedulePicker === 'time' && <DateTimePicker display={Platform.OS === 'ios' ? 'spinner' : 'default'} mode="time" onChange={(_, selected) => { if (!selected) return; const startTime = formatTime(selected); void updateHabit({ startTime, endTime: habitEventEndTime(startTime, eventDuration) }); }} value={dateForTime(liveDraft.startTime)} />}
-              <Pressable onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setSchedulePicker((open) => open === 'duration' ? null : 'duration'); }} style={[styles.behaviorSettingRow, { borderTopColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }]}>
+              <Pressable onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setCustomDurationOpen(false); setSchedulePicker((open) => open === 'duration' ? null : 'duration'); }} style={[styles.behaviorSettingRow, { borderTopColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }]}>
                 <View><Text style={[styles.behaviorSettingTitle, { color: colors.text }]}>Length</Text><Text style={[styles.behaviorSettingMeta, { color: colors.secondary }]}>How long to protect</Text></View>
                 <Text style={[styles.behaviorSettingValue, { color: colors.blue }]}>{durationLabel(eventDuration)}</Text>
               </Pressable>
-              {schedulePicker === 'duration' && <View style={styles.durationOptions}>{EVENT_DURATIONS.map((minutes) => { const selected = eventDuration === minutes; return <Pressable key={minutes} onPress={() => { void updateHabit({ endTime: habitEventEndTime(liveDraft.startTime, minutes) }); setSchedulePicker(null); }} style={[styles.durationOption, { backgroundColor: selected ? colors.blue : colors.background }]}><Text style={[styles.durationOptionText, { color: selected ? '#FFFFFF' : colors.secondary }]}>{durationLabel(minutes)}</Text></Pressable>; })}</View>}
+              {schedulePicker === 'duration' && (
+                <View>
+                  <View style={styles.durationOptions}>
+                    {EVENT_DURATIONS.map((minutes) => {
+                      const selected = eventDuration === minutes && !customDurationOpen;
+                      return <Pressable key={minutes} onPress={() => { void updateHabit({ endTime: habitEventEndTime(liveDraft.startTime, minutes) }); setCustomDurationOpen(false); setSchedulePicker(null); }} style={[styles.durationOption, { backgroundColor: selected ? colors.blue : colors.background }]}><Text style={[styles.durationOptionText, { color: selected ? '#FFFFFF' : colors.secondary }]}>{durationLabel(minutes)}</Text></Pressable>;
+                    })}
+                    <Pressable
+                      onPress={() => {
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setCustomDuration(eventDuration);
+                        setCustomDurationOpen(true);
+                      }}
+                      style={[styles.durationOption, { backgroundColor: customDurationOpen || !EVENT_DURATIONS.includes(eventDuration) ? colors.blue : colors.background }]}
+                    >
+                      <Text style={[styles.durationOptionText, { color: customDurationOpen || !EVENT_DURATIONS.includes(eventDuration) ? '#FFFFFF' : colors.secondary }]}>Custom</Text>
+                    </Pressable>
+                  </View>
+                  {customDurationOpen && (
+                    <View style={styles.customDurationPicker}>
+                      <DateTimePicker
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        minuteInterval={5}
+                        mode={Platform.OS === 'ios' ? 'countdown' : 'time'}
+                        onChange={(_, selected) => { if (selected) setCustomDuration(durationFromDate(selected)); }}
+                        value={dateForDuration(customDuration)}
+                      />
+                      <View style={styles.customDurationActions}>
+                        <Text style={[styles.customDurationValue, { color: colors.secondary }]}>{durationLabel(customDuration)}</Text>
+                        <Pressable onPress={() => { void updateHabit({ endTime: habitEventEndTime(liveDraft.startTime, customDuration) }); setCustomDurationOpen(false); setSchedulePicker(null); }} style={[styles.customDurationDone, { backgroundColor: colors.blue }]}>
+                          <Text style={styles.customDurationDoneText}>Done</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
               <Text style={[styles.behaviorMeta, { color: colors.secondary }]}>After the event passes, Calendream can ask whether you completed it.</Text>
             </View>
           )}
@@ -640,6 +688,11 @@ const styles = StyleSheet.create({
   durationOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingTop: 5, paddingBottom: 5 },
   durationOption: { minHeight: 30, borderRadius: 15, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
   durationOptionText: { fontSize: 10, fontWeight: '800' },
+  customDurationPicker: { overflow: 'hidden', paddingBottom: 4 },
+  customDurationActions: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10 },
+  customDurationValue: { fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  customDurationDone: { height: 30, borderRadius: 15, paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
+  customDurationDoneText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
   quietInfoRow: { minHeight: 44, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   habitInfoValue: { maxWidth: 225, fontSize: 13, fontWeight: '600', textAlign: 'right' },
   startedRow: { paddingTop: 11, alignItems: 'flex-end' },
