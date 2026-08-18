@@ -148,7 +148,7 @@ export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, o
             <Text style={[styles.planIdentityTitle, { color: colors.text }]}>Plan</Text>
             <Text style={[styles.planIdentityMeta, { color: colors.secondary }]}>{goals.filter((goal) => !goal.completed).length} goals · {habits.length} routines</Text>
           </View>
-          <View style={styles.plansLink}>
+          <View style={[styles.plansLink, { backgroundColor: colors.blueSoft }]}>
             <Text style={[styles.plansAction, { color: colors.blue }]}>Goals</Text>
             <Text style={[styles.plansChevron, { color: colors.blue }]}>›</Text>
           </View>
@@ -382,7 +382,7 @@ const styles = StyleSheet.create({
   planOverviewIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   planIdentityTitle: { fontSize: 15, lineHeight: 18, fontWeight: '800' },
   planIdentityMeta: { fontSize: 10, lineHeight: 13, fontWeight: '700' },
-  plansLink: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 5 },
+  plansLink: { minHeight: 34, borderRadius: 17, marginLeft: 'auto', paddingLeft: 12, paddingRight: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
   plansAction: { fontSize: 14, fontWeight: '700' },
   plansChevron: { fontSize: 19, lineHeight: 20, marginTop: -1 },
   chatContent: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 6, paddingBottom: 16 },
