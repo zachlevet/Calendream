@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,6 +19,7 @@ import {
   View,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SymbolView } from 'expo-symbols';
@@ -189,6 +190,19 @@ export function TodayScreen() {
     await data.deleteItem(id);
     setTimelineRevision((revision) => revision + 1);
     setEditor(null);
+    if (inlineEditor?.item?.id === id) {
+      configureEditorClose();
+      setInlineDraft(null);
+      setInlineEditor(null);
+      Keyboard.dismiss();
+    }
+  }
+
+  function confirmRemoveItem(item: PlanningItem) {
+    Alert.alert(`Delete ${item.kind}?`, `“${item.title}” will be removed.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => void removeItem(item.id) },
+    ]);
   }
 
   async function saveInline(draft: ItemDraft) {
@@ -490,40 +504,42 @@ export function TodayScreen() {
                 const showHabitCheckIn = Boolean(event.habitId && eventPhase(event) === 'past' && !habitEntry?.completed && !habitEntry?.failed);
                 return (
                 <Fragment key={event.id}>
-                <Pressable
-                  onPress={() => void toggleInlineEditor(event)}
-                  style={({ pressed }) => [
-                    styles.eventRow,
-                    { borderColor: colors.separator },
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={[styles.eventTime, { color: colors.secondary }]}>
-                    {event.startTime || 'All day'}
-                  </Text>
-                  <View style={[styles.eventRule, { backgroundColor: eventAccent(event, colors) }]} />
-                  <View style={styles.rowCopy}>
-                    <Text style={[styles.rowTitle, { color: colors.text }]}>{event.title}</Text>
-                    {(event.notes || event.location) && (
-                      <Text style={[styles.rowNote, { color: colors.secondary }]} numberOfLines={1}>
-                        {[event.location, event.notes].filter(Boolean).join(' · ')}
-                      </Text>
+                <SwipeDeleteRow colors={colors} label={event.title} onDelete={() => confirmRemoveItem(event)}>
+                  <Pressable
+                    onPress={() => void toggleInlineEditor(event)}
+                    style={({ pressed }) => [
+                      styles.eventRow,
+                      { backgroundColor: colors.background, borderColor: colors.separator },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[styles.eventTime, { color: colors.secondary }]}>
+                      {event.startTime || 'All day'}
+                    </Text>
+                    <View style={[styles.eventRule, { backgroundColor: eventAccent(event, colors) }]} />
+                    <View style={styles.rowCopy}>
+                      <Text style={[styles.rowTitle, { color: colors.text }]}>{event.title}</Text>
+                      {(event.notes || event.location) && (
+                        <Text style={[styles.rowNote, { color: colors.secondary }]} numberOfLines={1}>
+                          {[event.location, event.notes].filter(Boolean).join(' · ')}
+                        </Text>
+                      )}
+                    </View>
+                    {event.location && (
+                      <Pressable
+                        accessibilityLabel={`Open ${event.location} in Maps`}
+                        hitSlop={8}
+                        onPress={(pressEvent) => {
+                          pressEvent.stopPropagation();
+                          void openItemInMaps(event);
+                        }}
+                        style={[styles.mapsButton, { backgroundColor: colors.blueSoft }]}
+                      >
+                        <Text style={[styles.mapsButtonText, { color: colors.blue }]}>Maps</Text>
+                      </Pressable>
                     )}
-                  </View>
-                  {event.location && (
-                    <Pressable
-                      accessibilityLabel={`Open ${event.location} in Maps`}
-                      hitSlop={8}
-                      onPress={(pressEvent) => {
-                        pressEvent.stopPropagation();
-                        void openItemInMaps(event);
-                      }}
-                      style={[styles.mapsButton, { backgroundColor: colors.blueSoft }]}
-                    >
-                      <Text style={[styles.mapsButtonText, { color: colors.blue }]}>Maps</Text>
-                    </Pressable>
-                  )}
-                </Pressable>
+                  </Pressable>
+                </SwipeDeleteRow>
                   {showHabitCheckIn && (
                     <View style={[styles.habitEventCheckIn, { backgroundColor: colors.blueSoft }]}>
                       <View style={styles.rowCopy}>
@@ -536,7 +552,7 @@ export function TodayScreen() {
                   )}
                   {habitEntry?.failed && <Text style={[styles.habitEventMissed, { color: colors.tertiary }]}>Habit marked not completed</Text>}
                   {inlineEditor?.item?.id === event.id && (
-                    <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                    <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={closeInlineEditor} onDelete={() => confirmRemoveItem(event)} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
                   )}
                 </Fragment>
                 );
@@ -553,9 +569,11 @@ export function TodayScreen() {
               />
               {tasks.map((task, index) => (
                 <Fragment key={task.id}>
-                  <DraggableTaskRow colors={colors} index={index} onEdit={() => void toggleInlineEditor(task)} onMove={moveTask} onToggle={() => void data.toggleTask(task)} task={task} />
+                  <SwipeDeleteRow colors={colors} label={task.title} onDelete={() => confirmRemoveItem(task)}>
+                    <DraggableTaskRow colors={colors} index={index} onEdit={() => void toggleInlineEditor(task)} onMove={moveTask} onToggle={() => void data.toggleTask(task)} task={task} />
+                  </SwipeDeleteRow>
                   {inlineEditor?.item?.id === task.id && (
-                    <InlineComposer colors={colors} initial={task} key={task.id} kind="task" onCancel={closeInlineEditor} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
+                    <InlineComposer colors={colors} initial={task} key={task.id} kind="task" onCancel={closeInlineEditor} onDelete={() => confirmRemoveItem(task)} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
                   )}
                 </Fragment>
               ))}
@@ -853,6 +871,38 @@ function TabButton({ active, label, onPress, colors, accent }: {
   );
 }
 
+function SwipeDeleteRow({ children, colors, label, onDelete }: {
+  children: ReactNode;
+  colors: AppColors;
+  label: string;
+  onDelete: () => void;
+}) {
+  const swipeable = useRef<SwipeableMethods>(null);
+  return (
+    <ReanimatedSwipeable
+      friction={1.8}
+      overshootRight={false}
+      ref={swipeable}
+      renderRightActions={() => (
+        <Pressable
+          accessibilityLabel={`Delete ${label}`}
+          onPress={() => {
+            swipeable.current?.close();
+            onDelete();
+          }}
+          style={[styles.swipeDeleteAction, { backgroundColor: colors.red }]}
+        >
+          <SymbolView name="trash.fill" size={15} tintColor="#FFFFFF" weight="semibold" />
+          <Text style={styles.swipeDeleteText}>Delete</Text>
+        </Pressable>
+      )}
+      rightThreshold={36}
+    >
+      <View style={{ backgroundColor: colors.background }}>{children}</View>
+    </ReanimatedSwipeable>
+  );
+}
+
 function DraggableTaskRow({ task, index, colors, onToggle, onEdit, onMove }: {
   task: PlanningItem;
   index: number;
@@ -960,12 +1010,13 @@ function TodayGoalPill({ goal, colors, onOpen }: { goal: Goal; colors: AppColors
   );
 }
 
-function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange, onReveal, onSave }: {
+function InlineComposer({ kind, today, colors, initial, onCancel, onDelete, onDraftChange, onReveal, onSave }: {
   kind: 'task' | 'event';
   today: string;
   colors: AppColors;
   initial?: PlanningItem;
   onCancel: () => void;
+  onDelete?: () => void;
   onDraftChange?: (draft: ItemDraft) => void;
   onReveal: (y: number, height: number) => void;
   onSave: (draft: ItemDraft) => Promise<void>;
@@ -1063,14 +1114,21 @@ function InlineComposer({ kind, today, colors, initial, onCancel, onDraftChange,
           value={location}
         />
       )}
-      {!initial && (
-        <View style={styles.inlineActions}>
+      <View style={[styles.inlineActions, initial && styles.inlineEditActions]}>
+        {initial ? (onDelete ? (
+            <Pressable accessibilityLabel={`Delete ${kind}`} hitSlop={8} onPress={onDelete} style={[styles.inlineDelete, { backgroundColor: colors.background }]}>
+              <SymbolView name="trash" size={15} tintColor={colors.red} weight="semibold" />
+            </Pressable>
+          ) : (
+            <View style={styles.inlineDeletePlaceholder} />
+          )
+        ) : (
           <Pressable onPress={onCancel} hitSlop={8}><Text style={[styles.inlineAction, { color: colors.secondary }]}>Cancel</Text></Pressable>
-          <Pressable disabled={!title.trim() || saving} onPress={() => void submit()} style={[styles.inlineSave, { backgroundColor: title.trim() ? colors.blue : colors.tertiary }]}>
-            <Text style={styles.inlineSaveText}>{saving ? 'Saving…' : initial ? `Save ${kind}` : `Add ${kind}`}</Text>
-          </Pressable>
-        </View>
-      )}
+        )}
+        <Pressable disabled={!title.trim() || saving} onPress={() => void submit()} style={[styles.inlineSave, { backgroundColor: title.trim() ? colors.blue : colors.tertiary }]}>
+          <Text style={styles.inlineSaveText}>{saving ? 'Saving…' : initial ? 'Done' : `Add ${kind}`}</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -1553,6 +1611,8 @@ const styles = StyleSheet.create({
   checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   taskCopy: { flex: 1, paddingVertical: 8 },
   completed: { textDecorationLine: 'line-through' },
+  swipeDeleteAction: { width: 72, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  swipeDeleteText: { color: '#FFFFFF', fontSize: 10, lineHeight: 12, fontWeight: '700' },
   tabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 78, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', paddingTop: 8, paddingBottom: 20 },
   tabButton: { flex: 1, alignItems: 'center', gap: 4 },
   tabGlyph: { width: 23, height: 16, borderRadius: 6 },
@@ -1583,7 +1643,10 @@ const styles = StyleSheet.create({
   inlineTimeValue: { flex: 1, fontSize: 15, fontWeight: '500' },
   wheelPickerWrap: { height: 168, overflow: 'hidden', justifyContent: 'center' },
   inlineActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 16, marginTop: 10 },
+  inlineEditActions: { justifyContent: 'space-between' },
   inlineAction: { fontSize: 14, fontWeight: '600' },
+  inlineDelete: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  inlineDeletePlaceholder: { width: 34, height: 34 },
   inlineSave: { height: 34, borderRadius: 10, paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
   inlineSaveText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
   kindPicker: { flexDirection: 'row', marginHorizontal: 18, marginTop: 12, padding: 3, borderRadius: 10 },
