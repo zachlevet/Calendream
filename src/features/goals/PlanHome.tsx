@@ -9,12 +9,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 import type { AppColors } from '@/theme/colors';
 import type { Goal, GoalDraft, Habit, HabitDraft, ISOWeekday, ItemDraft } from '@/models/planning';
 import { dateFromISO, localISO } from '@/shared/date';
+import { timeMinutes } from '@/shared/time';
 import { findAmbiguousTime, resolveAmbiguousTime, type TimePeriod } from '@/features/quick-capture/timePeriod';
-import { interpretPlanMessage, type PlanInterpretation } from './planMessage';
+import { applyPlanAdjustment, interpretPlanMessage, type PlanInterpretation } from './planMessage';
 
 interface PlanChatHomeProps {
   colors: AppColors;
@@ -30,6 +32,7 @@ interface PlanChatHomeProps {
 interface ChatEntry {
   id: number;
   text: string;
+  followUps?: string[];
   interpretation: PlanInterpretation;
   saved?: boolean;
 }
@@ -42,6 +45,15 @@ function targetForHorizon(today: string, horizon: NonNullable<PlanInterpretation
   if (horizon === 'quarter') return localISO(new Date(date.getFullYear(), Math.floor(date.getMonth() / 3) * 3 + 3, 0));
   if (horizon === 'year') return `${date.getFullYear()}-12-31`;
   return '9999-12-31';
+}
+
+function dateForPlanTime(value?: string) {
+  const minutes = timeMinutes(value ?? '7:00 AM');
+  return new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60);
+}
+
+function formatPlanTime(date: Date) {
+  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, onSaveHabit, onSaveItem, today }: PlanChatHomeProps) {
@@ -63,8 +75,18 @@ export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, o
   function submit() {
     if (!canSend) return;
     const resolved = timePeriod ? resolveAmbiguousTime(text.trim(), timePeriod) : text.trim();
-    const entry: ChatEntry = { id: Date.now(), text: resolved, interpretation: interpretPlanMessage(resolved, today) };
-    setEntries((current) => [...current, entry]);
+    setEntries((current) => {
+      const last = current.at(-1);
+      const adjusted = last && !last.saved ? applyPlanAdjustment(last.interpretation, resolved, today) : null;
+      if (last && adjusted) {
+        return current.map((entry) => entry.id === last.id ? {
+          ...entry,
+          followUps: [...(entry.followUps ?? []), resolved],
+          interpretation: adjusted,
+        } : entry);
+      }
+      return [...current, { id: Date.now(), text: resolved, interpretation: interpretPlanMessage(resolved, today) }];
+    });
     setText('');
     setTimePeriod(null);
     setChoosingPeriod(false);
@@ -104,10 +126,13 @@ export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, o
     setSavingId(null);
   }
 
-  function adjust(entry: ChatEntry) {
+  function adjustWithPrompt(entry: ChatEntry) {
     setText(entry.text);
-    setEntries((current) => current.filter((candidate) => candidate.id !== entry.id));
     setTimeout(() => input.current?.focus(), 50);
+  }
+
+  function updateInterpretation(id: number, interpretation: PlanInterpretation) {
+    setEntries((current) => current.map((entry) => entry.id === id ? { ...entry, interpretation } : entry));
   }
 
   const suggestions = ['Run every weekday at 7:30', 'My goal is to write a book this year', 'Plan tomorrow morning'];
@@ -118,8 +143,10 @@ export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, o
           <Text style={[styles.planTitle, { color: colors.text }]}>Plan</Text>
           <Text style={[styles.planSubtitle, { color: colors.secondary }]}>{goals.filter((goal) => !goal.completed).length} goals · {habits.length} routines</Text>
         </View>
-        <Pressable accessibilityLabel="Open your plans" hitSlop={8} onPress={onOpenPlans}>
-          <Text style={[styles.plansAction, { color: colors.blue }]}>Your Plans ›</Text>
+        <Pressable accessibilityLabel="Open your plans" onPress={onOpenPlans} style={[styles.plansButton, { backgroundColor: colors.card }]}>
+          <Text style={[styles.plansButtonIcon, { color: colors.blue }]}>≡</Text>
+          <Text style={[styles.plansAction, { color: colors.blue }]}>Your Plans</Text>
+          <Text style={[styles.plansChevron, { color: colors.blue }]}>›</Text>
         </Pressable>
       </View>
 
@@ -142,7 +169,15 @@ export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, o
         {entries.map((entry) => (
           <View key={entry.id} style={styles.exchange}>
             <View style={[styles.userBubble, { backgroundColor: colors.blue }]}><Text style={styles.userBubbleText}>{entry.text}</Text></View>
-            <PlanPreviewCard colors={colors} entry={entry} onAdjust={() => adjust(entry)} onSave={() => void save(entry)} saving={savingId === entry.id} />
+            {entry.followUps?.map((followUp, index) => <View key={`${entry.id}-follow-up-${index}`} style={[styles.userBubble, { backgroundColor: colors.blue }]}><Text style={styles.userBubbleText}>{followUp}</Text></View>)}
+            <PlanPreviewCard
+              colors={colors}
+              entry={entry}
+              onChange={(interpretation) => updateInterpretation(entry.id, interpretation)}
+              onEditPrompt={() => adjustWithPrompt(entry)}
+              onSave={() => void save(entry)}
+              saving={savingId === entry.id}
+            />
           </View>
         ))}
       </ScrollView>
@@ -182,7 +217,16 @@ export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, o
   );
 }
 
-function PlanPreviewCard({ colors, entry, onAdjust, onSave, saving }: { colors: AppColors; entry: ChatEntry; onAdjust: () => void; onSave: () => void; saving: boolean }) {
+function PlanPreviewCard({ colors, entry, onChange, onEditPrompt, onSave, saving }: {
+  colors: AppColors;
+  entry: ChatEntry;
+  onChange: (interpretation: PlanInterpretation) => void;
+  onEditPrompt: () => void;
+  onSave: () => void;
+  saving: boolean;
+}) {
+  const [adjusting, setAdjusting] = useState(false);
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
   const plan = entry.interpretation;
   const accent = plan.intent === 'goal' ? colors.yellow : plan.intent === 'routine' ? colors.blue : plan.intent === 'event' ? colors.orange : colors.secondary;
   const background = plan.intent === 'goal' ? colors.yellowSoft : plan.intent === 'event' ? colors.orangeSoft : plan.intent === 'routine' ? colors.blueSoft : colors.card;
@@ -200,9 +244,34 @@ function PlanPreviewCard({ colors, entry, onAdjust, onSave, saving }: { colors: 
       <Text style={[styles.previewTitle, { color: colors.text }]}>{plan.title}</Text>
       <Text style={[styles.previewSchedule, { color: colors.secondary }]}>{schedule}</Text>
       {plan.intent === 'routine' && <Text style={[styles.previewExplanation, { color: colors.secondary }]}>{plan.time ? 'Creates an event on each scheduled day.' : 'Creates a task on each scheduled day.'}</Text>}
+      {adjusting && plan.intent === 'routine' && (
+        <View style={[styles.routineAdjuster, { borderTopColor: colors.separator }]}>
+          <Text style={[styles.adjusterLabel, { color: colors.secondary }]}>NAME</Text>
+          <TextInput onChangeText={(title) => onChange({ ...plan, title })} style={[styles.adjusterName, { color: colors.text, borderBottomColor: colors.separator }]} value={plan.title} />
+          <Text style={[styles.adjusterLabel, { color: colors.secondary }]}>REPEAT</Text>
+          <View style={styles.adjusterWeekdays}>
+            {([1, 2, 3, 4, 5, 6, 7] as ISOWeekday[]).map((day) => {
+              const active = plan.weekdays?.includes(day) ?? false;
+              return <Pressable key={day} onPress={() => { const next = active ? plan.weekdays?.filter((value) => value !== day) : [...(plan.weekdays ?? []), day].sort(); if (next?.length) onChange({ ...plan, weekdays: next as ISOWeekday[] }); }} style={[styles.adjusterDay, { backgroundColor: active ? colors.blue : colors.background, borderColor: active ? colors.blue : colors.separator }]}><Text style={[styles.adjusterDayText, { color: active ? '#FFFFFF' : colors.secondary }]}>{WEEKDAY_LABELS[day].charAt(0)}</Text></Pressable>;
+            })}
+          </View>
+          <View style={styles.adjusterTimeRow}>
+            <View>
+              <Text style={[styles.adjusterTimeTitle, { color: colors.text }]}>Time</Text>
+              <Text style={[styles.adjusterTimeMeta, { color: colors.secondary }]}>{plan.time ? 'Creates an event' : 'No time · creates a task'}</Text>
+            </View>
+            <View style={styles.adjusterTimeActions}>
+              {plan.time && <Pressable onPress={() => { setTimePickerOpen(false); onChange({ ...plan, time: undefined }); }}><Text style={[styles.removeTime, { color: colors.secondary }]}>Remove</Text></Pressable>}
+              <Pressable onPress={() => { if (!plan.time) onChange({ ...plan, time: '7:00 AM' }); setTimePickerOpen((open) => !open); }} style={[styles.timeButton, { backgroundColor: colors.background }]}><Text style={[styles.timeButtonText, { color: colors.blue }]}>{plan.time ?? 'Add time'}</Text></Pressable>
+            </View>
+          </View>
+          {timePickerOpen && plan.time && <DateTimePicker display={Platform.OS === 'ios' ? 'spinner' : 'default'} mode="time" onChange={(_, selected) => { if (selected) onChange({ ...plan, time: formatPlanTime(selected) }); }} value={dateForPlanTime(plan.time)} />}
+          <View style={styles.adjusterDoneRow}><Pressable onPress={() => { setAdjusting(false); setTimePickerOpen(false); }} style={[styles.adjusterDone, { backgroundColor: colors.blue }]}><Text style={styles.adjusterDoneText}>Done</Text></Pressable></View>
+        </View>
+      )}
       {!entry.saved && (
         <View style={styles.previewActions}>
-          <Pressable onPress={onAdjust} style={styles.adjustButton}><Text style={[styles.adjustText, { color: colors.secondary }]}>Adjust</Text></Pressable>
+          {!adjusting && <Pressable onPress={() => plan.intent === 'routine' ? setAdjusting(true) : onEditPrompt()} style={styles.adjustButton}><Text style={[styles.adjustText, { color: colors.secondary }]}>Adjust</Text></Pressable>}
           <Pressable disabled={saving} onPress={onSave} style={[styles.confirmButton, { backgroundColor: accent }]}><Text style={styles.confirmText}>{saving ? 'Adding…' : plan.intent === 'goal' ? 'Keep in View' : 'Add to Calendar'}</Text></Pressable>
         </View>
       )}
@@ -273,7 +342,10 @@ const styles = StyleSheet.create({
   planHeader: { minHeight: 65, paddingHorizontal: 18, paddingTop: 8, paddingBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   planTitle: { fontSize: 31, lineHeight: 35, fontWeight: '700', letterSpacing: -0.9 },
   planSubtitle: { fontSize: 12, lineHeight: 16, marginTop: 2, fontWeight: '600' },
+  plansButton: { minHeight: 38, borderRadius: 19, paddingLeft: 11, paddingRight: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  plansButtonIcon: { fontSize: 14, lineHeight: 16, fontWeight: '800' },
   plansAction: { fontSize: 14, fontWeight: '700' },
+  plansChevron: { fontSize: 19, lineHeight: 20, marginTop: -1 },
   chatContent: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 6, paddingBottom: 16 },
   welcome: { flex: 1, minHeight: 355, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 18, paddingBottom: 24 },
   assistantMark: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
@@ -293,6 +365,22 @@ const styles = StyleSheet.create({
   previewTitle: { fontSize: 18, lineHeight: 22, fontWeight: '700', letterSpacing: -0.25, marginTop: 6 },
   previewSchedule: { fontSize: 12, lineHeight: 17, fontWeight: '700', marginTop: 5 },
   previewExplanation: { fontSize: 11, lineHeight: 16, marginTop: 3 },
+  routineAdjuster: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 13, paddingTop: 4 },
+  adjusterLabel: { fontSize: 8, lineHeight: 11, fontWeight: '800', letterSpacing: 0.8, marginTop: 10, marginBottom: 5 },
+  adjusterName: { height: 37, borderBottomWidth: StyleSheet.hairlineWidth, fontSize: 15, fontWeight: '700', paddingVertical: 4 },
+  adjusterWeekdays: { flexDirection: 'row', justifyContent: 'space-between' },
+  adjusterDay: { width: 34, height: 34, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  adjusterDayText: { fontSize: 11, fontWeight: '800' },
+  adjusterTimeRow: { minHeight: 53, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+  adjusterTimeTitle: { fontSize: 14, fontWeight: '700' },
+  adjusterTimeMeta: { fontSize: 9, lineHeight: 12, marginTop: 2 },
+  adjusterTimeActions: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  removeTime: { fontSize: 10, fontWeight: '700' },
+  timeButton: { minHeight: 32, borderRadius: 16, paddingHorizontal: 11, alignItems: 'center', justifyContent: 'center' },
+  timeButtonText: { fontSize: 11, fontWeight: '800' },
+  adjusterDoneRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 5 },
+  adjusterDone: { height: 32, borderRadius: 16, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center' },
+  adjusterDoneText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
   previewActions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 7, marginTop: 13 },
   adjustButton: { height: 34, paddingHorizontal: 13, alignItems: 'center', justifyContent: 'center' },
   adjustText: { fontSize: 12, fontWeight: '700' },

@@ -65,3 +65,23 @@ export function interpretPlanMessage(input: string, today: string): PlanInterpre
   if (goalLanguage && !quick.time) return { intent: 'goal', title: cleanTitle(input), date: quick.date, horizon };
   return { intent: quick.time ? 'event' : 'task', title: quick.title || cleanTitle(input), date: quick.date, time: quick.time };
 }
+
+export function applyPlanAdjustment(current: PlanInterpretation, input: string, today: string): PlanInterpretation | null {
+  if (current.intent !== 'routine') return null;
+  const adjustmentLanguage = /^\s*(?:can|could|would|make|change|switch|actually|instead|just|only)\b/i.test(input)
+    || /^\s*(?:mon|tue|wed|thu|fri|sat|sun)(?:day)?s?\b/i.test(input);
+  if (!adjustmentLanguage) return null;
+
+  const parsed = interpretPlanMessage(input, today);
+  const mentionsSchedule = /\b(?:every day|daily|weekdays?|during the week|days? (?:a|per) week|mon(?:day)?s?|tue(?:sday)?s?|wed(?:nesday)?s?|thu(?:rsday)?s?|fri(?:day)?s?|sat(?:urday)?s?|sun(?:day)?s?)\b/i.test(input);
+  const removesTime = /\b(?:no time|without (?:a )?time|make it a task|as a task)\b/i.test(input);
+  const makesEvent = /\b(?:make it an event|as an event)\b/i.test(input);
+  const hasChange = mentionsSchedule || Boolean(parsed.time) || removesTime || makesEvent;
+  if (!hasChange) return null;
+
+  return {
+    ...current,
+    weekdays: mentionsSchedule && parsed.weekdays ? parsed.weekdays : current.weekdays,
+    time: removesTime ? undefined : parsed.time ?? (makesEvent ? current.time ?? '7:00 AM' : current.time),
+  };
+}
