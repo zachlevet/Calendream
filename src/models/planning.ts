@@ -78,7 +78,7 @@ export interface GoalStep {
   id: string;
   goalId: string;
   title: string;
-  scheduledDate: string;
+  scheduledDate?: string;
   itemId: string;
   completed?: boolean;
 }
@@ -86,7 +86,7 @@ export interface GoalStep {
 export interface GoalStepDraft {
   goalId: string;
   title: string;
-  scheduledDate: string;
+  scheduledDate?: string;
 }
 
 export interface Habit {

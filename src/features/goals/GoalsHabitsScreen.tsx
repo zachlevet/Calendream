@@ -227,13 +227,34 @@ function GoalDetailPage({ colors, goal, onBack, onDeleteGoal, onDeleteStep, onSa
       {!editing && goal.notes && <Text style={[styles.goalNotes, { color: colors.secondary }]}>{goal.notes}</Text>}
 
       <View style={styles.goalTasksSection}>
-        <SectionHeading action="Add task" colors={colors} onAction={() => setStepDraft({ goalId: goal.id, title: '', scheduledDate: today })} subtitle="Small steps that move this goal forward." title="Tasks" />
+        <SectionHeading action="Add task" colors={colors} onAction={() => { setStepDraft({ goalId: goal.id, title: '' }); setStepPickerOpen(false); }} subtitle="Small steps that move this goal forward." title="Tasks" />
         <View style={[styles.goalTaskList, { borderColor: colors.separator }]}>
-          {steps.map((step) => <Pressable accessibilityLabel={step.completed ? `Mark ${step.title} incomplete` : `Complete ${step.title}`} key={step.id} onLongPress={() => void onDeleteStep(step)} onPress={() => void onToggleStep(step)} style={[styles.goalTaskRow, { borderColor: colors.separator }]}><View style={[styles.goalTaskCheck, { borderColor: step.completed ? colors.blue : colors.tertiary }, step.completed && { backgroundColor: colors.blue }]}>{step.completed && <Text style={styles.checkmark}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.projectTitle, { color: step.completed ? colors.tertiary : colors.text }, step.completed && styles.completed]}>{step.title}</Text><Text style={[styles.projectDate, { color: step.scheduledDate < today && !step.completed ? colors.red : colors.secondary }]}>Scheduled {formatLongDate(step.scheduledDate)}</Text></View></Pressable>)}
+          {steps.map((step) => <Pressable accessibilityLabel={step.completed ? `Mark ${step.title} incomplete` : `Complete ${step.title}`} key={step.id} onLongPress={() => void onDeleteStep(step)} onPress={() => void onToggleStep(step)} style={[styles.goalTaskRow, { borderColor: colors.separator }]}><View style={[styles.goalTaskCheck, { borderColor: step.completed ? colors.blue : colors.tertiary }, step.completed && { backgroundColor: colors.blue }]}>{step.completed && <Text style={styles.checkmark}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.projectTitle, { color: step.completed ? colors.tertiary : colors.text }, step.completed && styles.completed]}>{step.title}</Text>{step.scheduledDate && <Text style={[styles.projectDate, { color: step.scheduledDate < today && !step.completed ? colors.red : colors.secondary }]}>Scheduled {formatLongDate(step.scheduledDate)}</Text>}</View></Pressable>)}
           {!steps.length && !stepDraft && <Text style={[styles.goalTaskEmpty, { color: colors.secondary }]}>No tasks yet. Add the first thing that needs to happen.</Text>}
-          {stepDraft && <View style={[styles.stepComposer, { borderColor: colors.separator }]}><TextInput autoFocus onChangeText={(title) => setStepDraft({ ...stepDraft, title })} placeholder="What needs to happen?" placeholderTextColor={colors.tertiary} style={[styles.stepInput, { color: colors.text }]} value={stepDraft.title} /><Pressable onPress={() => setStepPickerOpen((open) => !open)} style={styles.dateRow}><Text style={[styles.fieldLabel, { color: colors.secondary }]}>Schedule for</Text><Text style={[styles.dateValue, { color: colors.blue }]}>{formatLongDate(stepDraft.scheduledDate)}</Text></Pressable>{stepPickerOpen && <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} minimumDate={dateFromISO(today)} mode="date" onChange={(_, selected) => { if (Platform.OS !== 'ios') setStepPickerOpen(false); if (selected) setStepDraft({ ...stepDraft, scheduledDate: localISO(selected) }); }} value={dateFromISO(stepDraft.scheduledDate)} />}<EditorActions colors={colors} onCancel={() => { setStepDraft(null); setStepPickerOpen(false); }} onSave={() => void saveStep()} saveDisabled={!stepDraft.title.trim()} /></View>}
+          {stepDraft && <View style={[styles.stepComposer, { borderColor: colors.separator }]}>
+            <View style={styles.stepComposerRow}>
+              <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.stepComposerCheck, { borderColor: colors.tertiary }]} />
+              <TextInput autoFocus onChangeText={(title) => setStepDraft({ ...stepDraft, title })} placeholder="What needs to happen?" placeholderTextColor={colors.tertiary} style={[styles.stepInput, { color: colors.text }]} value={stepDraft.title} />
+              <Pressable accessibilityLabel="Schedule this task" onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                if (!stepPickerOpen && !stepDraft.scheduledDate) setStepDraft({ ...stepDraft, scheduledDate: today });
+                setStepPickerOpen((open) => !open);
+              }} style={[styles.stepScheduleOrb, { backgroundColor: stepPickerOpen || stepDraft.scheduledDate ? colors.blueSoft : colors.card }]}>
+                <Text style={[styles.stepScheduleText, { color: colors.blue }]}>Schedule</Text>
+              </Pressable>
+            </View>
+            {stepPickerOpen && <View style={[styles.stepSchedulePanel, { backgroundColor: colors.card }]}>
+              <View style={styles.stepScheduleHeader}>
+                <View style={styles.cardCopy}><Text style={[styles.stepScheduleLabel, { color: colors.secondary }]}>SCHEDULED FOR</Text><Text style={[styles.stepScheduleDate, { color: colors.text }]}>{formatLongDate(stepDraft.scheduledDate ?? today)}</Text></View>
+                <Pressable hitSlop={8} onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setStepDraft({ ...stepDraft, scheduledDate: undefined }); setStepPickerOpen(false); }}><Text style={[styles.stepScheduleClear, { color: colors.secondary }]}>Remove</Text></Pressable>
+              </View>
+              <DateTimePicker display={Platform.OS === 'ios' ? 'inline' : 'default'} minimumDate={dateFromISO(today)} mode="date" onChange={(_, selected) => { if (Platform.OS !== 'ios') setStepPickerOpen(false); if (selected) setStepDraft({ ...stepDraft, scheduledDate: localISO(selected) }); }} value={dateFromISO(stepDraft.scheduledDate ?? today)} />
+            </View>}
+            {!stepPickerOpen && stepDraft.scheduledDate && <Text style={[styles.stepScheduledSummary, { color: colors.secondary }]}>Scheduled {formatLongDate(stepDraft.scheduledDate)}</Text>}
+            <EditorActions colors={colors} onCancel={() => { setStepDraft(null); setStepPickerOpen(false); }} onSave={() => void saveStep()} saveDisabled={!stepDraft.title.trim()} />
+          </View>}
         </View>
-        <Text style={[styles.goalTaskHint, { color: colors.tertiary }]}>These also appear as tasks on their scheduled days. Long-press one to remove it.</Text>
+        <Text style={[styles.goalTaskHint, { color: colors.tertiary }]}>Schedule a task when you want it to also appear on a day. Long-press one to remove it.</Text>
       </View>
     </ScrollView>
   );
@@ -516,11 +537,18 @@ const styles = StyleSheet.create({
   projectTitle: { fontSize: 14, lineHeight: 18, fontWeight: '600' },
   projectDate: { fontSize: 10, marginTop: 2 },
   completed: { textDecorationLine: 'line-through' },
-  stepComposer: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 3, marginBottom: 4 },
-  stepInput: { height: 42, fontSize: 15, fontWeight: '600' },
-  dateRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  fieldLabel: { fontSize: 13 },
-  dateValue: { fontSize: 13, fontWeight: '700' },
+  stepComposer: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 5, paddingBottom: 2, marginBottom: 4 },
+  stepComposerRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center' },
+  stepComposerCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, marginRight: 10 },
+  stepInput: { flex: 1, height: 44, fontSize: 15, fontWeight: '600', paddingVertical: 0 },
+  stepScheduleOrb: { height: 32, borderRadius: 16, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
+  stepScheduleText: { fontSize: 12, fontWeight: '700' },
+  stepSchedulePanel: { borderRadius: 17, paddingHorizontal: 11, paddingTop: 10, paddingBottom: 3, marginTop: 5 },
+  stepScheduleHeader: { minHeight: 35, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2 },
+  stepScheduleLabel: { fontSize: 8, lineHeight: 10, fontWeight: '800', letterSpacing: 0.7 },
+  stepScheduleDate: { fontSize: 13, lineHeight: 18, fontWeight: '700', marginTop: 1 },
+  stepScheduleClear: { fontSize: 11, fontWeight: '600' },
+  stepScheduledSummary: { fontSize: 10, lineHeight: 14, marginLeft: 32, marginTop: -1 },
   habitLibraryRow: { minHeight: 59, flexDirection: 'row', alignItems: 'center' },
   habitTitle: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
   habitDetailContent: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 112 },

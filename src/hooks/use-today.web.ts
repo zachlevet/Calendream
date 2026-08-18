@@ -157,8 +157,8 @@ export function useTodayData(date: string, _reviewDate = date) {
       };
       setGoalSteps((current) => [...current, step]);
       setAllItems((current) => [...current, {
-        id: itemId, kind: 'task', title: draft.title, anchorStart: draft.scheduledDate,
-        anchorEnd: draft.scheduledDate, precision: 'day', altitude: 0,
+        id: itemId, kind: 'task', title: draft.title, anchorStart: draft.scheduledDate ?? null,
+        anchorEnd: draft.scheduledDate ?? null, precision: 'day', altitude: 0,
       }]);
     },
     toggleGoalStep: async (step: GoalStep) => {

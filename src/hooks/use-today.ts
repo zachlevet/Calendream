@@ -58,7 +58,7 @@ interface GoalStepRow {
   id: string;
   goal_id: string;
   title: string;
-  scheduled_date: string;
+  scheduled_date: string | null;
   item_id: string;
   completed_at: string | null;
 }
@@ -131,7 +131,7 @@ function toGoalStep(row: GoalStepRow): GoalStep {
     id: row.id,
     goalId: row.goal_id,
     title: row.title,
-    scheduledDate: row.scheduled_date,
+    scheduledDate: row.scheduled_date || undefined,
     itemId: row.item_id,
     completed: Boolean(row.completed_at),
   };
@@ -546,20 +546,24 @@ export function useTodayData(date: string, reviewDate = date) {
     const now = new Date().toISOString();
     const itemId = makeId();
     const stepId = makeId();
+    const scheduledDate = draft.scheduledDate ?? null;
+    // The original local schema keeps this column non-null; an empty value means
+    // the step belongs to the goal but has not been placed on a calendar day.
+    const storedScheduledDate = scheduledDate ?? '';
     await db.withTransactionAsync(async () => {
       await db.runAsync(
         `INSERT INTO items
           (id, kind, title, anchor_start, anchor_end, precision, altitude, sort_order, created_at, updated_at)
          VALUES (?, 'task', ?, ?, ?, 'day', 0,
            COALESCE((SELECT MAX(sort_order) + 1 FROM items WHERE kind = 'task' AND anchor_start = ?), 0), ?, ?)`,
-        itemId, draft.title.trim(), draft.scheduledDate, draft.scheduledDate, draft.scheduledDate, now, now,
+        itemId, draft.title.trim(), scheduledDate, scheduledDate, scheduledDate, now, now,
       );
       await db.runAsync(
         `INSERT INTO goal_steps
           (id, goal_id, title, scheduled_date, item_id, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?,
            COALESCE((SELECT MAX(sort_order) + 1 FROM goal_steps WHERE goal_id = ? AND deleted_at IS NULL), 0), ?, ?)`,
-        stepId, draft.goalId, draft.title.trim(), draft.scheduledDate, itemId, draft.goalId, now, now,
+        stepId, draft.goalId, draft.title.trim(), storedScheduledDate, itemId, draft.goalId, now, now,
       );
     });
     await refresh();
