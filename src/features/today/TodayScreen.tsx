@@ -449,6 +449,15 @@ export function TodayScreen() {
               <SymbolView name="xmark.circle.fill" size={18} tintColor={colors.tertiary} />
             </Pressable>
           </View>
+          {destination === 'library' && (
+            <Pressable
+              accessibilityLabel="Open settings"
+              onPress={openSettings}
+              style={({ pressed }) => [styles.searchButton, { backgroundColor: colors.card }, pressed && styles.pressed]}
+            >
+              <SymbolView name="gearshape" size={18} tintColor={colors.text} weight="medium" />
+            </Pressable>
+          )}
           <Pressable
             accessibilityLabel="Open calendar"
             onPress={toggleCalendar}
@@ -468,13 +477,36 @@ export function TodayScreen() {
           <>
             <Text style={[styles.wordmark, { color: colors.text }]}>Calendream</Text>
             {destination === 'library' ? (
-              <Pressable
-                accessibilityLabel="Open settings"
-                onPress={openSettings}
-                style={({ pressed }) => [styles.searchButton, { backgroundColor: colors.card }, pressed && styles.pressed]}
-              >
-                <SymbolView name="gearshape" size={18} tintColor={colors.text} weight="medium" />
-              </Pressable>
+              <View style={styles.headerActions}>
+                <Pressable
+                  accessibilityLabel="Search"
+                  onPress={openSearch}
+                  style={({ pressed }) => [styles.searchButton, { backgroundColor: colors.card }, pressed && styles.pressed]}
+                >
+                  <SymbolView name="magnifyingglass" size={16} tintColor={colors.text} />
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="Open settings"
+                  onPress={openSettings}
+                  style={({ pressed }) => [styles.searchButton, { backgroundColor: colors.card }, pressed && styles.pressed]}
+                >
+                  <SymbolView name="gearshape" size={18} tintColor={colors.text} weight="medium" />
+                </Pressable>
+                <Pressable
+                  accessibilityLabel={calendarOpen ? 'Close calendar' : 'Open calendar'}
+                  onPress={toggleCalendar}
+                  style={({ pressed }) => [styles.calendarButton, { backgroundColor: calendarOpen ? colors.blueSoft : colors.card }, pressed && styles.pressed]}
+                >
+                  <SymbolView name="calendar" size={16} tintColor={calendarOpen ? colors.blue : colors.text} />
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="Add an item"
+                  onPress={() => openQuickCapture()}
+                  style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+                >
+                  <Text style={styles.addSymbol}>+</Text>
+                </Pressable>
+              </View>
             ) : destination === 'settings' ? (
               <Pressable
                 accessibilityLabel="Back to Library"
