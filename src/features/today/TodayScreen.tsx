@@ -51,7 +51,7 @@ import { prepareLocationSuggestions } from './locationSuggestions';
 import { CompactCalendarOverlay } from '@/features/calendar/CompactCalendarOverlay';
 import { QuickCaptureSheet } from '@/features/quick-capture/QuickCaptureSheet';
 import type { CaptureKind } from '@/features/quick-capture/parseQuickCapture';
-import { SearchOverlay } from '@/features/search/SearchResults';
+import { SearchOverlay, type SearchBrowseCategory } from '@/features/search/SearchResults';
 import { TimelineScreen } from '@/features/timeline/TimelineScreen';
 import { GoalsHabitsScreen } from '@/features/goals/GoalsHabitsScreen';
 import { LibraryScreen, type LibrarySection } from '@/features/library/LibraryScreen';
@@ -315,9 +315,18 @@ export function TodayScreen() {
 
   function openSearch() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setDestination('today');
     setCalendarOpen(false);
     setSearchOpen(true);
+  }
+
+  function browseSearchCategory(category: SearchBrowseCategory) {
+    Keyboard.dismiss();
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    setLibraryDetail(null);
+    setLibrarySection(category);
+    setDestination('library');
   }
 
   function openQuickCapture(preset?: CapturePreset) {
@@ -889,7 +898,7 @@ export function TodayScreen() {
       {(searchOpen || calendarOpen) && <FocusGlassVeil colors={colors} onPress={searchOpen ? closeSearch : () => setCalendarOpen(false)} />}
 
       {searchOpen && (
-        <SearchOverlay colors={colors} loading={searchLoading} onSelect={selectSearchResult} query={searchQuery} results={searchResults} />
+        <SearchOverlay colors={colors} loading={searchLoading} onBrowseCategory={browseSearchCategory} onSelect={selectSearchResult} query={searchQuery} results={searchResults} />
       )}
 
       {calendarOpen && (
