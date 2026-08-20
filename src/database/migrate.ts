@@ -1,5 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { LOCAL_ONLY_CLEANUP_SQL } from './localOnlyCleanup';
+
 export async function migrateDatabase(db: SQLiteDatabase) {
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
@@ -166,6 +168,16 @@ export async function migrateDatabase(db: SQLiteDatabase) {
   if (!goalColumns.some((column) => column.name === 'completion_date')) {
     await db.execAsync('ALTER TABLE goals ADD COLUMN completion_date TEXT');
     await db.execAsync('UPDATE goals SET completion_date = target_date');
+  }
+
+  // Builds from the brief cloud-sync experiment may already have sync-only
+  // triggers and queue tables. Remove those artifacts without touching any
+  // planning data so this TestFlight branch remains entirely local-first.
+  const legacySyncTable = await db.getFirstAsync<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_state'",
+  );
+  if (legacySyncTable) {
+    await db.execAsync(LOCAL_ONLY_CLEANUP_SQL);
   }
 
   const sampleMarker = await db.getFirstAsync<{ value: string }>(

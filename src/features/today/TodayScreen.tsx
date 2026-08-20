@@ -22,6 +22,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { BlurView } from 'expo-blur';
 import { SymbolView } from 'expo-symbols';
 import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
 
@@ -1073,14 +1074,11 @@ function EmptySectionPrompt({ kind, colors, onPress }: { kind: 'event' | 'task';
 }
 
 function FocusGlassVeil({ colors, onPress }: { colors: AppColors; onPress: () => void }) {
-  const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
-  const fallback = colors.background === '#000000' ? 'rgba(10,10,12,0.70)' : 'rgba(246,246,250,0.76)';
-  const tint = colors.background === '#000000' ? 'rgba(26,26,30,0.50)' : 'rgba(255,255,255,0.42)';
+  const dark = colors.background === '#000000';
   return (
     <View style={styles.focusVeil}>
-      {glassAvailable
-        ? <GlassView glassEffectStyle="regular" pointerEvents="none" style={StyleSheet.absoluteFill} tintColor={tint} />
-        : <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: fallback }]} />}
+      <BlurView intensity={10} pointerEvents="none" style={StyleSheet.absoluteFill} tint={dark ? 'dark' : 'light'} />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: dark ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)' }]} />
       <Pressable accessibilityLabel="Close focused view" onPress={onPress} style={StyleSheet.absoluteFill} />
     </View>
   );
