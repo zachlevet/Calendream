@@ -7,6 +7,7 @@ class CalendreamMapKitModule extends NativeModule<{}> {
   async suggestAsync(_query: string): Promise<MapSuggestion[]> { return []; }
   async resolveAsync(_query: string): Promise<MapPlace> { throw new Error('MapKit is only available on Apple platforms.'); }
   async openInMapsAsync(_name: string, _address: string, _latitude: number, _longitude: number): Promise<boolean> { return false; }
+  async createJournalPDFAsync(_text: string, _filename: string): Promise<string> { throw new Error('PDF export is only available on Apple platforms.'); }
 }
 
 export default registerWebModule(CalendreamMapKitModule, 'CalendreamMapKitModule') as unknown as CalendreamMapKitModule;

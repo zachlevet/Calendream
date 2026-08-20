@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
 
-import type { Goal, GoalDraft, GoalHabitLink, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ISOWeekday, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
-import { readJournalEntries } from '../database/libraryStore';
+import type { Goal, GoalDraft, GoalHabitLink, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ISOWeekday, ItemDraft, JournalEntryDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
+import { deleteStandaloneJournalEntry, readJournalEntries, saveStandaloneJournalEntry } from '../database/libraryStore';
 import { archiveRoutineRecord, reconcileRoutineItems, saveRoutineRecord } from '../database/routineStore';
 import { matchingSnippet } from '../shared/search';
 
@@ -865,6 +865,14 @@ export function useTodayData(date: string, reviewDate = date) {
 
   const loadJournalEntries = useCallback(() => readJournalEntries(db), [db]);
 
+  const saveLibraryJournalEntry = useCallback(async (draft: JournalEntryDraft) => {
+    return saveStandaloneJournalEntry(db, draft, { makeId });
+  }, [db]);
+
+  const deleteLibraryJournalEntry = useCallback(async (id: string) => {
+    await deleteStandaloneJournalEntry(db, id);
+  }, [db]);
+
   const markMorningReviewed = useCallback(async () => {
     const now = new Date().toISOString();
     await db.runAsync(
@@ -977,6 +985,8 @@ export function useTodayData(date: string, reviewDate = date) {
     saveJournalForDate,
     saveJournalToLibrary,
     loadJournalEntries,
+    saveLibraryJournalEntry,
+    deleteLibraryJournalEntry,
     moveOverdueTask,
     dismissOverdueTask,
     skipMorningReview,

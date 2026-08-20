@@ -7,6 +7,7 @@ export const BACKUP_TABLES = [
   'items',
   'daily_pages',
   'journal_library',
+  'journal_entries',
   'habits',
   'goals',
   'goal_steps',
@@ -81,20 +82,26 @@ export function parseBackupText(text: string, supportedDatabaseVersion: number):
   if (typeof value.appVersion !== 'string' || typeof value.checksum !== 'string' || !isRecord(value.data)) {
     throw new Error('This backup is missing required information.');
   }
+  if (checksumRecord(value.data) !== value.checksum) {
+    throw new Error('This backup appears to be incomplete or damaged.');
+  }
 
   const data = {} as BackupData;
   let totalRows = 0;
   for (const table of BACKUP_TABLES) {
     const rows = value.data[table];
-    if (!Array.isArray(rows)) throw new Error(`This backup is missing its ${table} records.`);
+    if (!Array.isArray(rows)) {
+      if (table === 'journal_entries' && value.databaseVersion < 6) {
+        data[table] = [];
+        continue;
+      }
+      throw new Error(`This backup is missing its ${table} records.`);
+    }
     data[table] = rows.map((row) => validateRow(table, row));
     totalRows += rows.length;
     if (totalRows > MAX_BACKUP_ROWS) throw new Error('This backup contains too many records to restore safely.');
   }
 
-  if (checksumData(data) !== value.checksum) {
-    throw new Error('This backup appears to be incomplete or damaged.');
-  }
   return { ...value, data } as CalendreamBackup;
 }
 
@@ -102,7 +109,8 @@ export function summarizeBackup(backup: CalendreamBackup): BackupSummary {
   return {
     createdAt: backup.createdAt,
     items: backup.data.items.filter((row) => row.deleted_at == null).length,
-    reflections: backup.data.daily_pages.filter((row) => typeof row.reflection === 'string' && row.reflection.length > 0).length,
+    reflections: backup.data.daily_pages.filter((row) => typeof row.reflection === 'string' && row.reflection.length > 0).length
+      + backup.data.journal_entries.filter((row) => row.deleted_at == null && typeof row.body === 'string' && row.body.length > 0).length,
     goals: backup.data.goals.filter((row) => row.deleted_at == null).length,
     routines: backup.data.habits.filter((row) => row.archived_at == null).length,
     totalRows: BACKUP_TABLES.reduce((total, table) => total + backup.data[table].length, 0),
@@ -123,6 +131,16 @@ function validateRow(table: BackupTable, value: unknown): BackupRow {
 }
 
 function checksumData(data: BackupData) {
+  const input = JSON.stringify(data);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function checksumRecord(data: Record<string, unknown>) {
   const input = JSON.stringify(data);
   let hash = 0x811c9dc5;
   for (let index = 0; index < input.length; index += 1) {

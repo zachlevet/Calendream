@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import type { Goal, GoalDraft, GoalHabitLink, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ItemDraft, JournalEntry, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
+import type { Goal, GoalDraft, GoalHabitLink, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ItemDraft, JournalEntry, JournalEntryDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
 import { scheduledHabitDates } from '../features/goals/habitSchedule';
 import { matchingSnippet } from '../shared/search';
 
@@ -99,6 +99,7 @@ export function useTodayData(date: string, _reviewDate = date) {
     [_reviewDate]: 'Today feels open. I want to protect time for the work and people that matter.',
   }));
   const [libraryDates, setLibraryDates] = useState<Set<string>>(() => new Set());
+  const [standaloneJournals, setStandaloneJournals] = useState<JournalEntry[]>([]);
   const items = allItems.filter((item) => item.anchorStart === date);
   const upcoming = allItems
     .filter((item) => item.anchorStart !== null && item.anchorStart > date)
@@ -309,15 +310,35 @@ export function useTodayData(date: string, _reviewDate = date) {
       setJournals((current) => ({ ...current, [date]: value }));
       setLibraryDates((current) => new Set(current).add(date));
     },
-    loadJournalEntries: async (): Promise<JournalEntry[]> => Object.entries(journals)
-      .filter(([, reflection]) => reflection.trim())
-      .sort(([left], [right]) => right.localeCompare(left))
-      .map(([noteDate, reflection]) => ({
-        date: noteDate,
-        reflection,
-        updatedAt: `${noteDate}T12:00:00.000Z`,
-        savedToLibrary: libraryDates.has(noteDate),
-      })),
+    loadJournalEntries: async (): Promise<JournalEntry[]> => [
+      ...Object.entries(journals)
+        .filter(([, reflection]) => reflection.trim())
+        .map(([noteDate, reflection]) => ({
+          id: `daily:${noteDate}`,
+          date: noteDate,
+          reflection,
+          updatedAt: `${noteDate}T12:00:00.000Z`,
+          savedToLibrary: libraryDates.has(noteDate),
+          source: 'daily' as const,
+        })),
+      ...standaloneJournals,
+    ].sort((left, right) => right.date.localeCompare(left.date) || right.updatedAt.localeCompare(left.updatedAt)),
+    saveLibraryJournalEntry: async (draft: JournalEntryDraft) => {
+      const id = draft.id ?? `${Date.now()}-journal`;
+      const nextEntry: JournalEntry = {
+        id,
+        date: draft.date,
+        reflection: draft.reflection.trim(),
+        updatedAt: new Date().toISOString(),
+        savedToLibrary: true,
+        source: 'standalone',
+      };
+      setStandaloneJournals((current) => draft.id
+        ? current.map((entry) => entry.id === draft.id ? nextEntry : entry)
+        : [nextEntry, ...current]);
+      return id;
+    },
+    deleteLibraryJournalEntry: async (id: string) => setStandaloneJournals((current) => current.filter((entry) => entry.id !== id)),
     moveOverdueTask: async (id: string, targetDate: string) => {
       const item = allItems.find((existing) => existing.id === id);
       setAllItems((current) => current.map((existing) => existing.id === id ? { ...existing, anchorStart: targetDate, anchorEnd: targetDate, habitId: undefined } : existing));
@@ -397,5 +418,5 @@ export function useTodayData(date: string, _reviewDate = date) {
       goals: allGoals.filter((goal) => goal.horizon !== 'someday' && goal.startsOn <= endDate && goal.targetDate >= startDate),
       reflections: Object.fromEntries(Object.entries(journals).filter(([noteDate]) => noteDate >= startDate && noteDate <= endDate)),
     }),
-  }), [_reviewDate, allGoals, allHabits, allItems, date, goalHabitLinks, goalSteps, habitActivity, items, journal, journals, libraryDates, upcoming]);
+  }), [_reviewDate, allGoals, allHabits, allItems, date, goalHabitLinks, goalSteps, habitActivity, items, journal, journals, libraryDates, standaloneJournals, upcoming]);
 }

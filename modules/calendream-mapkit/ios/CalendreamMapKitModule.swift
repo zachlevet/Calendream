@@ -1,5 +1,7 @@
 import ExpoModulesCore
+import CoreText
 import MapKit
+import UIKit
 
 private final class MapSearchException: GenericException<String>, @unchecked Sendable {
   override var reason: String { param }
@@ -85,6 +87,55 @@ public class CalendreamMapKitModule: Module {
         let item = MKMapItem(placemark: placemark)
         item.name = name.isEmpty ? address : name
         promise.resolve(item.openInMaps())
+      }
+    }
+
+    AsyncFunction("createJournalPDFAsync") { (text: String, filename: String, promise: Promise) in
+      DispatchQueue.global(qos: .userInitiated).async {
+        do {
+          let safeFilename = filename.replacingOccurrences(of: "/", with: "-")
+          let url = FileManager.default.temporaryDirectory.appendingPathComponent(safeFilename)
+          let pageBounds = CGRect(x: 0, y: 0, width: 612, height: 792)
+          let textBounds = pageBounds.insetBy(dx: 54, dy: 58)
+          let paragraph = NSMutableParagraphStyle()
+          paragraph.lineSpacing = 3
+          paragraph.paragraphSpacing = 7
+          let attributed = NSAttributedString(
+            string: text,
+            attributes: [
+              .font: UIFont.systemFont(ofSize: 11.5),
+              // A PDF does not inherit the app's appearance. Always use black so
+              // an export created in Dark Mode remains readable on white paper.
+              .foregroundColor: UIColor.black,
+              .paragraphStyle: paragraph
+            ]
+          )
+          let framesetter = CTFramesetterCreateWithAttributedString(attributed)
+          let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
+
+          try renderer.writePDF(to: url) { rendererContext in
+            var location = 0
+            repeat {
+              rendererContext.beginPage()
+              let path = CGPath(rect: textBounds, transform: nil)
+              let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: location, length: 0), path, nil)
+              let context = rendererContext.cgContext
+              context.saveGState()
+              context.textMatrix = .identity
+              context.translateBy(x: 0, y: pageBounds.height)
+              context.scaleBy(x: 1, y: -1)
+              CTFrameDraw(frame, context)
+              context.restoreGState()
+
+              let visible = CTFrameGetVisibleStringRange(frame)
+              guard visible.length > 0 else { break }
+              location += visible.length
+            } while location < attributed.length
+          }
+          promise.resolve(url.absoluteString)
+        } catch {
+          promise.reject(MapSearchException(error.localizedDescription))
+        }
       }
     }
   }

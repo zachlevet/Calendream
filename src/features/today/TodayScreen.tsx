@@ -825,12 +825,15 @@ export function TodayScreen() {
         ) : (
           <LibraryScreen
             colors={colors}
+            deleteJournalEntry={data.deleteLibraryJournalEntry}
             goals={data.allGoals}
             habits={data.habits}
             loadJournalEntries={data.loadJournalEntries}
             onOpenGoal={(id) => setLibraryDetail({ kind: 'goal', id })}
             onOpenHabit={(id) => setLibraryDetail({ kind: 'habit', id })}
             onOpenJournal={openLibraryJournal}
+            saveJournalEntry={data.saveLibraryJournalEntry}
+            today={today}
           />
         )
       ) : (

@@ -16,6 +16,7 @@ import {
 } from '@/database/backupStore';
 import { LATEST_SCHEMA_VERSION } from '@/database/migrate';
 import { readCalendarImportStatus, type CalendarImportDatabase, type CalendarImportResult } from '@/database/calendarImportStore';
+import { readJournalEntries, type LibraryDatabase } from '@/database/libraryStore';
 // Metro resolves these platform-specific feature modules.
 // eslint-disable-next-line import/no-unresolved
 import { CalendarImportFlow } from '@/features/calendar-import/CalendarImportFlow';
@@ -24,6 +25,7 @@ import { OnboardingExperience } from '@/features/onboarding/OnboardingExperience
 // Metro resolves the platform-specific backupFiles.native/.web module.
 // eslint-disable-next-line import/no-unresolved
 import { pickBackupFile, shareBackupFile, writeRecoveryBackup } from '@/services/backupFiles';
+import { sendJournalToNotes, shareJournalPDF, shareJournalText } from '@/services/journalExport.native';
 import type { AppColors } from '@/theme/colors';
 
 interface SettingsScreenProps {
@@ -37,6 +39,7 @@ export function SettingsScreen({ colors, onDataChanged }: SettingsScreenProps) {
   const sqlite = useSQLiteContext();
   const database = sqlite as unknown as BackupDatabase;
   const importDatabase = sqlite as unknown as CalendarImportDatabase;
+  const journalDatabase = sqlite as unknown as LibraryDatabase;
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -165,6 +168,38 @@ export function SettingsScreen({ colors, onDataChanged }: SettingsScreenProps) {
     }
   }
 
+  async function exportJournal(format: 'pdf' | 'text' | 'notes') {
+    try {
+      setBusy(`journal-${format}`);
+      setMessage(null);
+      const entries = await readJournalEntries(journalDatabase);
+      if (!entries.length) {
+        Alert.alert('Your journal is empty', 'Write a Daily Reflection or add an entry in Library before exporting.');
+        return;
+      }
+      const result = format === 'pdf'
+        ? await shareJournalPDF(entries)
+        : format === 'text'
+          ? await shareJournalText(entries)
+          : await sendJournalToNotes(entries);
+      if (result.action === 'sharedAction') {
+        setMessage(format === 'notes' ? 'Journal shared. Choose Notes to keep it there.' : 'Journal export prepared.');
+      }
+    } catch (error) {
+      Alert.alert('Journal not exported', readableError(error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function chooseJournalExport() {
+    Alert.alert('Export journal', 'Choose a portable format. Both include every dated entry in chronological order.', [
+      { text: 'PDF', onPress: () => void exportJournal('pdf') },
+      { text: 'Plain Text', onPress: () => void exportJournal('text') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
@@ -201,6 +236,29 @@ export function SettingsScreen({ colors, onDataChanged }: SettingsScreenProps) {
           </View>
           <Text style={[styles.statusValue, { color: status?.lastBackupAt ? colors.blue : colors.tertiary }]}>{status?.lastBackupAt ? 'Saved' : 'Not yet'}</Text>
         </View>
+      </View>
+
+      <SectionLabel colors={colors}>JOURNAL</SectionLabel>
+      <View style={[styles.card, { backgroundColor: colors.card }]}>
+        <SettingsRow
+          colors={colors}
+          detail="Save every dated entry as a readable PDF or plain-text file."
+          disabled={busy !== null}
+          icon="doc.text"
+          loading={busy === 'journal-pdf' || busy === 'journal-text'}
+          onPress={chooseJournalExport}
+          title="Export journal"
+        />
+        <Divider colors={colors} />
+        <SettingsRow
+          colors={colors}
+          detail="Opens the iOS share sheet with one complete journal. Choose Notes to save it there."
+          disabled={busy !== null}
+          icon="note.text"
+          loading={busy === 'journal-notes'}
+          onPress={() => void exportJournal('notes')}
+          title="Send to Apple Notes"
+        />
       </View>
 
       {message && <Text accessibilityLiveRegion="polite" style={[styles.message, { color: colors.blue }]}>{message}</Text>}

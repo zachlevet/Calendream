@@ -139,10 +139,18 @@ export interface SearchResult {
 }
 
 export interface JournalEntry {
+  id: string;
   date: string;
   reflection: string;
   updatedAt: string;
   savedToLibrary: boolean;
+  source: 'daily' | 'standalone';
+}
+
+export interface JournalEntryDraft {
+  id?: string;
+  date: string;
+  reflection: string;
 }
 
 export interface TimelineSnapshot {

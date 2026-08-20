@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
-import type { Goal, Habit, ISOWeekday, JournalEntry } from '@/models/planning';
+import { selectJournalMemory } from '@/database/libraryStore';
+import type { Goal, Habit, ISOWeekday, JournalEntry, JournalEntryDraft } from '@/models/planning';
 import { formatLongDate } from '@/shared/date';
 import type { AppColors } from '@/theme/colors';
 
@@ -13,21 +14,37 @@ interface LibraryScreenProps {
   goals: Goal[];
   habits: Habit[];
   loadJournalEntries(): Promise<JournalEntry[]>;
+  saveJournalEntry(draft: JournalEntryDraft): Promise<string>;
+  deleteJournalEntry(id: string): Promise<void>;
   onOpenGoal(id: string): void;
   onOpenHabit(id: string): void;
   onOpenJournal(date: string): void;
+  today: string;
 }
 
 const weekdayLabels: Record<ISOWeekday, string> = {
   1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun',
 };
 
-export function LibraryScreen({ colors, goals, habits, loadJournalEntries, onOpenGoal, onOpenHabit, onOpenJournal }: LibraryScreenProps) {
+export function LibraryScreen({ colors, deleteJournalEntry, goals, habits, loadJournalEntries, onOpenGoal, onOpenHabit, onOpenJournal, saveJournalEntry, today }: LibraryScreenProps) {
   const [section, setSection] = useState<LibrarySection>('home');
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
+  const [editingEntry, setEditingEntry] = useState<JournalEntry | 'new' | null>(null);
+
+  const reloadEntries = useCallback(async () => {
+    try {
+      const nextEntries = await loadJournalEntries();
+      setEntries(nextEntries);
+      setError(false);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadJournalEntries]);
 
   useEffect(() => {
     let active = true;
@@ -48,36 +65,65 @@ export function LibraryScreen({ colors, goals, habits, loadJournalEntries, onOpe
 
   const activeGoals = useMemo(() => goals.filter((goal) => !goal.completed), [goals]);
   const completedGoals = useMemo(() => goals.filter((goal) => goal.completed).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '')), [goals]);
+  const memory = useMemo(() => selectJournalMemory(entries, today), [entries, today]);
   const filteredEntries = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     if (!needle) return entries;
     return entries.filter((entry) => entry.reflection.toLocaleLowerCase().includes(needle) || formatLongDate(entry.date).toLocaleLowerCase().includes(needle));
   }, [entries, query]);
 
+  function openEntry(entry: JournalEntry) {
+    if (entry.source === 'daily') onOpenJournal(entry.date);
+    else setEditingEntry(entry);
+  }
+
+  if (editingEntry) {
+    return (
+      <JournalEditor
+        colors={colors}
+        entry={editingEntry === 'new' ? null : editingEntry}
+        onClose={() => setEditingEntry(null)}
+        onDelete={async (id) => {
+          await deleteJournalEntry(id);
+          await reloadEntries();
+          setEditingEntry(null);
+        }}
+        onSave={async (draft) => {
+          await saveJournalEntry(draft);
+          await reloadEntries();
+          setEditingEntry(null);
+        }}
+        today={today}
+      />
+    );
+  }
+
   if (section === 'journal') {
     return (
-      <LibraryPage colors={colors} onBack={() => { setQuery(''); setSection('home'); }} subtitle="Every daily reflection, newest first." title="Journal">
+      <LibraryPage
+        colors={colors}
+        headerAction={<AddEntryButton colors={colors} onPress={() => setEditingEntry('new')} />}
+        onBack={() => { setQuery(''); setSection('home'); }}
+        subtitle="Daily reflections and entries, together in one place."
+        title="Journal">
         <View style={[styles.search, { backgroundColor: colors.card }]}>
           <SymbolView name="magnifyingglass" size={15} tintColor={colors.secondary} />
-          <TextInput
-            onChangeText={setQuery}
-            placeholder="Search your writing"
-            placeholderTextColor={colors.tertiary}
-            style={[styles.searchInput, { color: colors.text }]}
-            value={query}
-          />
+          <TextInput onChangeText={setQuery} placeholder="Search your writing" placeholderTextColor={colors.tertiary} style={[styles.searchInput, { color: colors.text }]} value={query} />
         </View>
         {loading ? <ActivityIndicator color={colors.blue} style={styles.loading} /> : error ? (
           <EmptyState colors={colors} copy="Your writing couldn’t load yet. Leave Library and try again." title="Journal unavailable" />
         ) : filteredEntries.length ? filteredEntries.map((entry) => (
-          <Pressable key={entry.date} onPress={() => onOpenJournal(entry.date)} style={({ pressed }) => [styles.entry, { borderColor: colors.separator }, pressed && styles.pressed]}>
+          <Pressable key={entry.id} onPress={() => openEntry(entry)} style={({ pressed }) => [styles.entry, { borderColor: colors.separator }, pressed && styles.pressed]}>
             <View style={styles.entryHeading}>
-              <Text style={[styles.entryDate, { color: colors.blue }]}>{formatLongDate(entry.date)}</Text>
+              <View style={styles.entryIdentity}>
+                <Text style={[styles.entryDate, { color: colors.blue }]}>{formatLongDate(entry.date)}</Text>
+                {entry.source === 'standalone' && <Text style={[styles.entryKind, { color: colors.secondary, backgroundColor: colors.card }]}>ENTRY</Text>}
+              </View>
               <Text style={[styles.chevron, { color: colors.tertiary }]}>›</Text>
             </View>
             <Text numberOfLines={5} style={[styles.entryText, { color: colors.text }]}>{entry.reflection}</Text>
           </Pressable>
-        )) : <EmptyState colors={colors} copy={query ? 'Try another word or phrase.' : 'Anything you write in Daily Reflection will appear here automatically.'} title={query ? 'No matching entries' : 'Your journal starts on Today'} />}
+        )) : <EmptyState colors={colors} copy={query ? 'Try another word or phrase.' : 'Write from Today, or add an entry that stands on its own.'} title={query ? 'No matching entries' : 'Your journal is ready'} />}
       </LibraryPage>
     );
   }
@@ -85,19 +131,8 @@ export function LibraryScreen({ colors, goals, habits, loadJournalEntries, onOpe
   if (section === 'goals') {
     return (
       <LibraryPage colors={colors} onBack={() => setSection('home')} subtitle="Active direction and goals you’ve completed." title="Goals">
-        {activeGoals.length ? (
-          <View style={[styles.goalList, { backgroundColor: colors.yellowSoft }]}>
-            {activeGoals.map((goal, index) => <GoalRow colors={colors} goal={goal} index={index} key={goal.id} onPress={() => onOpenGoal(goal.id)} />)}
-          </View>
-        ) : <EmptyState colors={colors} copy="Ask Plan to keep something important in view." title="No active goals" />}
-        {completedGoals.length > 0 && (
-          <>
-            <Text style={[styles.sectionLabel, { color: colors.secondary }]}>COMPLETED</Text>
-            <View style={[styles.list, { backgroundColor: colors.card }]}>
-              {completedGoals.map((goal, index) => <GoalRow colors={colors} completed goal={goal} index={index} key={goal.id} onPress={() => onOpenGoal(goal.id)} />)}
-            </View>
-          </>
-        )}
+        {activeGoals.length ? <View style={[styles.goalList, { backgroundColor: colors.yellowSoft }]}>{activeGoals.map((goal, index) => <GoalRow colors={colors} goal={goal} index={index} key={goal.id} onPress={() => onOpenGoal(goal.id)} />)}</View> : <EmptyState colors={colors} copy="Ask Plan to keep something important in view." title="No active goals" />}
+        {completedGoals.length > 0 && <><Text style={[styles.sectionLabel, { color: colors.secondary }]}>COMPLETED</Text><View style={[styles.list, { backgroundColor: colors.card }]}>{completedGoals.map((goal, index) => <GoalRow colors={colors} completed goal={goal} index={index} key={goal.id} onPress={() => onOpenGoal(goal.id)} />)}</View></>}
       </LibraryPage>
     );
   }
@@ -105,113 +140,87 @@ export function LibraryScreen({ colors, goals, habits, loadJournalEntries, onOpe
   if (section === 'routines') {
     return (
       <LibraryPage colors={colors} onBack={() => setSection('home')} subtitle="The rhythms that create tasks and events for you." title="Routines">
-        {habits.length ? (
-          <View style={[styles.list, { backgroundColor: colors.card }]}>
-            {habits.map((habit, index) => (
-              <Pressable key={habit.id} onPress={() => onOpenHabit(habit.id)} style={({ pressed }) => [styles.row, index > 0 && { borderTopColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }, pressed && styles.pressed]}>
-                <View style={[styles.rowIcon, { backgroundColor: colors.blueSoft }]}><SymbolView name="repeat" size={17} tintColor={colors.blue} weight="semibold" /></View>
-                <View style={styles.rowCopy}>
-                  <Text style={[styles.rowTitle, { color: colors.text }]}>{habit.name}</Text>
-                  <Text style={[styles.rowMeta, { color: colors.secondary }]}>{routineSchedule(habit)}</Text>
-                </View>
-                <Text style={[styles.chevron, { color: colors.tertiary }]}>›</Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : <EmptyState colors={colors} copy="Ask Plan for a recurring rhythm and it will appear here." title="No routines yet" />}
+        {habits.length ? <View style={[styles.list, { backgroundColor: colors.card }]}>{habits.map((habit, index) => (
+          <Pressable key={habit.id} onPress={() => onOpenHabit(habit.id)} style={({ pressed }) => [styles.row, index > 0 && { borderTopColor: colors.separator, borderTopWidth: StyleSheet.hairlineWidth }, pressed && styles.pressed]}>
+            <View style={[styles.rowIcon, { backgroundColor: colors.blueSoft }]}><SymbolView name="repeat" size={17} tintColor={colors.blue} weight="semibold" /></View>
+            <View style={styles.rowCopy}><Text style={[styles.rowTitle, { color: colors.text }]}>{habit.name}</Text><Text style={[styles.rowMeta, { color: colors.secondary }]}>{routineSchedule(habit)}</Text></View>
+            <Text style={[styles.chevron, { color: colors.tertiary }]}>›</Text>
+          </Pressable>
+        ))}</View> : <EmptyState colors={colors} copy="Ask Plan for a recurring rhythm and it will appear here." title="No routines yet" />}
       </LibraryPage>
     );
   }
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <View style={styles.hero}>
-        <Text style={[styles.title, { color: colors.text }]}>Library</Text>
-        <Text style={[styles.subtitle, { color: colors.secondary }]}>Everything you want to remember or return to.</Text>
+      <View style={styles.hero}><Text style={[styles.title, { color: colors.text }]}>Library</Text><Text style={[styles.subtitle, { color: colors.secondary }]}>The parts of your life worth returning to.</Text></View>
+      <View style={[styles.index, { backgroundColor: colors.card }]}>
+        <LibraryIndexRow accent={colors.purple} background={colors.purpleSoft} colors={colors} count={entries.length} icon="book.closed" label="Journal" onPress={() => setSection('journal')} />
+        <View style={[styles.indexDivider, { backgroundColor: colors.separator }]} />
+        <LibraryIndexRow accent={colors.yellow} background={colors.yellowSoft} colors={colors} count={activeGoals.length} icon="star" label="Goals" onPress={() => setSection('goals')} />
+        <View style={[styles.indexDivider, { backgroundColor: colors.separator }]} />
+        <LibraryIndexRow accent={colors.blue} background={colors.blueSoft} colors={colors} count={habits.length} icon="repeat" label="Routines" onPress={() => setSection('routines')} />
       </View>
-      <Portal
-        accent={colors.purple}
-        background={colors.purpleSoft}
-        colors={colors}
-        count={entries.length}
-        description={entries.length ? `Your latest entry is from ${formatLongDate(entries[0].date)}.` : 'Daily reflections collect here automatically.'}
-        icon="book.closed"
-        label="Journal"
-        onPress={() => setSection('journal')}
-      />
-      <Portal
-        accent={colors.yellow}
-        background={colors.yellowSoft}
-        colors={colors}
-        count={activeGoals.length}
-        description="Keep active direction close and revisit completed goals."
-        icon="star"
-        label="Goals"
-        onPress={() => setSection('goals')}
-      />
-      <Portal
-        accent={colors.blue}
-        background={colors.blueSoft}
-        colors={colors}
-        count={habits.length}
-        description="See and adjust the rhythms that populate your calendar."
-        icon="repeat"
-        label="Routines"
-        onPress={() => setSection('routines')}
-      />
+      {memory && <View style={styles.memorySection}>
+        <Text style={[styles.sectionLabel, styles.memoryLabel, { color: colors.secondary }]}>A MEMORY</Text>
+        <Pressable accessibilityRole="button" onPress={() => openEntry(memory)} style={({ pressed }) => [styles.memory, { backgroundColor: colors.purpleSoft }, pressed && styles.pressed]}>
+          <View style={styles.memoryTop}><View style={[styles.memoryIcon, { backgroundColor: colors.background }]}><SymbolView name="sparkles" size={17} tintColor={colors.purple} weight="semibold" /></View><Text style={[styles.memoryDate, { color: colors.purple }]}>{formatLongDate(memory.date)}</Text><Text style={[styles.chevron, { color: colors.purple }]}>›</Text></View>
+          <Text numberOfLines={4} style={[styles.memoryText, { color: colors.text }]}>{memory.reflection}</Text>
+        </Pressable>
+      </View>}
     </ScrollView>
   );
 }
 
-function LibraryPage({ children, colors, onBack, subtitle, title }: { children: ReactNode; colors: AppColors; onBack(): void; subtitle: string; title: string }) {
-  return (
-    <ScrollView contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-      <Pressable accessibilityLabel="Back to Library" hitSlop={8} onPress={onBack} style={styles.back}>
-        <SymbolView name="chevron.left" size={15} tintColor={colors.blue} weight="semibold" />
-        <Text style={[styles.backText, { color: colors.blue }]}>Library</Text>
-      </Pressable>
-      <View style={styles.pageHeader}>
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-        <Text style={[styles.subtitle, { color: colors.secondary }]}>{subtitle}</Text>
-      </View>
-      {children}
-    </ScrollView>
-  );
+function JournalEditor({ colors, entry, onClose, onDelete, onSave, today }: { colors: AppColors; entry: JournalEntry | null; onClose(): void; onDelete(id: string): Promise<void>; onSave(draft: JournalEntryDraft): Promise<void>; today: string }) {
+  const [reflection, setReflection] = useState(entry?.reflection ?? '');
+  const [busy, setBusy] = useState(false);
+  const date = entry?.date ?? today;
+
+  async function save() {
+    if (!reflection.trim()) { Alert.alert('Write something first', 'A journal entry needs a little writing before it can be saved.'); return; }
+    try { setBusy(true); await onSave({ id: entry?.id, date, reflection }); }
+    catch (caught) { Alert.alert('Entry not saved', caught instanceof Error ? caught.message : 'Please try again.'); setBusy(false); }
+  }
+
+  function confirmDelete() {
+    if (!entry) return;
+    Alert.alert('Delete this entry?', 'This removes it from your journal and your next backup.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => void onDelete(entry.id).catch((caught) => Alert.alert('Entry not deleted', caught instanceof Error ? caught.message : 'Please try again.')) },
+    ]);
+  }
+
+  return <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.editorRoot}><ScrollView contentContainerStyle={styles.editorContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled">
+    <View style={styles.editorNav}><Pressable hitSlop={8} onPress={onClose}><Text style={[styles.editorNavText, { color: colors.blue }]}>Cancel</Text></Pressable><Text style={[styles.editorNavTitle, { color: colors.text }]}>{entry ? 'Journal Entry' : 'New Entry'}</Text><Pressable disabled={busy} hitSlop={8} onPress={() => void save()}>{busy ? <ActivityIndicator color={colors.blue} size="small" /> : <Text style={[styles.editorNavText, styles.editorDone, { color: colors.blue }]}>Done</Text>}</Pressable></View>
+    <Text style={[styles.editorDate, { color: colors.secondary }]}>{formatLongDate(date)}</Text>
+    <TextInput autoFocus multiline onChangeText={setReflection} placeholder="Write what you want to remember…" placeholderTextColor={colors.tertiary} selectionColor={colors.blue} style={[styles.editorInput, { color: colors.text }]} textAlignVertical="top" value={reflection} />
+    {entry && <Pressable onPress={confirmDelete} style={styles.deleteEntry}><SymbolView name="trash" size={16} tintColor={colors.red} /><Text style={[styles.deleteEntryText, { color: colors.red }]}>Delete Entry</Text></Pressable>}
+  </ScrollView></KeyboardAvoidingView>;
 }
 
-function Portal({ accent, background, colors, count, description, icon, label, onPress }: { accent: string; background: string; colors: AppColors; count: number; description: string; icon: SFSymbol; label: string; onPress(): void }) {
-  return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.portal, { backgroundColor: background }, pressed && styles.portalPressed]}>
-      <View style={styles.portalTop}>
-        <View style={[styles.portalIcon, { backgroundColor: colors.background }]}><SymbolView name={icon} size={20} tintColor={accent} weight="semibold" /></View>
-        <View style={styles.portalIdentity}>
-          <Text style={[styles.portalTitle, { color: colors.text }]}>{label}</Text>
-          <Text style={[styles.portalCount, { color: accent }]}>{count}</Text>
-        </View>
-        <Text style={[styles.portalChevron, { color: accent }]}>›</Text>
-      </View>
-      <Text style={[styles.portalDescription, { color: colors.secondary }]}>{description}</Text>
-    </Pressable>
-  );
+function LibraryPage({ children, colors, headerAction, onBack, subtitle, title }: { children: ReactNode; colors: AppColors; headerAction?: ReactNode; onBack(): void; subtitle: string; title: string }) {
+  return <ScrollView contentContainerStyle={styles.content} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <Pressable accessibilityLabel="Back to Library" hitSlop={8} onPress={onBack} style={styles.back}><SymbolView name="chevron.left" size={15} tintColor={colors.blue} weight="semibold" /><Text style={[styles.backText, { color: colors.blue }]}>Library</Text></Pressable>
+    <View style={styles.pageHeaderRow}><View style={styles.pageHeaderCopy}><Text style={[styles.title, { color: colors.text }]}>{title}</Text><Text style={[styles.subtitle, { color: colors.secondary }]}>{subtitle}</Text></View>{headerAction}</View>
+    {children}
+  </ScrollView>;
+}
+
+function AddEntryButton({ colors, onPress }: { colors: AppColors; onPress(): void }) {
+  return <Pressable accessibilityLabel="Add journal entry" onPress={onPress} style={({ pressed }) => [styles.addEntry, { backgroundColor: colors.blueSoft }, pressed && styles.pressed]}><SymbolView name="plus" size={13} tintColor={colors.blue} weight="semibold" /><Text style={[styles.addEntryText, { color: colors.blue }]}>Add</Text></Pressable>;
+}
+
+function LibraryIndexRow({ accent, background, colors, count, icon, label, onPress }: { accent: string; background: string; colors: AppColors; count: number; icon: SFSymbol; label: string; onPress(): void }) {
+  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.indexRow, pressed && styles.pressed]}><View style={[styles.indexIcon, { backgroundColor: background }]}><SymbolView name={icon} size={18} tintColor={accent} weight="semibold" /></View><Text style={[styles.indexTitle, { color: colors.text }]}>{label}</Text><Text style={[styles.indexCount, { color: colors.secondary }]}>{count}</Text><Text style={[styles.chevron, { color: colors.tertiary }]}>›</Text></Pressable>;
 }
 
 function GoalRow({ colors, completed = false, goal, index, onPress }: { colors: AppColors; completed?: boolean; goal: Goal; index: number; onPress(): void }) {
   const accent = completed ? colors.tertiary : colors.yellow;
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, index > 0 && { borderTopColor: completed ? colors.separator : 'rgba(199,141,0,0.18)', borderTopWidth: StyleSheet.hairlineWidth }, pressed && styles.pressed]}>
-      <SymbolView name={completed ? 'star.fill' : 'star'} size={21} tintColor={accent} weight="semibold" />
-      <View style={styles.rowCopy}>
-        <Text style={[styles.rowTitle, { color: completed ? colors.secondary : colors.text }]}>{goal.title}</Text>
-        <Text style={[styles.rowMeta, { color: accent }]}>{completed ? 'COMPLETED' : goal.horizon === 'someday' ? 'SOMEDAY · NO DEADLINE' : `${goal.horizon.toUpperCase()} GOAL`}</Text>
-      </View>
-      <Text style={[styles.chevron, { color: accent }]}>›</Text>
-    </Pressable>
-  );
+  return <Pressable onPress={onPress} style={({ pressed }) => [styles.row, index > 0 && { borderTopColor: completed ? colors.separator : 'rgba(199,141,0,0.18)', borderTopWidth: StyleSheet.hairlineWidth }, pressed && styles.pressed]}><SymbolView name={completed ? 'star.fill' : 'star'} size={21} tintColor={accent} weight="semibold" /><View style={styles.rowCopy}><Text style={[styles.rowTitle, { color: completed ? colors.secondary : colors.text }]}>{goal.title}</Text><Text style={[styles.rowMeta, { color: accent }]}>{completed ? 'COMPLETED' : goal.horizon === 'someday' ? 'SOMEDAY · NO DEADLINE' : `${goal.horizon.toUpperCase()} GOAL`}</Text></View><Text style={[styles.chevron, { color: accent }]}>›</Text></Pressable>;
 }
 
-function EmptyState({ colors, copy, title }: { colors: AppColors; copy: string; title: string }) {
-  return <View style={[styles.empty, { backgroundColor: colors.card }]}><Text style={[styles.emptyTitle, { color: colors.text }]}>{title}</Text><Text style={[styles.emptyCopy, { color: colors.secondary }]}>{copy}</Text></View>;
-}
+function EmptyState({ colors, copy, title }: { colors: AppColors; copy: string; title: string }) { return <View style={[styles.empty, { backgroundColor: colors.card }]}><Text style={[styles.emptyTitle, { color: colors.text }]}>{title}</Text><Text style={[styles.emptyCopy, { color: colors.secondary }]}>{copy}</Text></View>; }
 
 function routineSchedule(habit: Habit) {
   const days = habit.weekdays.length === 7 ? 'Every day' : habit.weekdays.map((day) => weekdayLabels[day]).join(' · ');
@@ -220,40 +229,13 @@ function routineSchedule(habit: Habit) {
 }
 
 const styles = StyleSheet.create({
-  content: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 120 },
-  hero: { marginBottom: 24 },
-  pageHeader: { marginBottom: 22 },
-  title: { fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -1 },
-  subtitle: { marginTop: 3, fontSize: 15, lineHeight: 21 },
-  portal: { minHeight: 128, borderRadius: 26, padding: 18, marginBottom: 12 },
-  portalPressed: { opacity: 0.7, transform: [{ scale: 0.99 }] },
-  portalTop: { flexDirection: 'row', alignItems: 'center' },
-  portalIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  portalIdentity: { marginLeft: 12, flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  portalTitle: { fontSize: 23, fontWeight: '800', letterSpacing: -0.5 },
-  portalCount: { fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] },
-  portalChevron: { fontSize: 31, lineHeight: 32, fontWeight: '300' },
-  portalDescription: { marginTop: 12, fontSize: 14, lineHeight: 19 },
-  back: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 14 },
-  backText: { fontSize: 15, fontWeight: '700' },
-  search: { height: 46, borderRadius: 18, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 9, marginBottom: 14 },
-  searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 },
-  loading: { marginTop: 30 },
-  entry: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 16, marginBottom: 10 },
-  entryHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9 },
-  entryDate: { fontSize: 11, lineHeight: 14, fontWeight: '800', letterSpacing: 0.7, textTransform: 'uppercase' },
-  entryText: { fontSize: 16, lineHeight: 23 },
-  sectionLabel: { marginTop: 24, marginLeft: 10, marginBottom: 8, fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
-  goalList: { borderRadius: 22, overflow: 'hidden' },
-  list: { borderRadius: 22, overflow: 'hidden' },
-  row: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 15, paddingVertical: 12 },
-  rowIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  rowCopy: { flex: 1 },
-  rowTitle: { fontSize: 16, lineHeight: 21, fontWeight: '700' },
-  rowMeta: { marginTop: 3, fontSize: 10, lineHeight: 14, fontWeight: '800', letterSpacing: 0.5 },
-  chevron: { fontSize: 25, lineHeight: 26, fontWeight: '300' },
-  empty: { borderRadius: 22, padding: 19 },
-  emptyTitle: { fontSize: 17, fontWeight: '800' },
-  emptyCopy: { marginTop: 5, fontSize: 14, lineHeight: 20 },
-  pressed: { opacity: 0.55 },
+  content: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 120 }, hero: { marginBottom: 24 }, pageHeaderRow: { marginBottom: 22, flexDirection: 'row', alignItems: 'flex-start', gap: 12 }, pageHeaderCopy: { flex: 1 },
+  title: { fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -1 }, subtitle: { marginTop: 3, fontSize: 15, lineHeight: 21 }, back: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 14 }, backText: { fontSize: 15, fontWeight: '700' },
+  addEntry: { height: 38, borderRadius: 19, paddingHorizontal: 13, marginTop: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }, addEntryText: { fontSize: 15, fontWeight: '700' },
+  index: { borderRadius: 22, overflow: 'hidden' }, indexRow: { minHeight: 70, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }, indexIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, indexTitle: { flex: 1, fontSize: 17, fontWeight: '700' }, indexCount: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] }, indexDivider: { height: StyleSheet.hairlineWidth, marginLeft: 64 },
+  memorySection: { marginTop: 29 }, memoryLabel: { marginTop: 0 }, memory: { borderRadius: 22, padding: 16 }, memoryTop: { flexDirection: 'row', alignItems: 'center', gap: 9 }, memoryIcon: { width: 31, height: 31, borderRadius: 15.5, alignItems: 'center', justifyContent: 'center' }, memoryDate: { flex: 1, fontSize: 11, fontWeight: '800', letterSpacing: 0.7, textTransform: 'uppercase' }, memoryText: { marginTop: 12, fontSize: 17, lineHeight: 24, letterSpacing: -0.1 },
+  search: { height: 46, borderRadius: 18, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 9, marginBottom: 14 }, searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 }, loading: { marginTop: 30 },
+  entry: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 16, marginBottom: 10 }, entryHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9 }, entryIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7 }, entryDate: { fontSize: 11, lineHeight: 14, fontWeight: '800', letterSpacing: 0.7, textTransform: 'uppercase' }, entryKind: { borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2, fontSize: 8, fontWeight: '800', letterSpacing: 0.7 }, entryText: { fontSize: 16, lineHeight: 23 },
+  sectionLabel: { marginTop: 24, marginLeft: 10, marginBottom: 8, fontSize: 11, fontWeight: '800', letterSpacing: 1.1 }, goalList: { borderRadius: 22, overflow: 'hidden' }, list: { borderRadius: 22, overflow: 'hidden' }, row: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 15, paddingVertical: 12 }, rowIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' }, rowCopy: { flex: 1 }, rowTitle: { fontSize: 16, lineHeight: 21, fontWeight: '700' }, rowMeta: { marginTop: 3, fontSize: 10, lineHeight: 14, fontWeight: '800', letterSpacing: 0.5 }, chevron: { fontSize: 25, lineHeight: 26, fontWeight: '300' }, empty: { borderRadius: 22, padding: 19 }, emptyTitle: { fontSize: 17, fontWeight: '800' }, emptyCopy: { marginTop: 5, fontSize: 14, lineHeight: 20 }, pressed: { opacity: 0.55 },
+  editorRoot: { flex: 1 }, editorContent: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 40 }, editorNav: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, editorNavText: { minWidth: 54, fontSize: 16 }, editorDone: { textAlign: 'right', fontWeight: '700' }, editorNavTitle: { fontSize: 16, fontWeight: '700' }, editorDate: { marginTop: 24, marginBottom: 18, fontSize: 13, fontWeight: '700', letterSpacing: 0.45, textTransform: 'uppercase' }, editorInput: { minHeight: 360, fontSize: 20, lineHeight: 29, padding: 0 }, deleteEntry: { marginTop: 28, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 8 }, deleteEntryText: { fontSize: 15, fontWeight: '600' },
 });

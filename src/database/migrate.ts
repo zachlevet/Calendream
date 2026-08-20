@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { LOCAL_ONLY_CLEANUP_SQL } from './localOnlyCleanup.ts';
 
-export const LATEST_SCHEMA_VERSION = 5;
+export const LATEST_SCHEMA_VERSION = 6;
 
 type QueryResult = Record<string, unknown>;
 
@@ -60,6 +60,24 @@ const migrations: Migration[] = [
         CREATE UNIQUE INDEX IF NOT EXISTS items_source_identity_idx
           ON items(source_provider, source_calendar_id, source_event_key)
           WHERE source_event_key IS NOT NULL;
+      `);
+    },
+  },
+  {
+    version: 6,
+    name: 'standalone journal entries',
+    async up(database) {
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS journal_entries (
+          id TEXT PRIMARY KEY NOT NULL,
+          entry_date TEXT NOT NULL,
+          body TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS journal_entries_date_idx
+          ON journal_entries(deleted_at, entry_date, updated_at);
       `);
     },
   },
@@ -153,6 +171,15 @@ async function createCurrentSchema(database: MigrationDatabase) {
       FOREIGN KEY (date) REFERENCES daily_pages(date) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS journal_entries (
+      id TEXT PRIMARY KEY NOT NULL,
+      entry_date TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS habits (
       id TEXT PRIMARY KEY NOT NULL,
       name TEXT NOT NULL,
@@ -238,6 +265,7 @@ async function createCurrentSchema(database: MigrationDatabase) {
 
     CREATE INDEX IF NOT EXISTS items_anchor_start_idx ON items(anchor_start);
     CREATE INDEX IF NOT EXISTS items_updated_at_idx ON items(updated_at);
+    CREATE INDEX IF NOT EXISTS journal_entries_date_idx ON journal_entries(deleted_at, entry_date, updated_at);
     CREATE INDEX IF NOT EXISTS goals_active_range_idx ON goals(starts_on, target_date);
     CREATE INDEX IF NOT EXISTS goal_steps_goal_idx ON goal_steps(goal_id, sort_order);
     CREATE INDEX IF NOT EXISTS goal_habits_habit_idx ON goal_habits(habit_id);

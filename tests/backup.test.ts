@@ -26,23 +26,32 @@ test('portable backup round-trips calendar data', async () => {
       now,
       now,
     );
+    await source.runAsync(
+      'INSERT INTO journal_entries (id, entry_date, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      'standalone-entry',
+      '2026-08-19',
+      'A standalone thought.',
+      now,
+      now,
+    );
 
     const original = await readBackup(source, '1.0.0');
     const parsed = parseBackupText(serializeBackup(original), LATEST_SCHEMA_VERSION);
     assert.deepEqual(summarizeBackup(parsed), {
       createdAt: original.createdAt,
       items: 1,
-      reflections: 1,
+      reflections: 2,
       goals: 0,
       routines: 0,
-      totalRows: 2,
+      totalRows: 3,
     });
 
     await restoreBackup(destination, parsed);
     const status = await readBackupStatus(destination);
     assert.equal(status.items, 1);
-    assert.equal(status.reflections, 1);
+    assert.equal(status.reflections, 2);
     assert.equal((await destination.getFirstAsync<{ title: string }>('SELECT title FROM items WHERE id = ?', 'important-task'))?.title, 'Keep this safe');
+    assert.equal((await destination.getFirstAsync<{ body: string }>('SELECT body FROM journal_entries WHERE id = ?', 'standalone-entry'))?.body, 'A standalone thought.');
   } finally {
     source.close();
     destination.close();

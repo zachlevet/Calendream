@@ -13,6 +13,7 @@ const columns: Record<BackupTable, readonly string[]> = {
   items: ['id', 'kind', 'title', 'anchor_start', 'anchor_end', 'precision', 'altitude', 'start_time', 'end_time', 'completed_at', 'notes', 'location', 'location_name', 'location_latitude', 'location_longitude', 'meeting_url', 'event_type', 'source_provider', 'source_calendar_id', 'source_event_key', 'habit_id', 'sort_order', 'created_at', 'updated_at', 'deleted_at'],
   daily_pages: ['date', 'reflection', 'created_at', 'updated_at'],
   journal_library: ['date', 'reflection', 'saved_at'],
+  journal_entries: ['id', 'entry_date', 'body', 'created_at', 'updated_at', 'deleted_at'],
   habits: ['id', 'name', 'schedule_json', 'start_date', 'end_date', 'cue', 'item_kind', 'start_time', 'end_time', 'archived_at', 'created_at', 'updated_at'],
   goals: ['id', 'title', 'scope', 'horizon', 'starts_on', 'target_date', 'completion_date', 'notes', 'linked_habit_id', 'completed_at', 'created_at', 'updated_at', 'deleted_at'],
   goal_steps: ['id', 'goal_id', 'title', 'scheduled_date', 'item_id', 'sort_order', 'created_at', 'updated_at', 'deleted_at'],
@@ -21,7 +22,7 @@ const columns: Record<BackupTable, readonly string[]> = {
   habit_failures: ['habit_id', 'date', 'created_at'],
 };
 
-const insertionOrder: BackupTable[] = ['habits', 'items', 'daily_pages', 'goals', 'journal_library', 'goal_steps', 'goal_habits', 'habit_skips', 'habit_failures'];
+const insertionOrder: BackupTable[] = ['habits', 'items', 'daily_pages', 'journal_entries', 'goals', 'journal_library', 'goal_steps', 'goal_habits', 'habit_skips', 'habit_failures'];
 const deletionOrder = [...insertionOrder].reverse();
 
 export async function readBackup(database: BackupDatabase, appVersion: string) {
@@ -61,7 +62,7 @@ export async function markBackupExported(database: BackupDatabase, createdAt: st
 }
 
 export async function readBackupStatus(database: BackupDatabase) {
-  const [backup, restore, version, itemCount, goalCount, habitCount, reflectionCount, sampleCount] = await Promise.all([
+  const [backup, restore, version, itemCount, goalCount, habitCount, reflectionCount, standaloneJournalCount, sampleCount] = await Promise.all([
     readMeta(database, 'last_backup_at'),
     readMeta(database, 'last_restore_at'),
     database.getFirstAsync<{ user_version: number }>('PRAGMA user_version'),
@@ -69,6 +70,7 @@ export async function readBackupStatus(database: BackupDatabase) {
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM goals WHERE deleted_at IS NULL'),
     database.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM habits WHERE archived_at IS NULL'),
     database.getFirstAsync<{ count: number }>("SELECT COUNT(*) AS count FROM daily_pages WHERE reflection != ''"),
+    database.getFirstAsync<{ count: number }>("SELECT COUNT(*) AS count FROM journal_entries WHERE deleted_at IS NULL AND body != ''"),
     countExampleData(database),
   ]);
   return {
@@ -78,7 +80,7 @@ export async function readBackupStatus(database: BackupDatabase) {
     items: Number(itemCount?.count ?? 0),
     goals: Number(goalCount?.count ?? 0),
     routines: Number(habitCount?.count ?? 0),
-    reflections: Number(reflectionCount?.count ?? 0),
+    reflections: Number(reflectionCount?.count ?? 0) + Number(standaloneJournalCount?.count ?? 0),
     exampleRecords: sampleCount,
   };
 }
