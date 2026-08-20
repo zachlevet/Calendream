@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Keyboard, LayoutAnimation, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Keyboard, LayoutAnimation, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { AppColors } from '@/theme/colors';
 
@@ -30,7 +30,11 @@ export function DailyReflection({
 }: DailyReflectionProps) {
   const [expanded, setExpanded] = useState(false);
   const [mode, setMode] = useState<ReflectionMode | null>(null);
+  const [saveError, setSaveError] = useState(false);
   const reflectionLayout = useRef({ y: 0, height: 0 });
+  const latestValue = useRef(value);
+  const lastQueuedValue = useRef(value);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const hour = new Date().getHours();
   const context = date < today ? 'Looking back' : date > today ? 'Planning ahead' : hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
   const modes: { id: ReflectionMode; label: string; prompt?: string; soft: string; accent: string }[] = [
@@ -40,6 +44,39 @@ export function DailyReflection({
     { id: 'dream', label: 'Dream', prompt: 'What are you excited to move toward?', soft: colors.amberSoft, accent: colors.amber },
   ];
   const activeMode = modes.find((item) => item.id === mode);
+
+  useEffect(() => {
+    latestValue.current = value;
+  }, [value]);
+
+  const persist = useCallback((nextValue: string) => {
+    if (nextValue === lastQueuedValue.current) return saveQueue.current;
+    lastQueuedValue.current = nextValue;
+    setSaveError(false);
+    saveQueue.current = saveQueue.current
+      .catch(() => undefined)
+      .then(() => onSave(nextValue))
+      .then(() => undefined)
+      .catch(() => {
+        setSaveError(true);
+      });
+    return saveQueue.current;
+  }, [onSave]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => void persist(value), 650);
+    return () => clearTimeout(timer);
+  }, [persist, value]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'inactive' || state === 'background') void persist(latestValue.current);
+    });
+    return () => {
+      subscription.remove();
+      void persist(latestValue.current);
+    };
+  }, [persist]);
 
   function beginWriting() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -54,7 +91,7 @@ export function DailyReflection({
   }
 
   function finish() {
-    void onSave(value);
+    void persist(value);
     Keyboard.dismiss();
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded(false);
@@ -125,6 +162,7 @@ export function DailyReflection({
           </Text>
         </Pressable>
       )}
+      {saveError && <Text accessibilityLiveRegion="polite" style={[styles.saveError, { color: colors.red }]}>Couldn’t save yet. Your writing is still here; tap the note and try again.</Text>}
     </View>
   );
 }
@@ -145,4 +183,5 @@ const styles = StyleSheet.create({
   input: { minHeight: 126, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, marginTop: 8, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 38, fontSize: 16, lineHeight: 23, textAlignVertical: 'top' },
   libraryButton: { position: 'absolute', right: 10, bottom: 9, borderRadius: 10, paddingHorizontal: 5, paddingVertical: 3 },
   libraryText: { fontSize: 14, fontWeight: '700' },
+  saveError: { marginTop: 6, fontSize: 11, lineHeight: 15 },
 });

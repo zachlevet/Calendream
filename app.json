@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
+      "buildNumber": "1",
       "bundleIdentifier": "com.zachlevet.calendream",
       "supportsTablet": false
     },
@@ -36,7 +37,14 @@
         }
       ],
       "expo-sqlite",
-      "@react-native-community/datetimepicker"
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow Calendream to import events from calendars you select."
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,

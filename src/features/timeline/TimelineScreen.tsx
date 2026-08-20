@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Dimensions, Keyboard, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Dimensions, Keyboard, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { SymbolView } from 'expo-symbols';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -21,6 +21,7 @@ interface TimelineScreenProps {
   onOpenGoal: (goal: Goal) => void;
   onToggleTask: (item: PlanningItem) => Promise<void>;
   onOpenDay: (date: string) => void;
+  onSaveReflection: (date: string, reflection: string) => Promise<void>;
   renderInlineEditor: (options: TimelineInlineEditorOptions) => ReactNode;
 }
 
@@ -59,7 +60,7 @@ function yForDate(position: PeriodPosition, date: string) {
   return position.y + progressThroughPeriod(position.start, position.end, date) * position.height;
 }
 
-export function TimelineScreen({ colors, dataRevision, initialDate, today, loadRange, onSaveItem, onOpenGoal, onToggleTask, onOpenDay, renderInlineEditor }: TimelineScreenProps) {
+export function TimelineScreen({ colors, dataRevision, initialDate, today, loadRange, onSaveItem, onOpenGoal, onToggleTask, onOpenDay, onSaveReflection, renderInlineEditor }: TimelineScreenProps) {
   const [zoom, setZoom] = useState<TimelineZoom>('today');
   const [snapshot, setSnapshot] = useState<TimelineSnapshot>({ items: [], goals: [], reflections: {} });
   const [loading, setLoading] = useState(true);
@@ -141,6 +142,18 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
       if (overlap > 0) scroll.current?.scrollTo({ y: scrollOffset.current + overlap, animated: true });
     }), Platform.OS === 'ios' ? 90 : 140);
   }, []);
+
+  const revealReflection = useCallback((node: View | null) => {
+    setTimeout(() => node?.measureInWindow((_x, y, _width, height) => {
+      const overlap = y + height + 12 - keyboardTop.current;
+      if (overlap > 0) scroll.current?.scrollTo({ y: scrollOffset.current + overlap, animated: true });
+    }), Platform.OS === 'ios' ? 90 : 140);
+  }, []);
+
+  const saveReflection = useCallback(async (date: string, reflection: string) => {
+    await onSaveReflection(date, reflection);
+    setSnapshot((current) => ({ ...current, reflections: { ...current.reflections, [date]: reflection } }));
+  }, [onSaveReflection]);
 
   // The callbacks read layout refs only after focus/keyboard events.
   // eslint-disable-next-line react-hooks/refs
@@ -241,6 +254,8 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
                 onEditItem={(item, slot) => void editInline(item, slot)}
                 onOpenDay={onOpenDay}
                 onOpenGoal={onOpenGoal}
+                onRevealReflection={revealReflection}
+                onSaveReflection={saveReflection}
                 onToggleTask={(item) => void onToggleTask(item)}
                 onZoomToDate={(date, nextZoom) => changeZoom(nextZoom, date)}
                 period={period}
@@ -288,7 +303,7 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
   );
 }
 
-function Period({ period, zoom, items, goals, loading, reflection, today, colors, editingItem, editingSlot, inlineEditor, onPeriodLayout, onEditItem, onOpenDay, onOpenGoal, onToggleTask, onZoomToDate }: {
+function Period({ period, zoom, items, goals, loading, reflection, today, colors, editingItem, editingSlot, inlineEditor, onPeriodLayout, onEditItem, onOpenDay, onOpenGoal, onRevealReflection, onSaveReflection, onToggleTask, onZoomToDate }: {
   period: TimelinePeriod;
   zoom: TimelineZoom;
   items: PlanningItem[];
@@ -304,6 +319,8 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
   onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
   onOpenGoal: (goal: Goal) => void;
+  onRevealReflection: (node: View | null) => void;
+  onSaveReflection: (date: string, reflection: string) => Promise<void>;
   onToggleTask: (item: PlanningItem) => void;
   onZoomToDate: (date: string, zoom: TimelineZoom) => void;
 }) {
@@ -320,7 +337,7 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
       style={[styles.period, presentStyle]}
     >
       {zoom === 'today' ? (
-        <DayPage {...shared} date={period.start} goals={currentGoals} items={visibleItems} onOpenDay={onOpenDay} onOpenGoal={onOpenGoal} onToggleTask={onToggleTask} period={period} reflection={reflection} today={today} />
+        <DayPage {...shared} date={period.start} goals={currentGoals} items={visibleItems} onOpenDay={onOpenDay} onOpenGoal={onOpenGoal} onRevealReflection={onRevealReflection} onSaveReflection={onSaveReflection} onToggleTask={onToggleTask} period={period} reflection={reflection} today={today} />
       ) : zoom === 'week' ? (
         <WeekPage {...shared} goals={currentGoals} items={visibleItems} onOpenDay={onOpenDay} onOpenGoal={onOpenGoal} onToggleTask={onToggleTask} period={period} today={today} />
       ) : zoom === 'month' ? (
@@ -334,7 +351,7 @@ function Period({ period, zoom, items, goals, loading, reflection, today, colors
   );
 }
 
-function DayPage({ date, period, items, goals, reflection, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay, onOpenGoal, onToggleTask }: {
+function DayPage({ date, period, items, goals, reflection, today, colors, editingItem, editingSlot, inlineEditor, onEditItem, onOpenDay, onOpenGoal, onRevealReflection, onSaveReflection, onToggleTask }: {
   date: string;
   period: TimelinePeriod;
   items: PlanningItem[];
@@ -348,6 +365,8 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
   onEditItem: (item: PlanningItem, slot: string) => void;
   onOpenDay: (date: string) => void;
   onOpenGoal: (goal: Goal) => void;
+  onRevealReflection: (node: View | null) => void;
+  onSaveReflection: (date: string, reflection: string) => Promise<void>;
   onToggleTask: (item: PlanningItem) => void;
 }) {
   const events = items.filter((item) => item.kind === 'event');
@@ -375,12 +394,86 @@ function DayPage({ date, period, items, goals, reflection, today, colors, editin
       {(reflection || date <= today) && (
         <View style={styles.reflection}>
           <Text style={[styles.reflectionTitle, { color: colors.text }]}>Daily Reflection</Text>
-          <Pressable onPress={() => onOpenDay(date)} style={[styles.reflectionBox, { borderColor: colors.separator }]}>
-            <Text numberOfLines={3} style={[styles.reflectionText, { color: reflection ? colors.text : colors.tertiary }]}>{reflection || 'Write something…'}</Text>
-          </Pressable>
+          <TimelineReflection
+            colors={colors}
+            date={date}
+            onReveal={onRevealReflection}
+            onSave={onSaveReflection}
+            reflection={reflection ?? ''}
+          />
         </View>
       )}
     </>
+  );
+}
+
+function TimelineReflection({ colors, date, onReveal, onSave, reflection }: {
+  colors: AppColors;
+  date: string;
+  onReveal: (node: View | null) => void;
+  onSave: (date: string, reflection: string) => Promise<void>;
+  reflection: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(reflection);
+  const [saveError, setSaveError] = useState(false);
+  const container = useRef<View>(null);
+  const lastSaved = useRef(reflection);
+
+  const persist = useCallback(async (nextValue: string) => {
+    if (nextValue === lastSaved.current) return;
+    try {
+      await onSave(date, nextValue);
+      lastSaved.current = nextValue;
+      setSaveError(false);
+    } catch {
+      setSaveError(true);
+    }
+  }, [date, onSave]);
+
+  useEffect(() => {
+    if (!editing) return;
+    const timer = setTimeout(() => void persist(value), 650);
+    return () => clearTimeout(timer);
+  }, [editing, persist, value]);
+
+  function beginEditing() {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setValue(reflection);
+    lastSaved.current = reflection;
+    setSaveError(false);
+    setEditing(true);
+    setTimeout(() => onReveal(container.current), 40);
+  }
+
+  function finishEditing() {
+    void persist(value);
+    Keyboard.dismiss();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setEditing(false);
+  }
+
+  return (
+    <View ref={container}>
+      {editing ? (
+        <TextInput
+          autoFocus
+          multiline
+          onBlur={finishEditing}
+          onChangeText={setValue}
+          onFocus={() => onReveal(container.current)}
+          placeholder="Write something…"
+          placeholderTextColor={colors.tertiary}
+          style={[styles.reflectionInput, { borderColor: colors.separator, color: colors.text }]}
+          value={value}
+        />
+      ) : (
+        <Pressable onPress={beginEditing} style={[styles.reflectionBox, { borderColor: colors.separator }]}>
+          <Text numberOfLines={3} style={[styles.reflectionText, { color: reflection ? colors.text : colors.tertiary }]}>{reflection || 'Write something…'}</Text>
+        </Pressable>
+      )}
+      {saveError && <Text accessibilityLiveRegion="polite" style={[styles.reflectionError, { color: colors.red }]}>Couldn’t save yet. Your writing is still here.</Text>}
+    </View>
   );
 }
 
@@ -783,7 +876,7 @@ const styles = StyleSheet.create({
   timelineItem: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, eventTime: { width: 68, fontSize: 13, fontVariant: ['tabular-nums'] }, itemRule: { width: 3, height: 25, borderRadius: 2, marginRight: 10 }, itemCopy: { flex: 1, paddingVertical: 6 }, itemTitle: { fontSize: 16, fontWeight: '500' }, itemNote: { fontSize: 12, marginTop: 2 },
   taskCompleted: { textDecorationLine: 'line-through' },
   checkbox: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, checkmark: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' }, openRow: { height: 42, fontSize: 14, paddingTop: 10 },
-  reflection: { marginTop: 12 }, reflectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, marginBottom: 8 }, reflectionBox: { minHeight: 58, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, justifyContent: 'center' }, reflectionText: { fontSize: 16, lineHeight: 22 },
+  reflection: { marginTop: 12 }, reflectionTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.4, marginBottom: 8 }, reflectionBox: { minHeight: 58, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 9, justifyContent: 'center' }, reflectionText: { fontSize: 16, lineHeight: 22 }, reflectionInput: { minHeight: 108, borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, fontSize: 16, lineHeight: 22, textAlignVertical: 'top' }, reflectionError: { marginTop: 5, fontSize: 10 },
   weekTitleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }, weekTitle: { fontSize: 29, fontWeight: '700', letterSpacing: -0.8 }, weekDay: { minHeight: 58, flexDirection: 'row', alignItems: 'stretch', paddingVertical: 4, borderTopWidth: StyleSheet.hairlineWidth }, weekDayAtMoment: { borderTopWidth: 0 }, weekDateButton: { width: 48, alignSelf: 'stretch', justifyContent: 'center' }, weekDayItems: { flex: 1, justifyContent: 'center' }, weekOpen: { fontSize: 13, paddingVertical: 6 },
   emptyWeek: { fontSize: 15, lineHeight: 21, paddingVertical: 12 },
   compactItem: { minHeight: 39, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center' }, compactItemAtMoment: { borderTopWidth: 0 }, compactTitle: { flex: 1, fontSize: 15, fontWeight: '500' }, compactMeta: { flexShrink: 0, marginLeft: 10, fontSize: 11, fontWeight: '600', fontVariant: ['tabular-nums'] }, weekTaskCheckbox: { width: 20, height: 20, borderRadius: 10, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', marginRight: 11 }, empty: { fontSize: 14, marginTop: 10 }, more: { fontSize: 12, fontWeight: '600', marginTop: 7, marginLeft: 85 },

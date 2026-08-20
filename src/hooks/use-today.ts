@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useSQLiteContext } from 'expo-sqlite';
+import { useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
 
 import type { Goal, GoalDraft, GoalHabitLink, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ISOWeekday, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
 import { archiveRoutineRecord, reconcileRoutineItems, saveRoutineRecord } from '../database/routineStore';
@@ -153,6 +153,31 @@ function addDays(isoDate: string, amount: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+async function loadTimelineRows(db: SQLiteDatabase, startDate: string, endDate: string) {
+  const rows: ItemRow[] = [];
+  const pageSize = 500;
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await db.getAllAsync<ItemRow>(
+      `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
+              start_time, end_time, completed_at, notes, location, habit_id, sort_order,
+              location_name, location_latitude, location_longitude, event_type, meeting_url
+       FROM items
+       WHERE deleted_at IS NULL
+         AND anchor_start IS NOT NULL
+         AND anchor_start <= ?
+         AND COALESCE(anchor_end, anchor_start) >= ?
+       ORDER BY anchor_start, start_time IS NULL, start_time, sort_order, created_at
+       LIMIT ? OFFSET ?`,
+      endDate,
+      startDate,
+      pageSize,
+      offset,
+    );
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
+
 export function useTodayData(date: string, reviewDate = date) {
   const db = useSQLiteContext();
   const [items, setItems] = useState<PlanningItem[]>([]);
@@ -168,8 +193,10 @@ export function useTodayData(date: string, reviewDate = date) {
   const [journal, setJournal] = useState('');
   const [journalInLibrary, setJournalInLibrary] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    setError(null);
     const routineHorizon = addDays(reviewDate, 90);
     await reconcileRoutineItems(db, reviewDate, routineHorizon);
     if (date > routineHorizon) await reconcileRoutineItems(db, date, date);
@@ -291,7 +318,12 @@ export function useTodayData(date: string, reviewDate = date) {
   }, [date, db, reviewDate]);
 
   useEffect(() => {
-    const timer = setTimeout(() => void refresh(), 0);
+    const timer = setTimeout(() => {
+      void refresh().catch((cause) => {
+        setError(cause instanceof Error ? cause.message : 'Calendream could not load this day.');
+        setLoading(false);
+      });
+    }, 0);
     return () => clearTimeout(timer);
   }, [refresh]);
 
@@ -457,20 +489,7 @@ export function useTodayData(date: string, reviewDate = date) {
     const routineStart = startDate > reviewDate ? startDate : reviewDate;
     const routineEnd = endDate < addDays(reviewDate, 365) ? endDate : addDays(reviewDate, 365);
     if (routineStart <= routineEnd) await reconcileRoutineItems(db, routineStart, routineEnd);
-    const [rows, goalRows, pages] = await Promise.all([db.getAllAsync<ItemRow>(
-      `SELECT id, kind, title, anchor_start, anchor_end, precision, altitude,
-              start_time, end_time, completed_at, notes, location, habit_id, sort_order,
-              location_name, location_latitude, location_longitude, event_type, meeting_url
-       FROM items
-       WHERE deleted_at IS NULL
-         AND anchor_start IS NOT NULL
-         AND anchor_start <= ?
-         AND COALESCE(anchor_end, anchor_start) >= ?
-       ORDER BY anchor_start, start_time IS NULL, start_time, sort_order, created_at
-       LIMIT 500`,
-      endDate,
-      startDate,
-    ), db.getAllAsync<GoalRow>(
+    const [rows, goalRows, pages] = await Promise.all([loadTimelineRows(db, startDate, endDate), db.getAllAsync<GoalRow>(
       `SELECT id, title, scope, horizon, starts_on, target_date, completion_date, completed_at, notes, linked_habit_id
        FROM goals
        WHERE deleted_at IS NULL AND horizon != 'someday' AND starts_on <= ? AND target_date >= ?
@@ -669,6 +688,31 @@ export function useTodayData(date: string, reviewDate = date) {
     await refresh();
   }, [db, refresh]);
 
+  const setHabitEventOutcome = useCallback(async (item: PlanningItem, completed: boolean) => {
+    if (!item.habitId || !item.anchorStart) return;
+    const habitId = item.habitId;
+    const targetDate = item.anchorStart;
+    const now = new Date().toISOString();
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        'UPDATE items SET completed_at = ?, updated_at = ? WHERE id = ?',
+        completed ? now : null,
+        now,
+        item.id,
+      );
+      await db.runAsync('DELETE FROM habit_failures WHERE habit_id = ? AND date = ?', habitId, targetDate);
+      if (!completed) {
+        await db.runAsync(
+          'INSERT INTO habit_failures (habit_id, date, created_at) VALUES (?, ?, ?) ON CONFLICT(habit_id, date) DO UPDATE SET created_at = excluded.created_at',
+          habitId,
+          targetDate,
+          now,
+        );
+      }
+    });
+    await refresh();
+  }, [db, refresh]);
+
   const toggleHabitSkip = useCallback(async (habit: Habit, targetDate: string) => {
     const now = new Date().toISOString();
     const existing = await db.getFirstAsync<{ habit_id: string }>(
@@ -783,20 +827,24 @@ export function useTodayData(date: string, reviewDate = date) {
     return ranked[0] ? toItem(ranked[0].row) : null;
   }, [db]);
 
-  const saveJournal = useCallback(async (reflection: string) => {
+  const saveJournalForDate = useCallback(async (targetDate: string, reflection: string) => {
     const now = new Date().toISOString();
     await db.runAsync(
       `INSERT INTO daily_pages (date, reflection, created_at, updated_at)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(date) DO UPDATE SET reflection = excluded.reflection,
                                        updated_at = excluded.updated_at`,
-      date,
+      targetDate,
       reflection,
       now,
       now,
     );
-    setJournal(reflection);
+    if (targetDate === date) setJournal(reflection);
   }, [date, db]);
+
+  const saveJournal = useCallback(async (reflection: string) => {
+    await saveJournalForDate(date, reflection);
+  }, [date, saveJournalForDate]);
 
   const saveJournalToLibrary = useCallback(async (reflection: string) => {
     if (!reflection.trim()) return;
@@ -901,6 +949,8 @@ export function useTodayData(date: string, reviewDate = date) {
     journal,
     journalInLibrary,
     loading,
+    error,
+    refresh,
     saveItem,
     toggleTask,
     toggleGoal,
@@ -914,12 +964,14 @@ export function useTodayData(date: string, reviewDate = date) {
     toggleHabitDate,
     toggleHabitSkip,
     markHabitFailed,
+    setHabitEventOutcome,
     linkHabitToGoal,
     unlinkHabitFromGoal,
     archiveHabit,
     deleteItem,
     findItemForRemoval,
     saveJournal,
+    saveJournalForDate,
     saveJournalToLibrary,
     moveOverdueTask,
     dismissOverdueTask,

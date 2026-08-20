@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,7 +23,7 @@ import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { BlurView } from 'expo-blur';
-import { SymbolView } from 'expo-symbols';
+import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
 
 import { useTodayData, type ItemDraft } from '@/hooks/use-today';
@@ -54,10 +54,14 @@ import type { CaptureKind } from '@/features/quick-capture/parseQuickCapture';
 import { SearchOverlay } from '@/features/search/SearchResults';
 import { TimelineScreen } from '@/features/timeline/TimelineScreen';
 import { GoalsHabitsScreen } from '@/features/goals/GoalsHabitsScreen';
+// Metro resolves the platform-specific SettingsScreen.native/.web module.
+// eslint-disable-next-line import/no-unresolved
+import { SettingsScreen } from '@/features/settings/SettingsScreen';
 
-type Destination = 'today' | 'timeline' | 'goals';
+type Destination = 'today' | 'timeline' | 'goals' | 'settings';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
 type CapturePreset = { date: string; endDate?: string; kind?: CaptureKind; dateLocked?: boolean };
+type HabitFeedback = { eventId: string; outcome: 'completed' | 'missed' };
 
 function eventAccent(event: PlanningItem, colors: AppColors) {
   const phase = eventPhase(event);
@@ -100,6 +104,7 @@ export function TodayScreen() {
   const [timelineFocusDate, setTimelineFocusDate] = useState(today);
   const [journal, setJournal] = useState('');
   const [briefingSessionActive, setBriefingSessionActive] = useState(false);
+  const [habitFeedback, setHabitFeedback] = useState<HabitFeedback | null>(null);
   const [inlineEditor, setInlineEditor] = useState<EditorState>(null);
   const [inlineDraft, setInlineDraft] = useState<ItemDraft | null>(null);
   const todayScroll = useRef<ScrollView>(null);
@@ -135,11 +140,18 @@ export function TodayScreen() {
     let cancelled = false;
     const timer = setTimeout(() => {
       setSearchLoading(true);
-      void searchAll(searchQuery).then((results) => {
-        if (cancelled) return;
-        setSearchResults(results);
-        setSearchLoading(false);
-      });
+      void searchAll(searchQuery)
+        .then((results) => {
+          if (cancelled) return;
+          setSearchResults(results);
+          setSearchLoading(false);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          console.warn('Calendream search failed', error);
+          setSearchResults([]);
+          setSearchLoading(false);
+        });
     }, 140);
 
     return () => {
@@ -202,11 +214,21 @@ export function TodayScreen() {
     }
   }
 
-  function confirmRemoveItem(item: PlanningItem) {
+  function confirmRemoveItem(item: PlanningItem, onRemoved?: () => void) {
     Alert.alert(`Delete ${item.kind}?`, `“${item.title}” will be removed.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => void removeItem(item.id) },
+      { text: 'Delete', style: 'destructive', onPress: () => void removeItem(item.id).then(onRemoved) },
     ]);
+  }
+
+  const expireHabitFeedback = useCallback((eventId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setHabitFeedback((current) => current?.eventId === eventId ? null : current);
+  }, []);
+
+  async function recordHabitOutcome(event: PlanningItem, completed: boolean) {
+    await data.setHabitEventOutcome(event, completed);
+    setHabitFeedback({ eventId: event.id, outcome: completed ? 'completed' : 'missed' });
   }
 
   async function saveInline(draft: ItemDraft) {
@@ -339,6 +361,15 @@ export function TodayScreen() {
     setDestination('goals');
   }
 
+  function openSettings() {
+    Keyboard.dismiss();
+    setCalendarOpen(false);
+    setSearchOpen(false);
+    setInlineEditor(null);
+    setEditor(null);
+    setDestination('settings');
+  }
+
   function openGoal(goal: Goal) {
     Keyboard.dismiss();
     setCalendarOpen(false);
@@ -458,6 +489,19 @@ export function TodayScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          {data.error && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void data.refresh()}
+              style={[styles.dataError, { backgroundColor: colors.redSoft }]}
+            >
+              <View style={styles.rowCopy}>
+                <Text style={[styles.dataErrorTitle, { color: colors.red }]}>This day didn’t fully load</Text>
+                <Text numberOfLines={2} style={[styles.dataErrorDetail, { color: colors.secondary }]}>{data.error}</Text>
+              </View>
+              <Text style={[styles.dataErrorRetry, { color: colors.red }]}>Retry</Text>
+            </Pressable>
+          )}
           {data.upcoming.length > 0 && (
             <ScrollView
               horizontal
@@ -591,11 +635,18 @@ export function TodayScreen() {
                         <Text style={[styles.habitEventQuestion, { color: colors.text }]}>Did you complete this habit?</Text>
                         <Text style={[styles.habitEventMeta, { color: colors.secondary }]}>This updates your habit tracker.</Text>
                       </View>
-                      <Pressable onPress={() => event.habitId && void data.markHabitFailed(event.habitId, selectedDate)} style={[styles.habitEventChoice, { borderColor: colors.blue }]}><Text style={[styles.habitEventChoiceText, { color: colors.blue }]}>No</Text></Pressable>
-                      <Pressable onPress={() => void data.toggleTask(event)} style={[styles.habitEventChoice, { backgroundColor: colors.blue, borderColor: colors.blue }]}><Text style={[styles.habitEventChoiceText, { color: '#FFFFFF' }]}>Yes</Text></Pressable>
+                      <Pressable onPress={() => void recordHabitOutcome(event, false)} style={[styles.habitEventChoice, { borderColor: colors.blue }]}><Text style={[styles.habitEventChoiceText, { color: colors.blue }]}>No</Text></Pressable>
+                      <Pressable onPress={() => void recordHabitOutcome(event, true)} style={[styles.habitEventChoice, { backgroundColor: colors.blue, borderColor: colors.blue }]}><Text style={[styles.habitEventChoiceText, { color: '#FFFFFF' }]}>Yes</Text></Pressable>
                     </View>
                   )}
-                  {habitEntry?.failed && <Text style={[styles.habitEventMissed, { color: colors.tertiary }]}>Habit marked not completed</Text>}
+                  {habitFeedback?.eventId === event.id && (
+                    <HabitOutcomeNotice
+                      colors={colors}
+                      feedback={habitFeedback}
+                      onChange={() => void recordHabitOutcome(event, habitFeedback.outcome === 'missed')}
+                      onExpire={expireHabitFeedback}
+                    />
+                  )}
                   {inlineEditor?.item?.id === event.id && (
                     <InlineComposer colors={colors} initial={event} key={event.id} kind="event" onCancel={closeInlineEditor} onDelete={() => confirmRemoveItem(event)} onDraftChange={setInlineDraft} onReveal={revealInline} onSave={saveInline} today={selectedDate} />
                   )}
@@ -635,8 +686,8 @@ export function TodayScreen() {
                 key={selectedDate}
                 onChange={setJournal}
                 onReveal={revealInline}
-                onSave={(value) => data.saveJournal(value)}
-                onSaveToLibrary={(value) => data.saveJournalToLibrary(value)}
+                onSave={data.saveJournal}
+                onSaveToLibrary={data.saveJournalToLibrary}
                 savedToLibrary={data.journalInLibrary}
                 today={today}
                 value={journal}
@@ -665,6 +716,9 @@ export function TodayScreen() {
             setSelectedDate(date);
             setDestination('today');
           }}
+          onSaveReflection={async (date, reflection) => {
+            await data.saveJournalForDate(date, reflection);
+          }}
           renderInlineEditor={({ item, date, onCancel, onDraftChange, onReveal, onSave }) => (
             <InlineComposer
               colors={colors}
@@ -672,6 +726,7 @@ export function TodayScreen() {
               key={`timeline-${item.id}`}
               kind={item.kind}
               onCancel={onCancel}
+              onDelete={() => confirmRemoveItem(item, onCancel)}
               onDraftChange={onDraftChange}
               onReveal={() => onReveal()}
               onSave={onSave}
@@ -680,7 +735,7 @@ export function TodayScreen() {
           )}
           today={today}
         />
-      ) : (
+      ) : destination === 'goals' ? (
         <GoalsHabitsScreen
           colors={colors}
           goalSteps={data.goalSteps}
@@ -703,6 +758,14 @@ export function TodayScreen() {
           onToggleHabitDate={data.toggleHabitDate}
           onToggleHabitSkip={data.toggleHabitSkip}
           today={today}
+        />
+      ) : (
+        <SettingsScreen
+          colors={colors}
+          onDataChanged={async () => {
+            await data.refresh();
+            setTimelineRevision((revision) => revision + 1);
+          }}
         />
       )}
 
@@ -735,9 +798,10 @@ export function TodayScreen() {
       )}
 
       <View style={[styles.tabBar, { backgroundColor: colors.chrome, borderColor: colors.separator }]}>
-        <TabButton active={destination === 'today'} colors={colors} label="Today" onPress={() => setDestination('today')} />
-        <TabButton active={destination === 'timeline'} colors={colors} label="Timeline" onPress={openTimelineHome} />
-        <TabButton accent={colors.yellow} active={destination === 'goals'} colors={colors} label="Plan" onPress={openGoalsAndHabits} />
+        <TabButton active={destination === 'today'} activeIcon="calendar.circle.fill" colors={colors} icon="calendar" label="Today" onPress={() => setDestination('today')} />
+        <TabButton active={destination === 'timeline'} activeIcon="clock.fill" colors={colors} icon="clock" label="Timeline" onPress={openTimelineHome} />
+        <TabButton accent={colors.yellow} active={destination === 'goals'} colors={colors} icon="sparkles" label="Plan" onPress={openGoalsAndHabits} />
+        <TabButton active={destination === 'settings'} activeIcon="gearshape.fill" colors={colors} icon="gearshape" label="Settings" onPress={openSettings} />
       </View>
 
       <ItemEditor
@@ -908,19 +972,53 @@ function SectionHeader({ title, action, onAction, colors }: {
   );
 }
 
-function TabButton({ active, label, onPress, colors, accent }: {
+function TabButton({ active, activeIcon, label, onPress, colors, accent, icon }: {
   active: boolean;
+  activeIcon?: SFSymbol;
   label: string;
   onPress: () => void;
   colors: AppColors;
   accent?: string;
+  icon: SFSymbol;
 }) {
   const activeColor = accent ?? colors.blue;
   return (
-    <Pressable onPress={onPress} style={styles.tabButton}>
-      <View style={[styles.tabGlyph, { backgroundColor: active ? activeColor : colors.card }]} />
+    <Pressable accessibilityLabel={label} accessibilityRole="tab" accessibilityState={{ selected: active }} hitSlop={4} onPress={onPress} style={({ pressed }) => [styles.tabButton, pressed && styles.tabButtonPressed]}>
+      <View style={styles.tabGlyph}>
+        <SymbolView name={active ? activeIcon ?? icon : icon} size={22} tintColor={active ? activeColor : colors.tertiary} weight={active ? 'semibold' : 'regular'} />
+      </View>
       <Text style={[styles.tabLabel, { color: active ? activeColor : colors.secondary }]}>{label}</Text>
     </Pressable>
+  );
+}
+
+function HabitOutcomeNotice({ colors, feedback, onChange, onExpire }: {
+  colors: AppColors;
+  feedback: HabitFeedback;
+  onChange: () => void;
+  onExpire: (eventId: string) => void;
+}) {
+  const [opacity] = useState(() => new Animated.Value(1));
+
+  useEffect(() => {
+    opacity.setValue(1);
+    const animation = Animated.sequence([
+      Animated.delay(2100),
+      Animated.timing(opacity, { toValue: 0, duration: 450, useNativeDriver: true }),
+    ]);
+    animation.start(({ finished }) => {
+      if (finished) onExpire(feedback.eventId);
+    });
+    return () => animation.stop();
+  }, [feedback.eventId, feedback.outcome, onExpire, opacity]);
+
+  return (
+    <Animated.View accessibilityLiveRegion="polite" style={[styles.habitOutcomeNotice, { opacity }]}>
+      <Text style={[styles.habitOutcomeText, { color: colors.tertiary }]}>{feedback.outcome === 'completed' ? 'Habit marked complete' : 'Habit marked not completed'}</Text>
+      <Pressable hitSlop={8} onPress={onChange} style={[styles.habitOutcomeChange, { backgroundColor: colors.card }]}>
+        <Text style={[styles.habitOutcomeChangeText, { color: colors.blue }]}>Change</Text>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -1391,7 +1489,9 @@ function LocationInput({ value, colors, integrated, labeled, onFocus, onTextChan
   const [suggestions, setSuggestions] = useState<MapSuggestion[]>([]);
   const [resolving, setResolving] = useState(false);
   const [selectionCommitted, setSelectionCommitted] = useState(false);
+  const [searchEnabled, setSearchEnabled] = useState(false);
   const requestSequence = useRef(0);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
   const fallbackGlass = integrated
     ? colors.background === '#000000' ? 'rgba(38,38,42,0.88)' : 'rgba(246,246,250,0.84)'
@@ -1403,7 +1503,7 @@ function LocationInput({ value, colors, integrated, labeled, onFocus, onTextChan
   useEffect(() => {
     const query = value.trim();
     const requestId = ++requestSequence.current;
-    if (!CalendreamMapKit || query.length < 2 || resolving || selectionCommitted) return;
+    if (!CalendreamMapKit || !searchEnabled || query.length < 2 || resolving || selectionCommitted) return;
     let current = true;
     const timer = setTimeout(() => {
       void CalendreamMapKit.suggestAsync(query)
@@ -1420,11 +1520,16 @@ function LocationInput({ value, colors, integrated, labeled, onFocus, onTextChan
       current = false;
       clearTimeout(timer);
     };
-  }, [resolving, selectionCommitted, value]);
+  }, [resolving, searchEnabled, selectionCommitted, value]);
+
+  useEffect(() => () => {
+    if (blurTimer.current) clearTimeout(blurTimer.current);
+  }, []);
 
   async function selectSuggestion(suggestion: MapSuggestion) {
     if (!CalendreamMapKit) return;
     setResolving(true);
+    setSearchEnabled(false);
     setSuggestions([]);
     try {
       const query = [suggestion.title, suggestion.subtitle].filter(Boolean).join(', ');
@@ -1445,11 +1550,21 @@ function LocationInput({ value, colors, integrated, labeled, onFocus, onTextChan
         <TextInput
           autoCorrect={false}
           onChangeText={(text) => {
+            setSearchEnabled(text.trim().length >= 2);
             setSelectionCommitted(false);
             onTextChange(text);
             if (text.trim().length < 2) setSuggestions([]);
           }}
-          onFocus={onFocus}
+          onBlur={() => {
+            blurTimer.current = setTimeout(() => {
+              setSearchEnabled(false);
+              setSuggestions([]);
+            }, 180);
+          }}
+          onFocus={() => {
+            if (blurTimer.current) clearTimeout(blurTimer.current);
+            onFocus?.();
+          }}
           placeholder={resolving ? 'Finding place…' : 'Location (optional)'}
           placeholderTextColor={colors.tertiary}
           style={[labeled ? styles.fieldInput : styles.locationInput, { color: colors.text }]}
@@ -1533,6 +1648,8 @@ function MorningBriefing({ visible, tasks, today, colors, onMoveTask, onSkip }: 
   return (
     <Modal animationType="fade" onRequestClose={() => void onSkip()} presentationStyle="overFullScreen" statusBarTranslucent transparent visible={visible}>
       <View style={styles.briefingOverlay}>
+        <BlurView intensity={10} pointerEvents="none" style={StyleSheet.absoluteFill} tint={colors.background === '#000000' ? 'dark' : 'light'} />
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.background === '#000000' ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.08)' }]} />
         <Pressable accessibilityLabel="Close morning review" onPress={() => void onSkip()} style={StyleSheet.absoluteFill} />
         <View style={[styles.briefingSheet, schedulingTaskId && styles.briefingSheetExpanded, !glassAvailable && { backgroundColor: fallbackGlass, borderColor: colors.background === '#000000' ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.9)' }]}>
           {glassAvailable && <GlassView glassEffectStyle="regular" style={StyleSheet.absoluteFill} />}
@@ -1691,6 +1808,10 @@ const styles = StyleSheet.create({
   addButton: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#FF3B30', alignItems: 'center', justifyContent: 'center' },
   addSymbol: { color: '#FFFFFF', fontSize: 24, lineHeight: 25, fontWeight: '400' },
   scrollContent: { paddingHorizontal: 18, paddingTop: 10, paddingBottom: 104 },
+  dataError: { minHeight: 58, marginBottom: 10, borderRadius: 16, paddingHorizontal: 13, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  dataErrorTitle: { fontSize: 13, fontWeight: '700' },
+  dataErrorDetail: { marginTop: 2, fontSize: 10, lineHeight: 14 },
+  dataErrorRetry: { fontSize: 12, fontWeight: '800' },
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
   date: { fontSize: 31, fontWeight: '700', letterSpacing: -1, marginTop: 3 },
   daySummary: { fontSize: 14, marginTop: 3 },
@@ -1723,7 +1844,10 @@ const styles = StyleSheet.create({
   habitEventMeta: { fontSize: 9, lineHeight: 12, marginTop: 1 },
   habitEventChoice: { minWidth: 38, height: 28, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   habitEventChoiceText: { fontSize: 11, fontWeight: '800' },
-  habitEventMissed: { marginLeft: 68, marginTop: 4, marginBottom: 5, fontSize: 10 },
+  habitOutcomeNotice: { minHeight: 24, marginLeft: 68, marginTop: 2, marginBottom: 3, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  habitOutcomeText: { fontSize: 10 },
+  habitOutcomeChange: { height: 21, borderRadius: 10.5, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center' },
+  habitOutcomeChangeText: { fontSize: 9, fontWeight: '700' },
   mapsButton: { height: 28, borderRadius: 14, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
   eventActions: { flexDirection: 'row', alignItems: 'center' },
   mapsButtonText: { fontSize: 12, fontWeight: '700' },
@@ -1738,8 +1862,9 @@ const styles = StyleSheet.create({
   swipeDeleteAction: { width: 72, alignItems: 'center', justifyContent: 'center', gap: 3 },
   swipeDeleteText: { color: '#FFFFFF', fontSize: 10, lineHeight: 12, fontWeight: '700' },
   tabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 78, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', paddingTop: 8, paddingBottom: 20 },
-  tabButton: { flex: 1, alignItems: 'center', gap: 4 },
-  tabGlyph: { width: 23, height: 16, borderRadius: 6 },
+  tabButton: { flex: 1, minHeight: 48, alignItems: 'center', gap: 3 },
+  tabButtonPressed: { opacity: 0.58 },
+  tabGlyph: { width: 28, height: 23, alignItems: 'center', justifyContent: 'center' },
   tabLabel: { fontSize: 11, fontWeight: '600' },
   editor: { flex: 1 },
   editorSafe: { flex: 1 },
@@ -1792,7 +1917,7 @@ const styles = StyleSheet.create({
   notesField: { minHeight: 72, textAlignVertical: 'top', paddingTop: 0 },
   deleteButton: { height: 50, marginHorizontal: 18, marginTop: 18, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   deleteText: { fontSize: 16, fontWeight: '600' },
-  briefingOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.08)' },
+  briefingOverlay: { flex: 1, justifyContent: 'flex-end' },
   briefingSheet: { maxHeight: '60%', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderBottomWidth: 0, overflow: 'hidden', shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: -8 }, elevation: 16 },
   briefingSheetExpanded: { height: '88%', maxHeight: '88%' },
   briefing: { flexShrink: 1 },

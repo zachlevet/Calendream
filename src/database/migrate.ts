@@ -1,12 +1,116 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { LOCAL_ONLY_CLEANUP_SQL } from './localOnlyCleanup';
+import { LOCAL_ONLY_CLEANUP_SQL } from './localOnlyCleanup.ts';
+
+export const LATEST_SCHEMA_VERSION = 5;
+
+type QueryResult = Record<string, unknown>;
+
+export interface MigrationDatabase {
+  execAsync(sql: string): Promise<void>;
+  getAllAsync<T>(sql: string, ...params: unknown[]): Promise<T[]>;
+  getFirstAsync<T>(sql: string, ...params: unknown[]): Promise<T | null>;
+  runAsync(sql: string, ...params: unknown[]): Promise<unknown>;
+  withExclusiveTransactionAsync(task: (transaction: MigrationDatabase) => Promise<void>): Promise<void>;
+}
+
+interface Migration {
+  version: number;
+  name: string;
+  up(database: MigrationDatabase): Promise<void>;
+}
+
+const migrations: Migration[] = [
+  { version: 1, name: 'local planning schema', up: createCurrentSchema },
+  {
+    version: 2,
+    name: 'remove abandoned cloud experiment artifacts',
+    async up(database) {
+      const legacySyncTable = await database.getFirstAsync<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_state'",
+      );
+      if (legacySyncTable) await database.execAsync(LOCAL_ONLY_CLEANUP_SQL);
+    },
+  },
+  { version: 3, name: 'separate goals and classify trips', up: migrateLegacyGoalModel },
+  {
+    version: 4,
+    name: 'release query indexes',
+    async up(database) {
+      await database.execAsync(`
+        CREATE INDEX IF NOT EXISTS items_active_range_idx
+          ON items(deleted_at, anchor_start, anchor_end);
+        CREATE INDEX IF NOT EXISTS items_habit_date_idx
+          ON items(habit_id, anchor_start, deleted_at);
+        CREATE INDEX IF NOT EXISTS habits_active_idx
+          ON habits(archived_at, start_date, end_date);
+        CREATE INDEX IF NOT EXISTS daily_pages_updated_idx
+          ON daily_pages(updated_at);
+      `);
+    },
+  },
+  {
+    version: 5,
+    name: 'device calendar import identity',
+    async up(database) {
+      await ensureColumn(database, 'items', 'source_provider', 'TEXT');
+      await ensureColumn(database, 'items', 'source_calendar_id', 'TEXT');
+      await ensureColumn(database, 'items', 'source_event_key', 'TEXT');
+      await database.execAsync(`
+        CREATE UNIQUE INDEX IF NOT EXISTS items_source_identity_idx
+          ON items(source_provider, source_calendar_id, source_event_key)
+          WHERE source_event_key IS NOT NULL;
+      `);
+    },
+  },
+];
 
 export async function migrateDatabase(db: SQLiteDatabase) {
-  await db.execAsync(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
+  await runMigrations(db as unknown as MigrationDatabase);
+}
 
+export async function runMigrations(db: MigrationDatabase) {
+  await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+
+  const versionRow = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+  const currentVersion = Number(versionRow?.user_version ?? 0);
+  if (!Number.isInteger(currentVersion) || currentVersion < 0) {
+    throw new Error('Calendream could not read the local database version.');
+  }
+  if (currentVersion > LATEST_SCHEMA_VERSION) {
+    throw new Error(
+      `This calendar was created by a newer version of Calendream (database ${currentVersion}, app ${LATEST_SCHEMA_VERSION}). Update the app before opening it.`,
+    );
+  }
+
+  for (const migration of migrations) {
+    if (migration.version <= currentVersion) continue;
+    await db.withExclusiveTransactionAsync(async (transaction) => {
+      await migration.up(transaction);
+      await transaction.runAsync(
+        `INSERT INTO schema_migrations (version, name, applied_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(version) DO UPDATE SET name = excluded.name, applied_at = excluded.applied_at`,
+        migration.version,
+        migration.name,
+        new Date().toISOString(),
+      );
+      await transaction.execAsync(`PRAGMA user_version = ${migration.version}`);
+    });
+  }
+
+  const foreignKeyProblems = await db.getAllAsync<QueryResult>('PRAGMA foreign_key_check');
+  if (foreignKeyProblems.length > 0) {
+    throw new Error(`Calendream found ${foreignKeyProblems.length} broken relationship${foreignKeyProblems.length === 1 ? '' : 's'} in the local calendar.`);
+  }
+  const integrity = await db.getFirstAsync<{ quick_check: string }>('PRAGMA quick_check');
+  if (integrity?.quick_check !== 'ok') {
+    throw new Error(`Calendream could not verify the local calendar${integrity?.quick_check ? `: ${integrity.quick_check}` : '.'}`);
+  }
+}
+
+async function createCurrentSchema(database: MigrationDatabase) {
+  await database.execAsync(`
     CREATE TABLE IF NOT EXISTS items (
       id TEXT PRIMARY KEY NOT NULL,
       kind TEXT NOT NULL CHECK (kind IN ('task', 'event')),
@@ -20,8 +124,16 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       completed_at TEXT,
       notes TEXT,
       location TEXT,
+      location_name TEXT,
+      location_latitude REAL,
+      location_longitude REAL,
       meeting_url TEXT,
+      event_type TEXT NOT NULL DEFAULT 'event',
+      source_provider TEXT,
+      source_calendar_id TEXT,
+      source_event_key TEXT,
       habit_id TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT
@@ -118,6 +230,12 @@ export async function migrateDatabase(db: SQLiteDatabase) {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version INTEGER PRIMARY KEY NOT NULL,
+      name TEXT NOT NULL,
+      applied_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS items_anchor_start_idx ON items(anchor_start);
     CREATE INDEX IF NOT EXISTS items_updated_at_idx ON items(updated_at);
     CREATE INDEX IF NOT EXISTS goals_active_range_idx ON goals(starts_on, target_date);
@@ -125,442 +243,68 @@ export async function migrateDatabase(db: SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS goal_habits_habit_idx ON goal_habits(habit_id);
   `);
 
-  const itemColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(items)');
-  if (!itemColumns.some((column) => column.name === 'sort_order')) {
-    await db.execAsync('ALTER TABLE items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
-  }
-  if (!itemColumns.some((column) => column.name === 'location_name')) {
-    await db.execAsync('ALTER TABLE items ADD COLUMN location_name TEXT');
-  }
-  if (!itemColumns.some((column) => column.name === 'location_latitude')) {
-    await db.execAsync('ALTER TABLE items ADD COLUMN location_latitude REAL');
-  }
-  if (!itemColumns.some((column) => column.name === 'location_longitude')) {
-    await db.execAsync('ALTER TABLE items ADD COLUMN location_longitude REAL');
-  }
-  if (!itemColumns.some((column) => column.name === 'event_type')) {
-    await db.execAsync("ALTER TABLE items ADD COLUMN event_type TEXT NOT NULL DEFAULT 'event'");
-  }
-  if (!itemColumns.some((column) => column.name === 'end_time')) {
-    await db.execAsync('ALTER TABLE items ADD COLUMN end_time TEXT');
-  }
-  if (!itemColumns.some((column) => column.name === 'meeting_url')) {
-    await db.execAsync('ALTER TABLE items ADD COLUMN meeting_url TEXT');
-  }
-  const habitColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(habits)');
-  if (!habitColumns.some((column) => column.name === 'cue')) {
-    await db.execAsync('ALTER TABLE habits ADD COLUMN cue TEXT');
-  }
-  if (!habitColumns.some((column) => column.name === 'item_kind')) {
-    await db.execAsync("ALTER TABLE habits ADD COLUMN item_kind TEXT NOT NULL DEFAULT 'task'");
-  }
-  if (!habitColumns.some((column) => column.name === 'start_time')) {
-    await db.execAsync('ALTER TABLE habits ADD COLUMN start_time TEXT');
-  }
-  if (!habitColumns.some((column) => column.name === 'end_time')) {
-    await db.execAsync('ALTER TABLE habits ADD COLUMN end_time TEXT');
-  }
-  const goalColumns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(goals)');
-  if (!goalColumns.some((column) => column.name === 'horizon')) {
-    await db.execAsync("ALTER TABLE goals ADD COLUMN horizon TEXT NOT NULL DEFAULT 'year'");
-    await db.execAsync('UPDATE goals SET horizon = scope');
-  }
-  if (!goalColumns.some((column) => column.name === 'completion_date')) {
-    await db.execAsync('ALTER TABLE goals ADD COLUMN completion_date TEXT');
-    await db.execAsync('UPDATE goals SET completion_date = target_date');
-  }
+  await ensureColumn(database, 'items', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn(database, 'items', 'location_name', 'TEXT');
+  await ensureColumn(database, 'items', 'location_latitude', 'REAL');
+  await ensureColumn(database, 'items', 'location_longitude', 'REAL');
+  await ensureColumn(database, 'items', 'event_type', "TEXT NOT NULL DEFAULT 'event'");
+  await ensureColumn(database, 'items', 'end_time', 'TEXT');
+  await ensureColumn(database, 'items', 'meeting_url', 'TEXT');
+  await ensureColumn(database, 'items', 'source_provider', 'TEXT');
+  await ensureColumn(database, 'items', 'source_calendar_id', 'TEXT');
+  await ensureColumn(database, 'items', 'source_event_key', 'TEXT');
+  await ensureColumn(database, 'habits', 'cue', 'TEXT');
+  await ensureColumn(database, 'habits', 'item_kind', "TEXT NOT NULL DEFAULT 'task'");
+  await ensureColumn(database, 'habits', 'start_time', 'TEXT');
+  await ensureColumn(database, 'habits', 'end_time', 'TEXT');
+  await ensureColumn(database, 'goals', 'horizon', "TEXT NOT NULL DEFAULT 'year'");
+  await ensureColumn(database, 'goals', 'completion_date', 'TEXT');
+  await database.execAsync(`
+    UPDATE goals SET horizon = scope WHERE horizon IS NULL OR horizon = '';
+    UPDATE goals SET completion_date = target_date WHERE completion_date IS NULL;
+  `);
+}
 
-  // Builds from the brief cloud-sync experiment may already have sync-only
-  // triggers and queue tables. Remove those artifacts without touching any
-  // planning data so this TestFlight branch remains entirely local-first.
-  const legacySyncTable = await db.getFirstAsync<{ name: string }>(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_state'",
-  );
-  if (legacySyncTable) {
-    await db.execAsync(LOCAL_ONLY_CLEANUP_SQL);
+async function ensureColumn(database: MigrationDatabase, table: string, column: string, definition: string) {
+  const columns = await database.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  if (!columns.some((candidate) => candidate.name === column)) {
+    await database.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
+}
 
-  const sampleMarker = await db.getFirstAsync<{ value: string }>(
-    "SELECT value FROM app_meta WHERE key = 'sample_data_v2'",
-  );
-  if (!sampleMarker) {
-    const now = new Date();
-    const createdAt = now.toISOString();
-    const today = localDate(now);
-    const samples = [
-      ['sample-v2-plan', 'event', 'Morning planning', today, '8:30 AM', 'Choose the three things that matter most today.', null, 1],
-      ['sample-v2-coffee', 'event', 'Coffee with Alex', today, '10:00 AM', null, "Jo's Coffee, 1300 S Congress Ave, Austin, TX", 1],
-      ['sample-v2-proposal', 'task', 'Finish the project proposal', today, null, 'Send the polished draft before the afternoon.', null, 0],
-      ['sample-v2-walk', 'task', 'Take a 20 minute walk', today, null, null, null, 0],
-      ['sample-v2-dinner', 'event', 'Dinner reservation', addDate(today, 1), '7:00 PM', 'Table for four.', 'Austin, TX', 1],
-      ['sample-v2-campsite', 'task', 'Book the campsite', addDate(today, 1), null, 'Check the lake-side sites first.', null, 0],
-      ['sample-v2-flight', 'event', 'Flight to Denver', addDate(today, 3), '9:15 AM', 'Remember the window seat.', 'Austin-Bergstrom International Airport', 2],
-      ['sample-v2-hike', 'event', 'Weekend hike', addDate(today, 6), '8:00 AM', 'Bring water and sunscreen.', 'Barton Creek Greenbelt', 1],
-      ['sample-v2-trip', 'event', 'Colorado trip', addDate(today, 43), null, 'A longer-range event for the horizon.', 'Colorado', 4],
-    ] as const;
-
-    await db.withTransactionAsync(async () => {
-      for (const [sampleIndex, sample] of samples.entries()) {
-        const [id, kind, title, date, time, notes, location, altitude] = sample;
-        await db.runAsync(
-          `INSERT OR IGNORE INTO items
-            (id, kind, title, anchor_start, anchor_end, precision, altitude,
-             start_time, notes, location, sort_order, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          id,
-          kind,
-          title,
-          date,
-          date,
-          kind === 'event' && time ? 'time' : 'day',
-          altitude,
-          time,
-          notes,
-          location,
-          kind === 'task' ? sampleIndex : 0,
-          createdAt,
-          createdAt,
-        );
-      }
-      await db.runAsync(
-        `INSERT OR IGNORE INTO daily_pages (date, reflection, created_at, updated_at)
-         VALUES (?, ?, ?, ?)`,
-        today,
-        'Today feels open. I want to protect time for the work and people that matter.',
-        createdAt,
-        createdAt,
-      );
-      await db.runAsync(
-        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_data_v2', 'seeded', ?)",
-        createdAt,
-      );
-    });
-  }
-
-  const timelineMarker = await db.getFirstAsync<{ value: string }>(
-    "SELECT value FROM app_meta WHERE key = 'sample_timeline_v1'",
-  );
-  if (!timelineMarker) {
-    const now = new Date();
-    const createdAt = now.toISOString();
-    const today = localDate(now);
-    const samples = [
-      { id: 'timeline-spring-race', kind: 'event', title: 'Spring 10K', start: addDate(today, -150), end: addDate(today, -150), precision: 'day', altitude: 4 },
-      { id: 'timeline-california', kind: 'event', title: 'California road trip', start: addDate(today, -100), end: addDate(today, -93), precision: 'day', altitude: 4 },
-      { id: 'timeline-workshop', kind: 'event', title: 'Design workshop', start: addDate(today, -45), end: addDate(today, -45), precision: 'day', altitude: 2 },
-      { id: 'timeline-family', kind: 'event', title: 'Family weekend', start: addDate(today, -16), end: addDate(today, -14), precision: 'day', altitude: 3 },
-      { id: 'timeline-concert', kind: 'event', title: 'Concert downtown', start: addDate(today, 12), end: addDate(today, 12), precision: 'time', altitude: 2, time: '8:00 PM' },
-      { id: 'timeline-launch', kind: 'event', title: 'Calendream alpha launch', start: addDate(today, 25), end: addDate(today, 25), precision: 'day', altitude: 4 },
-      { id: 'timeline-fall-trip', kind: 'event', title: 'Fall cabin trip', start: addDate(today, 48), end: addDate(today, 52), precision: 'day', altitude: 4 },
-      { id: 'timeline-marathon', kind: 'event', title: 'Half marathon', start: addDate(today, 75), end: addDate(today, 75), precision: 'day', altitude: 4 },
-      { id: 'timeline-holiday', kind: 'event', title: 'Holiday travel', start: addDate(today, 110), end: addDate(today, 118), precision: 'day', altitude: 4 },
-      { id: 'timeline-ski', kind: 'event', title: 'Ski weekend', start: addDate(today, 160), end: addDate(today, 163), precision: 'day', altitude: 4 },
-      { id: 'timeline-europe', kind: 'event', title: 'Europe trip', start: addDate(today, 240), end: addDate(today, 252), precision: 'day', altitude: 4 },
-      { id: 'timeline-creative-goal', kind: 'task', title: 'Build a consistent creative practice', start: quarterStart(today), end: quarterEnd(today), precision: 'quarter', altitude: 3 },
-      { id: 'timeline-year-goal', kind: 'task', title: 'Make Calendream part of daily life', start: `${now.getFullYear()}-01-01`, end: `${now.getFullYear()}-12-31`, precision: 'year', altitude: 4 },
-    ] as const;
-
-    await db.withTransactionAsync(async () => {
-      for (const sample of samples) {
-        await db.runAsync(
-          `INSERT OR IGNORE INTO items
-            (id, kind, title, anchor_start, anchor_end, precision, altitude,
-             start_time, sort_order, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-          sample.id,
-          sample.kind,
-          sample.title,
-          sample.start,
-          sample.end,
-          sample.precision,
-          sample.altitude,
-          'time' in sample ? sample.time : null,
-          createdAt,
-          createdAt,
-        );
-      }
-      await db.runAsync(
-        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_timeline_v1', 'seeded', ?)",
-        createdAt,
-      );
-    });
-  }
-
-  const editorialMarker = await db.getFirstAsync<{ value: string }>(
-    "SELECT value FROM app_meta WHERE key = 'sample_editorial_v2'",
-  );
-  if (!editorialMarker) {
-    const now = new Date();
-    const createdAt = now.toISOString();
-    const today = localDate(now);
-    const [year, month] = today.split('-').map(Number);
-    const samples = [
-      { id: 'editorial-month-goal', kind: 'task', title: 'Run three times each week', start: localDate(new Date(year, month - 1, 1)), end: localDate(new Date(year, month, 0)), precision: 'month', altitude: 2 },
-      { id: 'editorial-birthday', kind: 'event', title: 'Birthday dinner', start: addDate(today, -8), end: addDate(today, -8), precision: 'time', altitude: 1, time: '7:30 PM' },
-      { id: 'editorial-gallery', kind: 'event', title: 'Gallery opening', start: addDate(today, 18), end: addDate(today, 18), precision: 'time', altitude: 1, time: '6:00 PM' },
-      { id: 'editorial-wedding', kind: 'event', title: 'Maya & Theo’s wedding', start: addDate(today, 32), end: addDate(today, 32), precision: 'day', altitude: 4 },
-      { id: 'editorial-retreat', kind: 'event', title: 'Creative retreat', start: addDate(today, 88), end: addDate(today, 91), precision: 'day', altitude: 4 },
-    ] as const;
-    await db.withTransactionAsync(async () => {
-      for (const sample of samples) {
-        await db.runAsync(
-          `INSERT OR IGNORE INTO items
-            (id, kind, title, anchor_start, anchor_end, precision, altitude,
-             start_time, sort_order, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-          sample.id, sample.kind, sample.title, sample.start, sample.end, sample.precision,
-          sample.altitude, 'time' in sample ? sample.time : null, createdAt, createdAt,
-        );
-      }
-      await db.runAsync(
-        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_editorial_v2', 'seeded', ?)",
-        createdAt,
-      );
-    });
-  }
-
-  const goalModelMarker = await db.getFirstAsync<{ value: string }>(
+async function migrateLegacyGoalModel(database: MigrationDatabase) {
+  const marker = await database.getFirstAsync<{ value: string }>(
     "SELECT value FROM app_meta WHERE key = 'goal_model_v1'",
   );
-  if (!goalModelMarker) {
-    const now = new Date();
-    const createdAt = now.toISOString();
-    const today = localDate(now);
-    const year = now.getFullYear();
-    const ironmanTarget = localDate(new Date(year, now.getMonth() + 2, 30));
-    await db.withTransactionAsync(async () => {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO goals
-          (id, title, scope, horizon, starts_on, target_date, completion_date, notes, created_at, updated_at)
-         SELECT 'goal-' || id, title, precision, precision, anchor_start, COALESCE(anchor_end, anchor_start),
-                COALESCE(anchor_end, anchor_start), notes, created_at, updated_at
-         FROM items
-         WHERE deleted_at IS NULL AND kind = 'task'
-           AND precision IN ('month', 'quarter', 'year')
-           AND anchor_start IS NOT NULL`,
-      );
-      await db.runAsync(
-        `UPDATE items SET deleted_at = ?, updated_at = ?
-         WHERE deleted_at IS NULL AND kind = 'task'
-           AND precision IN ('month', 'quarter', 'year')`,
-        createdAt,
-        createdAt,
-      );
-      await db.runAsync(
-        `INSERT OR IGNORE INTO goals
-          (id, title, scope, horizon, starts_on, target_date, completion_date, notes, created_at, updated_at)
-         VALUES ('sample-ironman-goal', 'Race my first Ironman', 'year', 'year', ?, ?, ?,
-                 'Build steadily toward race day.', ?, ?)`,
-        today,
-        ironmanTarget,
-        ironmanTarget,
-        createdAt,
-        createdAt,
-      );
-      await db.runAsync(
-        `INSERT OR IGNORE INTO items
-          (id, kind, title, anchor_start, anchor_end, precision, altitude,
-           event_type, notes, sort_order, created_at, updated_at)
-         VALUES ('sample-ironman-event', 'event', 'Ironman race day', ?, ?, 'day', 4,
-                 'event', 'The finish line for this year’s goal.', 0, ?, ?)`,
-        ironmanTarget,
-        ironmanTarget,
-        createdAt,
-        createdAt,
-      );
-      await db.runAsync(
-        `UPDATE items SET event_type = 'trip'
-         WHERE kind = 'event' AND (
-           anchor_end > anchor_start OR lower(title) LIKE '%trip%'
-           OR lower(title) LIKE '%travel%' OR lower(title) LIKE '%retreat%'
-         )`,
-      );
-      await db.runAsync(
-        "INSERT INTO app_meta (key, value, updated_at) VALUES ('goal_model_v1', 'migrated', ?)",
-        createdAt,
-      );
-    });
-  }
+  if (marker) return;
 
-  const habitSampleMarker = await db.getFirstAsync<{ value: string }>(
-    "SELECT value FROM app_meta WHERE key = 'sample_habits_v1'",
-  );
-  if (!habitSampleMarker) {
-    const now = new Date();
-    const createdAt = now.toISOString();
-    const today = localDate(now);
-    await db.withTransactionAsync(async () => {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO habits
-          (id, name, schedule_json, start_date, created_at, updated_at)
-         VALUES ('sample-habit-run', 'Morning run', '[1,3,5]', ?, ?, ?)`,
-        today,
-        createdAt,
-        createdAt,
-      );
-      await db.runAsync(
-        `INSERT OR IGNORE INTO habits
-          (id, name, schedule_json, start_date, created_at, updated_at)
-         VALUES ('sample-habit-read', 'Read for 20 minutes', '[1,2,3,4,5,6,7]', ?, ?, ?)`,
-        today,
-        createdAt,
-        createdAt,
-      );
-      await db.runAsync(
-        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_habits_v1', 'seeded', ?)",
-        createdAt,
-      );
-    });
-  }
+  const now = new Date().toISOString();
+  await database.execAsync(`
+    INSERT OR IGNORE INTO goals
+      (id, title, scope, horizon, starts_on, target_date, completion_date, notes, created_at, updated_at)
+    SELECT 'goal-' || id, title, precision, precision, anchor_start, COALESCE(anchor_end, anchor_start),
+           COALESCE(anchor_end, anchor_start), notes, created_at, updated_at
+    FROM items
+    WHERE deleted_at IS NULL AND kind = 'task'
+      AND precision IN ('month', 'quarter', 'year')
+      AND anchor_start IS NOT NULL;
 
-  const goalStepSampleMarker = await db.getFirstAsync<{ value: string }>(
-    "SELECT value FROM app_meta WHERE key = 'sample_goal_steps_v1'",
-  );
-  if (!goalStepSampleMarker) {
-    const now = new Date();
-    const createdAt = now.toISOString();
-    const today = localDate(now);
-    const sampleGoal = await db.getFirstAsync<{ id: string }>(
-      "SELECT id FROM goals WHERE id = 'sample-ironman-goal' AND deleted_at IS NULL",
+    UPDATE items SET event_type = 'trip'
+    WHERE kind = 'event' AND (
+      anchor_end > anchor_start OR lower(title) LIKE '%trip%'
+      OR lower(title) LIKE '%travel%' OR lower(title) LIKE '%retreat%'
     );
-    await db.withTransactionAsync(async () => {
-      if (sampleGoal) {
-        const steps = [
-          { stepId: 'sample-ironman-step-plan', itemId: 'sample-ironman-task-plan', title: 'Choose a training plan', date: addDate(today, 4) },
-          { stepId: 'sample-ironman-step-travel', itemId: 'sample-ironman-task-travel', title: 'Book race-week travel', date: addDate(today, 18) },
-        ];
-        for (const [index, step] of steps.entries()) {
-          await db.runAsync(
-            `INSERT OR IGNORE INTO items
-              (id, kind, title, anchor_start, anchor_end, precision, altitude, sort_order, created_at, updated_at)
-             VALUES (?, 'task', ?, ?, ?, 'day', 0, ?, ?, ?)`,
-            step.itemId, step.title, step.date, step.date, index, createdAt, createdAt,
-          );
-          await db.runAsync(
-            `INSERT OR IGNORE INTO goal_steps
-              (id, goal_id, title, scheduled_date, item_id, sort_order, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            step.stepId, sampleGoal.id, step.title, step.date, step.itemId, index, createdAt, createdAt,
-          );
-        }
-      }
-      await db.runAsync(
-        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_goal_steps_v1', 'seeded', ?)",
-        createdAt,
-      );
-    });
-  }
-
-  await db.runAsync("UPDATE habits SET cue = 'After I get dressed' WHERE id = 'sample-habit-run' AND cue IS NULL");
-  await db.runAsync("UPDATE habits SET cue = 'After dinner' WHERE id = 'sample-habit-read' AND cue IS NULL");
-
-  const habitHistoryMarker = await db.getFirstAsync<{ value: string }>(
-    "SELECT value FROM app_meta WHERE key = 'sample_habit_history_v1'",
+  `);
+  await database.runAsync(
+    `UPDATE items SET deleted_at = ?, updated_at = ?
+     WHERE deleted_at IS NULL AND kind = 'task'
+       AND precision IN ('month', 'quarter', 'year')`,
+    now,
+    now,
   );
-  if (!habitHistoryMarker) {
-    const now = new Date();
-    const createdAt = now.toISOString();
-    const today = localDate(now);
-    const historyStart = addDate(today, -35);
-    await db.withTransactionAsync(async () => {
-      await db.runAsync("UPDATE habits SET start_date = ? WHERE id IN ('sample-habit-run', 'sample-habit-read')", historyStart);
-      await db.runAsync(
-        `INSERT OR IGNORE INTO habits
-          (id, name, schedule_json, start_date, item_kind, start_time, end_time, created_at, updated_at)
-         VALUES ('sample-habit-swim', 'Swim', '[2,4,6]', ?, 'event', '7:00 AM', '8:00 AM', ?, ?)`,
-        historyStart,
-        createdAt,
-        createdAt,
-      );
-
-      const samples = [
-        { id: 'sample-habit-run', name: 'Morning run', weekdays: [1, 3, 5], misses: [-3] },
-        { id: 'sample-habit-read', name: 'Read for 20 minutes', weekdays: [1, 2, 3, 4, 5, 6, 7], misses: [-5, -2] },
-        { id: 'sample-habit-swim', name: 'Swim', weekdays: [2, 4, 6], misses: [-4] },
-      ];
-      for (let offset = -10; offset < 0; offset += 1) {
-        const date = addDate(today, offset);
-        const weekday = isoWeekday(date);
-        for (const sample of samples) {
-          if (!sample.weekdays.includes(weekday) || sample.misses.includes(offset)) continue;
-          const existing = await db.getFirstAsync<{ id: string }>(
-            'SELECT id FROM items WHERE habit_id = ? AND anchor_start = ? AND deleted_at IS NULL',
-            sample.id,
-            date,
-          );
-          if (!existing) {
-            await db.runAsync(
-              `INSERT INTO items
-                (id, kind, title, anchor_start, anchor_end, precision, altitude, habit_id,
-                 start_time, end_time, completed_at, sort_order, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 0, ?, ?)`,
-              `sample-history-${sample.id}-${date}`,
-              sample.id === 'sample-habit-swim' ? 'event' : 'task',
-              sample.name,
-              date,
-              date,
-              sample.id === 'sample-habit-swim' ? 'time' : 'day',
-              sample.id,
-              sample.id === 'sample-habit-swim' ? '7:00 AM' : null,
-              sample.id === 'sample-habit-swim' ? '8:00 AM' : null,
-              createdAt,
-              createdAt,
-              createdAt,
-            );
-          }
-        }
-      }
-      await db.runAsync(
-        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_habit_history_v1', 'seeded', ?)",
-        createdAt,
-      );
-    });
-  }
-
-  const goalHabitSampleMarker = await db.getFirstAsync<{ value: string }>(
-    "SELECT value FROM app_meta WHERE key = 'sample_goal_habits_v1'",
+  await database.runAsync(
+    `INSERT INTO app_meta (key, value, updated_at) VALUES ('goal_model_v1', 'migrated', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    now,
   );
-  if (!goalHabitSampleMarker) {
-    const createdAt = new Date().toISOString();
-    await db.withTransactionAsync(async () => {
-      await db.runAsync(
-        `INSERT OR IGNORE INTO goal_habits (goal_id, habit_id, created_at)
-         SELECT 'sample-ironman-goal', 'sample-habit-run', ?
-         WHERE EXISTS (SELECT 1 FROM goals WHERE id = 'sample-ironman-goal' AND deleted_at IS NULL)
-           AND EXISTS (SELECT 1 FROM habits WHERE id = 'sample-habit-run' AND archived_at IS NULL)`,
-        createdAt,
-      );
-      await db.runAsync(
-        "INSERT INTO app_meta (key, value, updated_at) VALUES ('sample_goal_habits_v1', 'seeded', ?)",
-        createdAt,
-      );
-    });
-  }
-}
-
-function localDate(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-function addDate(isoDate: string, amount: number) {
-  const [year, month, day] = isoDate.split('-').map(Number);
-  return localDate(new Date(year, month - 1, day + amount));
-}
-
-function isoWeekday(isoDate: string) {
-  const [year, month, day] = isoDate.split('-').map(Number);
-  const weekday = new Date(year, month - 1, day).getDay();
-  return weekday === 0 ? 7 : weekday;
-}
-
-function quarterStart(isoDate: string) {
-  const [year, month] = isoDate.split('-').map(Number);
-  const startMonth = Math.floor((month - 1) / 3) * 3;
-  return localDate(new Date(year, startMonth, 1));
-}
-
-function quarterEnd(isoDate: string) {
-  const [year, month] = isoDate.split('-').map(Number);
-  const startMonth = Math.floor((month - 1) / 3) * 3;
-  return localDate(new Date(year, startMonth + 3, 0));
 }

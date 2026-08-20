@@ -54,31 +54,46 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
 
   async function submit() {
     if (!parsed.title || saving || (ambiguousTime && !timePeriod)) return;
-    setSaving(true);
-    if (parsed.action === 'remove') {
-      const match = await onFindRemoval(parsed.title, captureDate);
-      setSaving(false);
-      if (!match) {
-        Alert.alert('Nothing found', `Calendream couldn’t find “${parsed.title}” on ${formatShortDate(captureDate)}.`);
+    try {
+      setSaving(true);
+      if (parsed.action === 'remove') {
+        const match = await onFindRemoval(parsed.title, captureDate);
+        setSaving(false);
+        if (!match) {
+          Alert.alert('Nothing found', `Calendream couldn’t find “${parsed.title}” on ${formatShortDate(captureDate)}.`);
+          return;
+        }
+        Alert.alert(`Remove ${match.kind}?`, `“${match.title}” will be removed from ${formatShortDate(captureDate)}.`, [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: () => {
+              setSaving(true);
+              void onDeleteItem(match.id)
+                .then(close)
+                .catch((error) => Alert.alert('Item not removed', readableError(error)))
+                .finally(() => setSaving(false));
+            },
+          },
+        ]);
         return;
       }
-      Alert.alert(`Remove ${match.kind}?`, `“${match.title}” will be removed from ${formatShortDate(captureDate)}.`, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Remove', style: 'destructive', onPress: () => void onDeleteItem(match.id).then(close) },
-      ]);
-      return;
+      await onSave({
+        kind: kind === 'task' ? 'task' : 'event',
+        title: parsed.title,
+        date: captureDate,
+        endDate: kind === 'task' ? undefined : captureEndDate,
+        time: kind === 'task' ? undefined : parsed.time,
+        altitude: kind === 'trip' ? 4 : kind === 'event' ? 1 : 0,
+        eventType: kind === 'trip' ? 'trip' : 'event',
+      });
+      close();
+    } catch (error) {
+      Alert.alert(parsed.action === 'remove' ? 'Item not removed' : 'Item not saved', readableError(error));
+    } finally {
+      setSaving(false);
     }
-    await onSave({
-      kind: kind === 'task' ? 'task' : 'event',
-      title: parsed.title,
-      date: captureDate,
-      endDate: kind === 'task' ? undefined : captureEndDate,
-      time: kind === 'task' ? undefined : parsed.time,
-      altitude: kind === 'trip' ? 4 : kind === 'event' ? 1 : 0,
-      eventType: kind === 'trip' ? 'trip' : 'event',
-    });
-    setSaving(false);
-    close();
   }
 
   return (
@@ -186,6 +201,10 @@ export function QuickCaptureSheet({ colors, date, dateLocked = false, endDate, i
       </KeyboardAvoidingView>
     </Modal>
   );
+}
+
+function readableError(error: unknown) {
+  return error instanceof Error ? error.message : 'Something unexpected happened. Please try again.';
 }
 
 const styles = StyleSheet.create({

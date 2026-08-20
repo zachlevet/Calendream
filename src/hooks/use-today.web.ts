@@ -119,6 +119,8 @@ export function useTodayData(date: string, _reviewDate = date) {
     journal,
     journalInLibrary: libraryDates.has(date),
     loading: false,
+    error: null as string | null,
+    refresh: async () => undefined,
     saveItem: async (draft: ItemDraft) => {
       const existingItem = draft.id ? allItems.find((item) => item.id === draft.id) : undefined;
       setAllItems((current) => {
@@ -169,6 +171,15 @@ export function useTodayData(date: string, _reviewDate = date) {
       ));
       if (item.habitId && item.anchorStart) {
         setHabitActivity((current) => current.filter((entry) => !(entry.habitId === item.habitId && entry.date === item.anchorStart && entry.failed)));
+      }
+    },
+    setHabitEventOutcome: async (item: PlanningItem, completed: boolean) => {
+      setAllItems((current) => current.map((existing) => existing.id === item.id ? { ...existing, completed } : existing));
+      if (item.habitId && item.anchorStart) {
+        setHabitActivity((current) => [
+          ...current.filter((entry) => !(entry.habitId === item.habitId && entry.date === item.anchorStart)),
+          { habitId: item.habitId!, date: item.anchorStart!, completed, failed: !completed },
+        ]);
       }
     },
     toggleGoal: async (goal: Goal) => {
@@ -292,6 +303,7 @@ export function useTodayData(date: string, _reviewDate = date) {
       return candidates[0]?.item ?? null;
     },
     saveJournal: async (value: string) => setJournals((current) => ({ ...current, [date]: value })),
+    saveJournalForDate: async (targetDate: string, value: string) => setJournals((current) => ({ ...current, [targetDate]: value })),
     saveJournalToLibrary: async (value: string) => {
       if (!value.trim()) return;
       setJournals((current) => ({ ...current, [date]: value }));
