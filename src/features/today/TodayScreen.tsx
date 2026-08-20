@@ -92,7 +92,6 @@ export function TodayScreen() {
   const data = useTodayData(selectedDate, today);
   const searchAll = data.searchAll;
   const [destination, setDestination] = useState<Destination>('today');
-  const [planGoalId, setPlanGoalId] = useState<string | null>(null);
   const [libraryDetail, setLibraryDetail] = useState<LibraryDetail>(null);
   const [librarySection, setLibrarySection] = useState<LibrarySection>('home');
   const [editor, setEditor] = useState<EditorState>(null);
@@ -361,7 +360,6 @@ export function TodayScreen() {
 
   function openGoalsAndHabits() {
     setSelectedDate(today);
-    setPlanGoalId(null);
     setCalendarOpen(false);
     setSearchOpen(false);
     setInlineEditor(null);
@@ -401,8 +399,9 @@ export function TodayScreen() {
     setSearchOpen(false);
     setInlineEditor(null);
     setEditor(null);
-    setPlanGoalId(goal.id);
-    setDestination('goals');
+    setLibrarySection('goals');
+    setLibraryDetail({ kind: 'goal', id: goal.id });
+    setDestination('library');
   }
 
   function closeSearch() {
@@ -785,7 +784,6 @@ export function TodayScreen() {
           goals={data.allGoals}
           habitActivity={data.habitActivity}
           habits={data.habits}
-          initialGoalId={planGoalId}
           onArchiveHabit={data.archiveHabit}
           onDeleteGoal={data.deleteGoal}
           onDeleteGoalStep={data.deleteGoalStep}
