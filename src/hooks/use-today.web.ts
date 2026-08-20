@@ -112,7 +112,8 @@ export function useTodayData(date: string, _reviewDate = date) {
     overdueTasks: [] as PlanningItem[],
     goals: allGoals.filter((goal) => goal.horizon !== 'someday' && goal.startsOn <= date && goal.targetDate >= date),
     allGoals,
-    habits: allHabits,
+    habits: allHabits.filter((habit) => !habit.archivedAt),
+    allHabits,
     goalSteps,
     habitActivity,
     goalHabitLinks,
@@ -274,7 +275,7 @@ export function useTodayData(date: string, _reviewDate = date) {
     linkHabitToGoal: async (goalId: string, habitId: string) => setGoalHabitLinks((current) => current.some((link) => link.goalId === goalId && link.habitId === habitId) ? current : [...current, { goalId, habitId }]),
     unlinkHabitFromGoal: async (goalId: string, habitId: string) => setGoalHabitLinks((current) => current.filter((link) => link.goalId !== goalId || link.habitId !== habitId)),
     archiveHabit: async (id: string) => {
-      setAllHabits((current) => current.filter((habit) => habit.id !== id));
+      setAllHabits((current) => current.map((habit) => habit.id === id ? { ...habit, archivedAt: new Date().toISOString() } : habit));
       setAllItems((current) => current.filter((item) => item.habitId !== id || (item.anchorStart ?? '') < _reviewDate));
       setHabitActivity((current) => current.filter((entry) => entry.habitId !== id || entry.date < _reviewDate));
       setGoalHabitLinks((current) => current.filter((link) => link.habitId !== id));

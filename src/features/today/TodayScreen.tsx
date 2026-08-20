@@ -54,7 +54,7 @@ import type { CaptureKind } from '@/features/quick-capture/parseQuickCapture';
 import { SearchOverlay } from '@/features/search/SearchResults';
 import { TimelineScreen } from '@/features/timeline/TimelineScreen';
 import { GoalsHabitsScreen } from '@/features/goals/GoalsHabitsScreen';
-import { LibraryScreen } from '@/features/library/LibraryScreen';
+import { LibraryScreen, type LibrarySection } from '@/features/library/LibraryScreen';
 // Metro resolves the platform-specific SettingsScreen.native/.web module.
 // eslint-disable-next-line import/no-unresolved
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
@@ -94,6 +94,7 @@ export function TodayScreen() {
   const [destination, setDestination] = useState<Destination>('today');
   const [planGoalId, setPlanGoalId] = useState<string | null>(null);
   const [libraryDetail, setLibraryDetail] = useState<LibraryDetail>(null);
+  const [librarySection, setLibrarySection] = useState<LibrarySection>('home');
   const [editor, setEditor] = useState<EditorState>(null);
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
   const [capturePreset, setCapturePreset] = useState<CapturePreset | null>(null);
@@ -380,6 +381,7 @@ export function TodayScreen() {
     setInlineEditor(null);
     setEditor(null);
     setLibraryDetail(null);
+    setLibrarySection('home');
     setDestination('library');
   }
 
@@ -801,7 +803,7 @@ export function TodayScreen() {
             goalSteps={data.goalSteps}
             goals={data.allGoals}
             habitActivity={data.habitActivity}
-            habits={data.habits}
+            habits={data.allHabits}
             initialGoalId={libraryDetail.kind === 'goal' ? libraryDetail.id : null}
             initialHabitId={libraryDetail.kind === 'habit' ? libraryDetail.id : null}
             key={`library-${libraryDetail.kind}-${libraryDetail.id}`}
@@ -827,12 +829,14 @@ export function TodayScreen() {
             colors={colors}
             deleteJournalEntry={data.deleteLibraryJournalEntry}
             goals={data.allGoals}
-            habits={data.habits}
+            habits={data.allHabits}
             loadJournalEntries={data.loadJournalEntries}
             onOpenGoal={(id) => setLibraryDetail({ kind: 'goal', id })}
             onOpenHabit={(id) => setLibraryDetail({ kind: 'habit', id })}
             onOpenJournal={openLibraryJournal}
+            onSectionChange={setLibrarySection}
             saveJournalEntry={data.saveLibraryJournalEntry}
+            section={librarySection}
             today={today}
           />
         )

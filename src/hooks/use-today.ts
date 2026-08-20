@@ -54,6 +54,7 @@ interface HabitRow {
   item_kind: Habit['itemKind'];
   start_time: string | null;
   end_time: string | null;
+  archived_at: string | null;
 }
 
 interface GoalStepRow {
@@ -126,6 +127,7 @@ function toHabit(row: HabitRow): Habit {
     itemKind: row.item_kind ?? 'task',
     startTime: row.start_time ?? undefined,
     endTime: row.end_time ?? undefined,
+    archivedAt: row.archived_at ?? undefined,
   };
 }
 
@@ -187,6 +189,7 @@ export function useTodayData(date: string, reviewDate = date) {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [allGoals, setAllGoals] = useState<Goal[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
+  const [allHabits, setAllHabits] = useState<Habit[]>([]);
   const [goalSteps, setGoalSteps] = useState<GoalStep[]>([]);
   const [habitActivity, setHabitActivity] = useState<HabitActivity[]>([]);
   const [goalHabitLinks, setGoalHabitLinks] = useState<GoalHabitLink[]>([]);
@@ -245,15 +248,14 @@ export function useTodayData(date: string, reviewDate = date) {
       ),
       db.getAllAsync<HabitRow>(
         `SELECT h.id, h.name, h.schedule_json, h.start_date, h.end_date, h.cue,
-                h.item_kind, h.start_time, h.end_time,
+                h.item_kind, h.start_time, h.end_time, h.archived_at,
                 EXISTS(
                   SELECT 1 FROM items i
                   WHERE i.deleted_at IS NULL AND i.habit_id = h.id
                     AND i.anchor_start = ? AND i.completed_at IS NOT NULL
                 ) AS completed_on_date
          FROM habits h
-         WHERE h.archived_at IS NULL
-         ORDER BY h.created_at`,
+         ORDER BY h.archived_at IS NOT NULL, h.created_at`,
         date,
       ),
       db.getAllAsync<GoalStepRow>(
@@ -304,7 +306,9 @@ export function useTodayData(date: string, reviewDate = date) {
     const mappedGoals = goalRows.map(toGoal);
     setAllGoals(mappedGoals);
     setGoals(mappedGoals.filter((goal) => goal.horizon !== 'someday' && goal.startsOn <= date && goal.targetDate >= date));
-    setHabits(habitRows.map(toHabit));
+    const mappedHabits = habitRows.map(toHabit);
+    setAllHabits(mappedHabits);
+    setHabits(mappedHabits.filter((habit) => !habit.archivedAt));
     setGoalSteps(goalStepRows.map(toGoalStep));
     setHabitActivity([
       ...activityRows.map((row) => ({ habitId: row.habit_id, date: row.anchor_start, completed: Boolean(row.completed_at) })),
@@ -953,6 +957,7 @@ export function useTodayData(date: string, reviewDate = date) {
     goals,
     allGoals,
     habits,
+    allHabits,
     goalSteps,
     habitActivity,
     goalHabitLinks,

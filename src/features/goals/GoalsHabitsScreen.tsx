@@ -141,6 +141,7 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
   if (selectedGoal) {
     return (
       <GoalDetailPage
+        backLabel={initialGoalId && onExitDetail ? 'Goals' : 'Goals & Routines'}
         colors={colors}
         goal={selectedGoal}
         onBack={() => { if (initialGoalId && onExitDetail) onExitDetail(); else { setSelectedGoalId(null); setSection('plans'); } }}
@@ -161,6 +162,7 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
     return (
       <HabitDetailPage
         activity={habitActivity.filter((entry) => entry.habitId === selectedHabit.id)}
+        backLabel={initialHabitId && onExitDetail ? 'Routines' : 'Goals & Routines'}
         colors={colors}
         habit={selectedHabit}
         onArchive={async () => { await onArchiveHabit(selectedHabit.id); if (initialHabitId && onExitDetail) onExitDetail(); else setSelectedHabitId(null); }}
@@ -201,7 +203,8 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
   );
 }
 
-function GoalDetailPage({ colors, goal, onBack, onDeleteGoal, onDeleteStep, onSaveGoal, onSaveStep, onToggleGoal, onToggleStep, steps, today }: {
+function GoalDetailPage({ backLabel, colors, goal, onBack, onDeleteGoal, onDeleteStep, onSaveGoal, onSaveStep, onToggleGoal, onToggleStep, steps, today }: {
+  backLabel: string;
   colors: AppColors;
   goal: Goal;
   onBack: () => void;
@@ -277,7 +280,7 @@ function GoalDetailPage({ colors, goal, onBack, onDeleteGoal, onDeleteStep, onSa
 
   return (
     <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.workspaceContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} ref={scroll} scrollEventThrottle={16} showsVerticalScrollIndicator={false} style={styles.screen}>
-      <PageBackButton colors={colors} label="Goals & Routines" onBack={onBack} />
+      <PageBackButton colors={colors} label={backLabel} onBack={onBack} />
       <View style={[styles.goalWorkspaceTitle, { backgroundColor: colors.yellowSoft }]}>
         <Pressable accessibilityLabel={goal.completed ? `Mark ${goal.title} active` : `Mark ${goal.title} accomplished`} hitSlop={8} onPress={() => void onToggleGoal()} style={[styles.workspaceStar, { backgroundColor: goal.completed ? '#FFFFFF' : colors.yellow }]}><Text style={[styles.workspaceStarText, { color: goal.completed ? '#FFB000' : '#FFFFFF' }]}>★</Text></Pressable>
         <View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: colors.yellow }]}>{goal.horizon.toUpperCase()} GOAL</Text><Text style={[styles.workspaceTitle, { color: colors.yellow }]}>{goal.title}</Text><Text style={[styles.workspaceMeta, { color: colors.yellow }]}>{goal.completionDate ? `Completion date ${formatLongDate(goal.completionDate)}` : 'No fixed completion date'}</Text></View>
@@ -317,8 +320,9 @@ function GoalForm({ colors, draft, onChange, today }: { colors: AppColors; draft
   );
 }
 
-function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, onToggleDate, onToggleSkip, today }: {
+function HabitDetailPage({ activity, backLabel, colors, habit, onArchive, onBack, onSave, onToggleDate, onToggleSkip, today }: {
   activity: HabitActivity[];
+  backLabel: string;
   colors: AppColors;
   habit: Habit;
   onArchive: () => Promise<void>;
@@ -347,6 +351,7 @@ function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, o
   const todayCompleted = activity.some((entry) => entry.date === today && entry.completed);
   const dueToday = isHabitScheduledOn(liveHabit, today);
   const eventDuration = habitEventDuration(liveDraft.startTime, liveDraft.endTime);
+  const archived = Boolean(habit.archivedAt);
 
   async function updateHabit(change: Partial<HabitDraft>) {
     const next = { ...liveDraftRef.current, ...change };
@@ -373,16 +378,16 @@ function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, o
 
   return (
     <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.habitDetailContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.screen}>
-      <PageBackButton colors={colors} label="Goals & Routines" onBack={onBack} />
-      <View style={styles.habitDetailTitleRow}><View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: colors.blue }]}>ROUTINE</Text><Text style={[styles.habitDetailTitle, { color: colors.text }]}>{liveDraft.name}</Text><Text style={[styles.workspaceMeta, { color: colors.secondary }]}>{liveDraft.itemKind === 'event' ? `${liveDraft.startTime ?? 'Timed'} event` : 'Creates a task'} on scheduled days</Text></View>{!editing && <Pressable hitSlop={8} onPress={() => { setDraft(liveDraftRef.current); setEditing(true); }}><Text style={[styles.editAction, { color: colors.blue }]}>Edit</Text></Pressable>}</View>
+      <PageBackButton colors={colors} label={backLabel} onBack={onBack} />
+      <View style={styles.habitDetailTitleRow}><View style={styles.cardCopy}><Text style={[styles.eyebrow, { color: archived ? colors.secondary : colors.blue }]}>{archived ? 'PAST ROUTINE' : 'ROUTINE'}</Text><Text style={[styles.habitDetailTitle, { color: colors.text }]}>{liveDraft.name}</Text><Text style={[styles.workspaceMeta, { color: colors.secondary }]}>{archived && habit.archivedAt ? `Ended ${formatLongDate(habit.archivedAt.slice(0, 10))}` : `${liveDraft.itemKind === 'event' ? `${liveDraft.startTime ?? 'Timed'} event` : 'Creates a task'} on scheduled days`}</Text></View>{!editing && !archived && <Pressable hitSlop={8} onPress={() => { setDraft(liveDraftRef.current); setEditing(true); }}><Text style={[styles.editAction, { color: colors.blue }]}>Edit</Text></Pressable>}</View>
       {editing && <HabitComposer colors={colors} draft={draft} onCancel={() => setEditing(false)} onDelete={onArchive} onSave={async (nextDraft) => { await onSave(nextDraft); setEditing(false); }} onSetDraft={setDraft} today={today} />}
 
-      {!editing && dueToday && <Pressable onPress={() => void onToggleDate(today)} style={[styles.todayCheckIn, { backgroundColor: todayCompleted ? colors.blue : colors.blueSoft }]}><View style={[styles.todayCheckCircle, { borderColor: todayCompleted ? '#FFFFFF' : colors.blue }, todayCompleted && { backgroundColor: '#FFFFFF' }]}>{todayCompleted && <Text style={[styles.todayCheckmark, { color: colors.blue }]}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.todayCheckTitle, { color: todayCompleted ? '#FFFFFF' : colors.blue }]}>{todayCompleted ? 'Completed today' : 'Complete today'}</Text><Text style={[styles.todayCheckMeta, { color: todayCompleted ? 'rgba(255,255,255,0.78)' : colors.secondary }]}>Updates the {liveDraft.itemKind} and this tracker together</Text></View></Pressable>}
+      {!editing && !archived && dueToday && <Pressable onPress={() => void onToggleDate(today)} style={[styles.todayCheckIn, { backgroundColor: todayCompleted ? colors.blue : colors.blueSoft }]}><View style={[styles.todayCheckCircle, { borderColor: todayCompleted ? '#FFFFFF' : colors.blue }, todayCompleted && { backgroundColor: '#FFFFFF' }]}>{todayCompleted && <Text style={[styles.todayCheckmark, { color: colors.blue }]}>✓</Text>}</View><View style={styles.cardCopy}><Text style={[styles.todayCheckTitle, { color: todayCompleted ? '#FFFFFF' : colors.blue }]}>{todayCompleted ? 'Completed today' : 'Complete today'}</Text><Text style={[styles.todayCheckMeta, { color: todayCompleted ? 'rgba(255,255,255,0.78)' : colors.secondary }]}>Updates the {liveDraft.itemKind} and this tracker together</Text></View></Pressable>}
 
-      <HabitTracker activity={activity} colors={colors} habit={habit} onToggleDate={onToggleDate} onToggleSkip={onToggleSkip} today={today} />
+      <HabitTracker activity={activity} colors={colors} habit={habit} onToggleDate={onToggleDate} onToggleSkip={onToggleSkip} readOnly={archived} today={today} />
 
-      <View style={styles.habitInfoSection}>
-        <SectionHeading colors={colors} subtitle="Tap a day to turn it on or off." title="Schedule" />
+      <View pointerEvents={archived ? 'none' : 'auto'} style={styles.habitInfoSection}>
+        <SectionHeading colors={colors} subtitle={archived ? 'The schedule this routine followed.' : 'Tap a day to turn it on or off.'} title="Schedule" />
         <WeekdayPicker colors={colors} selected={liveDraft.weekdays} onChange={(weekdays) => { if (weekdays.length) void updateHabit({ weekdays }); }} />
         <View style={[styles.behaviorCard, { backgroundColor: colors.card }]}>
           <Text style={[styles.behaviorTitle, { color: colors.text }]}>Create on scheduled days</Text>
@@ -447,7 +452,7 @@ function HabitDetailPage({ activity, colors, habit, onArchive, onBack, onSave, o
         </View>
         <View style={styles.startedRow}><Text style={[styles.startedText, { color: colors.tertiary }]}>Started {formatLongDate(habit.startDate)}</Text></View>
       </View>
-      <Text style={[styles.hint, { color: colors.tertiary }]}>Tap a past square to update it. Long-press to mark a planned rest day.</Text>
+      <Text style={[styles.hint, { color: colors.tertiary }]}>{archived ? 'This routine is preserved as part of your history.' : 'Tap a past square to update it. Long-press to mark a planned rest day.'}</Text>
     </ScrollView>
   );
 }
@@ -483,7 +488,7 @@ function HabitComposer({ colors, draft: initialDraft, onCancel, onDelete, onSave
   );
 }
 
-function HabitTracker({ activity, colors, habit, onToggleDate, onToggleSkip, today }: { activity: HabitActivity[]; colors: AppColors; habit: Habit; onToggleDate: (date: string) => Promise<void>; onToggleSkip: (date: string) => Promise<void>; today: string }) {
+function HabitTracker({ activity, colors, habit, onToggleDate, onToggleSkip, readOnly = false, today }: { activity: HabitActivity[]; colors: AppColors; habit: Habit; onToggleDate: (date: string) => Promise<void>; onToggleSkip: (date: string) => Promise<void>; readOnly?: boolean; today: string }) {
   const tracker = useMemo(() => {
     const todayOffset = weekdayFor(today) - 1;
     const start = addLocalDays(today, -(todayOffset + 19 * 7));
@@ -500,7 +505,7 @@ function HabitTracker({ activity, colors, habit, onToggleDate, onToggleSkip, tod
   return (
     <View style={[styles.trackerCard, { backgroundColor: colors.card }]}>
       <View style={styles.trackerHeader}><View><Text style={[styles.trackerTitle, { color: colors.text }]}>Activity</Text><Text style={[styles.trackerSubtitle, { color: colors.secondary }]}>Last 20 weeks</Text></View><View style={styles.trackerStats}><TrackerStat colors={colors} label="STREAK" value={`${tracker.streak}`} /><TrackerStat colors={colors} label="RATE" value={`${rate}%`} /><TrackerStat colors={colors} label="DONE" value={`${tracker.completedCount}`} /></View></View>
-      <View style={styles.activityBody}><View style={styles.activityLabels}><Text style={[styles.activityLabel, { color: colors.tertiary }]}>M</Text><Text style={[styles.activityLabel, { color: colors.tertiary }]}>W</Text><Text style={[styles.activityLabel, { color: colors.tertiary }]}>F</Text></View><View style={styles.activityWeeks}>{tracker.weeks.map((week) => <View key={week[0]} style={styles.activityWeek}>{week.map((date) => { const scheduled = isHabitScheduledOn(habit, date); const completed = tracker.completed.has(date); const skipped = tracker.skipped.has(date); const future = date > today; return <Pressable disabled={!scheduled || future} key={date} onLongPress={() => Alert.alert('Update this day', formatLongDate(date), [{ text: 'Cancel', style: 'cancel' }, { text: skipped ? 'Remove rest day' : 'Planned rest day', onPress: () => void onToggleSkip(date) }])} onPress={() => void (skipped ? onToggleSkip(date) : onToggleDate(date))} style={[styles.activityCell, { backgroundColor: !scheduled ? colors.background : skipped ? colors.amberSoft : completed ? colors.blue : future ? colors.blueSoft : colors.separator }, date === today && { borderColor: colors.red, borderWidth: 1 }]} />; })}</View>)}</View></View>
+      <View style={styles.activityBody}><View style={styles.activityLabels}><Text style={[styles.activityLabel, { color: colors.tertiary }]}>M</Text><Text style={[styles.activityLabel, { color: colors.tertiary }]}>W</Text><Text style={[styles.activityLabel, { color: colors.tertiary }]}>F</Text></View><View style={styles.activityWeeks}>{tracker.weeks.map((week) => <View key={week[0]} style={styles.activityWeek}>{week.map((date) => { const scheduled = isHabitScheduledOn(habit, date); const completed = tracker.completed.has(date); const skipped = tracker.skipped.has(date); const future = date > today; return <Pressable disabled={readOnly || !scheduled || future} key={date} onLongPress={readOnly ? undefined : () => Alert.alert('Update this day', formatLongDate(date), [{ text: 'Cancel', style: 'cancel' }, { text: skipped ? 'Remove rest day' : 'Planned rest day', onPress: () => void onToggleSkip(date) }])} onPress={() => void (skipped ? onToggleSkip(date) : onToggleDate(date))} style={[styles.activityCell, { backgroundColor: !scheduled ? colors.background : skipped ? colors.amberSoft : completed ? colors.blue : future ? colors.blueSoft : colors.separator }, date === today && { borderColor: colors.red, borderWidth: 1 }]} />; })}</View>)}</View></View>
       <View style={styles.legend}><Text style={[styles.legendText, { color: colors.tertiary }]}>Missed</Text><View style={[styles.legendCell, { backgroundColor: colors.separator }]} /><View style={[styles.legendCell, { backgroundColor: colors.amberSoft }]} /><View style={[styles.legendCell, { backgroundColor: colors.blue }]} /><Text style={[styles.legendText, { color: colors.tertiary }]}>Complete</Text></View>
     </View>
   );

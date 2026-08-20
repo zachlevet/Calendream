@@ -103,6 +103,7 @@ export interface Habit {
   itemKind: ItemKind;
   startTime?: string;
   endTime?: string;
+  archivedAt?: string;
 }
 
 export interface HabitDraft {
