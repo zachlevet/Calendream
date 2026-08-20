@@ -78,7 +78,9 @@ export function buildTimelinePeriods(zoom: TimelineZoom, today: string): Timelin
   const current = dateFromISO(today);
 
   if (zoom === 'today') {
-    return Array.from({ length: 91 }, (_, index) => {
+    // The Today-page upcoming rail includes events as far as 120 days ahead.
+    // Keep every tappable destination represented in the day-level timeline.
+    return Array.from({ length: 151 }, (_, index) => {
       const offset = index - 30;
       const date = addLocalDays(today, offset);
       const parsed = dateFromISO(date);

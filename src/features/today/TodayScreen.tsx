@@ -355,6 +355,10 @@ export function TodayScreen() {
     setDestination('timeline');
   }
 
+  function openUpcomingOnTimeline(item: PlanningItem) {
+    openTimelineDate(item.anchorStart ?? selectedDate);
+  }
+
   function openGoalsAndHabits() {
     setSelectedDate(today);
     setPlanGoalId(null);
@@ -555,8 +559,10 @@ export function TodayScreen() {
                   : `${item.title} · ${days === 1 ? 'tomorrow' : `in ${days} days`}`;
                 return (
                   <Pressable
+                    accessibilityHint="Opens this event's day in the timeline"
+                    accessibilityLabel={`View ${item.title} in timeline`}
                     key={item.id}
-                    onPress={() => openTimelineDate(item.anchorStart ?? selectedDate)}
+                    onPress={() => openUpcomingOnTimeline(item)}
                     style={[styles.upcomingPill, { backgroundColor: trip ? colors.orangeSoft : colors.blueSoft }]}
                   >
                     <Text style={[styles.upcomingText, { color: trip ? colors.orange : colors.blue }]} numberOfLines={1}>{label}</Text>

@@ -13,6 +13,11 @@ test('timeline surrounds today with past and future days', () => {
   assert.equal(periods[currentIndex + 1].start, '2026-08-16');
 });
 
+test('day timeline includes every date shown by the upcoming rail', () => {
+  const periods = buildTimelinePeriods('today', '2026-08-15');
+  assert.equal(periods.at(-1)?.start, '2026-12-13');
+});
+
 test('quarter periods use complete calendar-quarter ranges', () => {
   const periods = buildTimelinePeriods('quarter', '2026-08-15');
   assert.deepEqual(periods.find((period) => period.current), {
