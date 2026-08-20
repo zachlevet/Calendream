@@ -47,6 +47,7 @@ import { palette, type AppColors } from '@/theme/colors';
 import CalendreamMapKit from '../../../modules/calendream-mapkit/src/CalendreamMapKitModule';
 import type { MapSuggestion } from '../../../modules/calendream-mapkit/src/CalendreamMapKit.types';
 import { DailyReflection } from './components/DailyReflection';
+import { prepareLocationSuggestions } from './locationSuggestions';
 import { CompactCalendarOverlay } from '@/features/calendar/CompactCalendarOverlay';
 import { QuickCaptureSheet } from '@/features/quick-capture/QuickCaptureSheet';
 import type { CaptureKind } from '@/features/quick-capture/parseQuickCapture';
@@ -1259,7 +1260,7 @@ function ItemEditor({ initial, today, colors, onClose, onSave, onDelete }: {
             </Pressable>
           </View>
 
-          <ScrollView keyboardDismissMode="interactive" showsVerticalScrollIndicator={false}>
+          <ScrollView keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View style={[styles.kindPicker, { backgroundColor: colors.card }]}>
             {(['task', 'event'] as const).map((option) => (
               <Pressable
@@ -1390,6 +1391,7 @@ function LocationInput({ value, colors, integrated, labeled, onFocus, onTextChan
   const [suggestions, setSuggestions] = useState<MapSuggestion[]>([]);
   const [resolving, setResolving] = useState(false);
   const [selectionCommitted, setSelectionCommitted] = useState(false);
+  const requestSequence = useRef(0);
   const glassAvailable = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable();
   const fallbackGlass = integrated
     ? colors.background === '#000000' ? 'rgba(38,38,42,0.88)' : 'rgba(246,246,250,0.84)'
@@ -1400,13 +1402,20 @@ function LocationInput({ value, colors, integrated, labeled, onFocus, onTextChan
 
   useEffect(() => {
     const query = value.trim();
+    const requestId = ++requestSequence.current;
     if (!CalendreamMapKit || query.length < 2 || resolving || selectionCommitted) return;
     let current = true;
     const timer = setTimeout(() => {
       void CalendreamMapKit.suggestAsync(query)
-        .then((results) => { if (current) setSuggestions(results); })
-        .catch(() => { if (current) setSuggestions([]); });
-    }, 220);
+        .then((results) => {
+          if (current && requestId === requestSequence.current) {
+            setSuggestions(prepareLocationSuggestions(results));
+          }
+        })
+        .catch(() => {
+          if (current && requestId === requestSequence.current) setSuggestions([]);
+        });
+    }, 280);
     return () => {
       current = false;
       clearTimeout(timer);
@@ -1438,7 +1447,7 @@ function LocationInput({ value, colors, integrated, labeled, onFocus, onTextChan
           onChangeText={(text) => {
             setSelectionCommitted(false);
             onTextChange(text);
-            setSuggestions([]);
+            if (text.trim().length < 2) setSuggestions([]);
           }}
           onFocus={onFocus}
           placeholder={resolving ? 'Finding place…' : 'Location (optional)'}
@@ -1453,7 +1462,7 @@ function LocationInput({ value, colors, integrated, labeled, onFocus, onTextChan
           labeled ? styles.locationSuggestionsLabeled : integrated ? styles.locationSuggestionsIntegrated : styles.locationSuggestionsInline,
           !glassAvailable && { backgroundColor: fallbackGlass },
         ]}>
-          {glassAvailable && <GlassView glassEffectStyle="regular" style={[styles.locationSuggestionsGlass, integrated && styles.locationSuggestionsGlassIntegrated]} tintColor={suggestionTint} />}
+          {glassAvailable && <GlassView glassEffectStyle="regular" pointerEvents="none" style={[styles.locationSuggestionsGlass, integrated && styles.locationSuggestionsGlassIntegrated]} tintColor={suggestionTint} />}
           <View style={styles.locationSuggestionsContent}>
             {suggestions.map((suggestion, index) => (
               <Pressable

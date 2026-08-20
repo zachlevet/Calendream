@@ -20,7 +20,7 @@ private final class CompletionRequest: NSObject, MKLocalSearchCompleterDelegate 
   }
 
   func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
-    let suggestions = completer.results.prefix(7).map { result in
+    let suggestions = completer.results.prefix(5).map { result in
       ["title": result.title, "subtitle": result.subtitle]
     }
     promise.resolve(Array(suggestions))
