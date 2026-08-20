@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import type { Goal, GoalDraft, GoalHabitLink, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ItemDraft, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
+import type { Goal, GoalDraft, GoalHabitLink, GoalStep, GoalStepDraft, Habit, HabitActivity, HabitDraft, ItemDraft, JournalEntry, PlanningItem, SearchResult, TimelineSnapshot } from '../models/planning';
 import { scheduledHabitDates } from '../features/goals/habitSchedule';
 import { matchingSnippet } from '../shared/search';
 
@@ -309,6 +309,15 @@ export function useTodayData(date: string, _reviewDate = date) {
       setJournals((current) => ({ ...current, [date]: value }));
       setLibraryDates((current) => new Set(current).add(date));
     },
+    loadJournalEntries: async (): Promise<JournalEntry[]> => Object.entries(journals)
+      .filter(([, reflection]) => reflection.trim())
+      .sort(([left], [right]) => right.localeCompare(left))
+      .map(([noteDate, reflection]) => ({
+        date: noteDate,
+        reflection,
+        updatedAt: `${noteDate}T12:00:00.000Z`,
+        savedToLibrary: libraryDates.has(noteDate),
+      })),
     moveOverdueTask: async (id: string, targetDate: string) => {
       const item = allItems.find((existing) => existing.id === id);
       setAllItems((current) => current.map((existing) => existing.id === id ? { ...existing, anchorStart: targetDate, anchorEnd: targetDate, habitId: undefined } : existing));

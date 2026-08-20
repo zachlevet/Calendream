@@ -40,7 +40,9 @@ interface GoalsHabitsScreenProps {
   habitActivity: HabitActivity[];
   habits: Habit[];
   initialGoalId?: string | null;
+  initialHabitId?: string | null;
   today: string;
+  onExitDetail?: () => void;
   onArchiveHabit: (id: string) => Promise<void>;
   onDeleteGoal: (id: string) => Promise<void>;
   onDeleteGoalStep: (step: GoalStep) => Promise<void>;
@@ -126,14 +128,14 @@ function habitDraftFor(habit: Habit): HabitDraft {
 
 export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
   const {
-    colors, goalSteps, goals, habitActivity, habits, initialGoalId, today,
+    colors, goalSteps, goals, habitActivity, habits, initialGoalId, initialHabitId, today, onExitDetail,
     onArchiveHabit, onDeleteGoal, onDeleteGoalStep,
     onSaveGoal, onSaveGoalStep, onSaveHabit, onToggleGoal, onToggleGoalStep,
     onSaveItem, onToggleHabitDate, onToggleHabitSkip,
   } = props;
-  const [section, setSection] = useState<'chat' | 'plans'>(initialGoalId ? 'plans' : 'chat');
+  const [section, setSection] = useState<'chat' | 'plans'>(initialGoalId || initialHabitId ? 'plans' : 'chat');
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(initialGoalId ?? null);
-  const [selectedHabitId, setSelectedHabitId] = useState<string | null>(null);
+  const [selectedHabitId, setSelectedHabitId] = useState<string | null>(initialHabitId ?? null);
 
   const selectedGoal = goals.find((goal) => goal.id === selectedGoalId);
   if (selectedGoal) {
@@ -141,8 +143,8 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
       <GoalDetailPage
         colors={colors}
         goal={selectedGoal}
-        onBack={() => { setSelectedGoalId(null); setSection('plans'); }}
-        onDeleteGoal={async () => { await onDeleteGoal(selectedGoal.id); setSelectedGoalId(null); }}
+        onBack={() => { if (initialGoalId && onExitDetail) onExitDetail(); else { setSelectedGoalId(null); setSection('plans'); } }}
+        onDeleteGoal={async () => { await onDeleteGoal(selectedGoal.id); if (initialGoalId && onExitDetail) onExitDetail(); else setSelectedGoalId(null); }}
         onDeleteStep={onDeleteGoalStep}
         onSaveGoal={onSaveGoal}
         onSaveStep={onSaveGoalStep}
@@ -161,8 +163,8 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
         activity={habitActivity.filter((entry) => entry.habitId === selectedHabit.id)}
         colors={colors}
         habit={selectedHabit}
-        onArchive={async () => { await onArchiveHabit(selectedHabit.id); setSelectedHabitId(null); }}
-        onBack={() => { setSelectedHabitId(null); setSection('plans'); }}
+        onArchive={async () => { await onArchiveHabit(selectedHabit.id); if (initialHabitId && onExitDetail) onExitDetail(); else setSelectedHabitId(null); }}
+        onBack={() => { if (initialHabitId && onExitDetail) onExitDetail(); else { setSelectedHabitId(null); setSection('plans'); } }}
         onSave={onSaveHabit}
         onToggleDate={(date) => onToggleHabitDate(selectedHabit, date)}
         onToggleSkip={(date) => onToggleHabitSkip(selectedHabit, date)}

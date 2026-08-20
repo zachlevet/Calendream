@@ -54,14 +54,16 @@ import type { CaptureKind } from '@/features/quick-capture/parseQuickCapture';
 import { SearchOverlay } from '@/features/search/SearchResults';
 import { TimelineScreen } from '@/features/timeline/TimelineScreen';
 import { GoalsHabitsScreen } from '@/features/goals/GoalsHabitsScreen';
+import { LibraryScreen } from '@/features/library/LibraryScreen';
 // Metro resolves the platform-specific SettingsScreen.native/.web module.
 // eslint-disable-next-line import/no-unresolved
 import { SettingsScreen } from '@/features/settings/SettingsScreen';
 
-type Destination = 'today' | 'timeline' | 'goals' | 'settings';
+type Destination = 'today' | 'timeline' | 'goals' | 'library' | 'settings';
 type EditorState = { kind: 'task' | 'event'; item?: PlanningItem } | null;
 type CapturePreset = { date: string; endDate?: string; kind?: CaptureKind; dateLocked?: boolean };
 type HabitFeedback = { eventId: string; outcome: 'completed' | 'missed' };
+type LibraryDetail = { kind: 'goal' | 'habit'; id: string } | null;
 
 function eventAccent(event: PlanningItem, colors: AppColors) {
   const phase = eventPhase(event);
@@ -91,6 +93,7 @@ export function TodayScreen() {
   const searchAll = data.searchAll;
   const [destination, setDestination] = useState<Destination>('today');
   const [planGoalId, setPlanGoalId] = useState<string | null>(null);
+  const [libraryDetail, setLibraryDetail] = useState<LibraryDetail>(null);
   const [editor, setEditor] = useState<EditorState>(null);
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false);
   const [capturePreset, setCapturePreset] = useState<CapturePreset | null>(null);
@@ -370,6 +373,22 @@ export function TodayScreen() {
     setDestination('settings');
   }
 
+  function openLibrary() {
+    Keyboard.dismiss();
+    setCalendarOpen(false);
+    setSearchOpen(false);
+    setInlineEditor(null);
+    setEditor(null);
+    setLibraryDetail(null);
+    setDestination('library');
+  }
+
+  function openLibraryJournal(date: string) {
+    setSelectedDate(date);
+    setLibraryDetail(null);
+    setDestination('today');
+  }
+
   function openGoal(goal: Goal) {
     Keyboard.dismiss();
     setCalendarOpen(false);
@@ -443,7 +462,23 @@ export function TodayScreen() {
         ) : (
           <>
             <Text style={[styles.wordmark, { color: colors.text }]}>Calendream</Text>
-            <View style={styles.headerActions}>
+            {destination === 'library' ? (
+              <Pressable
+                accessibilityLabel="Open settings"
+                onPress={openSettings}
+                style={({ pressed }) => [styles.searchButton, { backgroundColor: colors.card }, pressed && styles.pressed]}
+              >
+                <SymbolView name="gearshape" size={18} tintColor={colors.text} weight="medium" />
+              </Pressable>
+            ) : destination === 'settings' ? (
+              <Pressable
+                accessibilityLabel="Back to Library"
+                onPress={openLibrary}
+                style={({ pressed }) => [styles.searchButton, { backgroundColor: colors.blueSoft }, pressed && styles.pressed]}
+              >
+                <SymbolView name="chevron.left" size={16} tintColor={colors.blue} weight="semibold" />
+              </Pressable>
+            ) : <View style={styles.headerActions}>
               <Pressable
                 accessibilityLabel="Search"
                 onPress={openSearch}
@@ -465,7 +500,7 @@ export function TodayScreen() {
               >
                 <Text style={styles.addSymbol}>+</Text>
               </Pressable>
-            </View>
+            </View>}
           </>
         )}
       </View>
@@ -759,6 +794,45 @@ export function TodayScreen() {
           onToggleHabitSkip={data.toggleHabitSkip}
           today={today}
         />
+      ) : destination === 'library' ? (
+        libraryDetail ? (
+          <GoalsHabitsScreen
+            colors={colors}
+            goalSteps={data.goalSteps}
+            goals={data.allGoals}
+            habitActivity={data.habitActivity}
+            habits={data.habits}
+            initialGoalId={libraryDetail.kind === 'goal' ? libraryDetail.id : null}
+            initialHabitId={libraryDetail.kind === 'habit' ? libraryDetail.id : null}
+            key={`library-${libraryDetail.kind}-${libraryDetail.id}`}
+            onArchiveHabit={data.archiveHabit}
+            onDeleteGoal={data.deleteGoal}
+            onDeleteGoalStep={data.deleteGoalStep}
+            onExitDetail={() => setLibraryDetail(null)}
+            onSaveGoal={data.saveGoal}
+            onSaveGoalStep={data.saveGoalStep}
+            onSaveHabit={data.saveHabit}
+            onSaveItem={async (draft) => {
+              await data.saveItem(draft);
+              setTimelineRevision((revision) => revision + 1);
+            }}
+            onToggleGoal={data.toggleGoal}
+            onToggleGoalStep={data.toggleGoalStep}
+            onToggleHabitDate={data.toggleHabitDate}
+            onToggleHabitSkip={data.toggleHabitSkip}
+            today={today}
+          />
+        ) : (
+          <LibraryScreen
+            colors={colors}
+            goals={data.allGoals}
+            habits={data.habits}
+            loadJournalEntries={data.loadJournalEntries}
+            onOpenGoal={(id) => setLibraryDetail({ kind: 'goal', id })}
+            onOpenHabit={(id) => setLibraryDetail({ kind: 'habit', id })}
+            onOpenJournal={openLibraryJournal}
+          />
+        )
       ) : (
         <SettingsScreen
           colors={colors}
@@ -801,7 +875,7 @@ export function TodayScreen() {
         <TabButton active={destination === 'today'} activeIcon="calendar.circle.fill" colors={colors} icon="calendar" label="Today" onPress={() => setDestination('today')} />
         <TabButton active={destination === 'timeline'} activeIcon="clock.fill" colors={colors} icon="clock" label="Timeline" onPress={openTimelineHome} />
         <TabButton accent={colors.yellow} active={destination === 'goals'} colors={colors} icon="sparkles" label="Plan" onPress={openGoalsAndHabits} />
-        <TabButton active={destination === 'settings'} activeIcon="gearshape.fill" colors={colors} icon="gearshape" label="Settings" onPress={openSettings} />
+        <TabButton active={destination === 'library' || destination === 'settings'} activeIcon="books.vertical.fill" colors={colors} icon="books.vertical" label="Library" onPress={openLibrary} />
       </View>
 
       <ItemEditor

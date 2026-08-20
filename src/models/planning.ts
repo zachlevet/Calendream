@@ -138,6 +138,13 @@ export interface SearchResult {
   snippet?: string;
 }
 
+export interface JournalEntry {
+  date: string;
+  reflection: string;
+  updatedAt: string;
+  savedToLibrary: boolean;
+}
+
 export interface TimelineSnapshot {
   items: PlanningItem[];
   goals: Goal[];
