@@ -194,7 +194,6 @@ export function GoalsHabitsScreen(props: GoalsHabitsScreenProps) {
       colors={colors}
       goals={goals}
       habits={habits}
-      onOpenPlans={() => setSection('plans')}
       onSaveGoal={onSaveGoal}
       onSaveHabit={onSaveHabit}
       onSaveItem={onSaveItem}

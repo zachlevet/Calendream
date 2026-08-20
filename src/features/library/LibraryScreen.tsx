@@ -135,7 +135,7 @@ export function LibraryScreen({ colors, deleteJournalEntry, goals, habits, loadJ
     return (
       <LibraryPage colors={colors} onBack={() => onSectionChange('home')} subtitle="Active direction and goals you’ve completed." title="Goals">
         <Text style={[styles.sectionLabel, styles.firstSectionLabel, { color: colors.secondary }]}>CURRENT GOALS</Text>
-        {activeGoals.length ? <View style={[styles.goalList, { backgroundColor: colors.yellowSoft }]}>{activeGoals.map((goal, index) => <GoalRow colors={colors} goal={goal} index={index} key={goal.id} onPress={() => onOpenGoal(goal.id)} />)}</View> : <EmptyState colors={colors} copy="Ask Plan to keep something important in view." title="No active goals" />}
+        {activeGoals.length ? <View style={[styles.goalList, { backgroundColor: colors.yellowSoft }]}>{activeGoals.map((goal, index) => <GoalRow colors={colors} goal={goal} index={index} key={goal.id} onPress={() => onOpenGoal(goal.id)} />)}</View> : <EmptyState colors={colors} copy="Ask Assistant to keep something important in view." title="No active goals" />}
         <Text style={[styles.sectionLabel, { color: colors.secondary }]}>PAST GOALS</Text>
         {completedGoals.length ? <><View style={[styles.list, { backgroundColor: colors.card }]}>{completedGoals.slice(0, 3).map((goal, index) => <GoalRow colors={colors} completed goal={goal} index={index} key={goal.id} onPress={() => onOpenGoal(goal.id)} />)}</View><ArchiveButton colors={colors} count={completedGoals.length} label="View all past goals" onPress={() => onSectionChange('goalArchive')} /></> : <EmptyState colors={colors} copy="Goals you accomplish will collect here." title="No past goals yet" />}
       </LibraryPage>
@@ -146,7 +146,7 @@ export function LibraryScreen({ colors, deleteJournalEntry, goals, habits, loadJ
     return (
       <LibraryPage colors={colors} onBack={() => onSectionChange('home')} subtitle="The rhythms that create tasks and events for you." title="Routines">
         <Text style={[styles.sectionLabel, styles.firstSectionLabel, { color: colors.secondary }]}>CURRENT ROUTINES</Text>
-        {activeHabits.length ? <View style={[styles.list, { backgroundColor: colors.card }]}>{activeHabits.map((habit, index) => <RoutineRow colors={colors} habit={habit} index={index} key={habit.id} onPress={() => onOpenHabit(habit.id)} />)}</View> : <EmptyState colors={colors} copy="Ask Plan for a recurring rhythm and it will appear here." title="No current routines" />}
+        {activeHabits.length ? <View style={[styles.list, { backgroundColor: colors.card }]}>{activeHabits.map((habit, index) => <RoutineRow colors={colors} habit={habit} index={index} key={habit.id} onPress={() => onOpenHabit(habit.id)} />)}</View> : <EmptyState colors={colors} copy="Ask Assistant for a recurring rhythm and it will appear here." title="No current routines" />}
         <Text style={[styles.sectionLabel, { color: colors.secondary }]}>PAST ROUTINES</Text>
         {archivedHabits.length ? <><View style={[styles.list, { backgroundColor: colors.card }]}>{archivedHabits.slice(0, 3).map((habit, index) => <RoutineRow archived colors={colors} habit={habit} index={index} key={habit.id} onPress={() => onOpenHabit(habit.id)} />)}</View><ArchiveButton colors={colors} count={archivedHabits.length} label="View all past routines" onPress={() => onSectionChange('routineArchive')} /></> : <EmptyState colors={colors} copy="Finished routines will stay here as part of your history." title="No past routines yet" />}
       </LibraryPage>

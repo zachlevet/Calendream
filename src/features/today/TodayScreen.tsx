@@ -881,7 +881,7 @@ export function TodayScreen() {
       <View style={[styles.tabBar, { backgroundColor: colors.chrome, borderColor: colors.separator }]}>
         <TabButton active={destination === 'today'} activeIcon="calendar.circle.fill" colors={colors} icon="calendar" label="Today" onPress={() => setDestination('today')} />
         <TabButton active={destination === 'timeline'} activeIcon="clock.fill" colors={colors} icon="clock" label="Timeline" onPress={openTimelineHome} />
-        <TabButton accent={colors.yellow} active={destination === 'goals'} colors={colors} icon="sparkles" label="Plan" onPress={openGoalsAndHabits} />
+        <TabButton accent={colors.yellow} active={destination === 'goals'} colors={colors} icon="sparkles" label="Assistant" onPress={openGoalsAndHabits} />
         <TabButton active={destination === 'library' || destination === 'settings'} activeIcon="books.vertical.fill" colors={colors} icon="books.vertical" label="Library" onPress={openLibrary} />
       </View>
 

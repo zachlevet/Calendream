@@ -23,7 +23,6 @@ interface PlanChatHomeProps {
   goals: Goal[];
   habits: Habit[];
   today: string;
-  onOpenPlans: () => void;
   onSaveGoal: (draft: GoalDraft) => Promise<string>;
   onSaveHabit: (draft: HabitDraft) => Promise<string>;
   onSaveItem: (draft: ItemDraft) => Promise<void>;
@@ -56,7 +55,7 @@ function formatPlanTime(date: Date) {
   return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
-export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, onSaveHabit, onSaveItem, today }: PlanChatHomeProps) {
+export function PlanChatHome({ colors, goals, habits, onSaveGoal, onSaveHabit, onSaveItem, today }: PlanChatHomeProps) {
   const [text, setText] = useState('');
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [timePeriod, setTimePeriod] = useState<TimePeriod | null>(null);
@@ -141,14 +140,10 @@ export function PlanChatHome({ colors, goals, habits, onOpenPlans, onSaveGoal, o
       <View style={styles.planHeader}>
         <View style={[styles.planOverview, { backgroundColor: colors.card }]}>
           <View style={styles.planOverviewIdentity}>
-            <Text style={[styles.planIdentityTitle, { color: colors.text }]}>Plan</Text>
+            <Text style={[styles.planIdentityTitle, { color: colors.text }]}>Assistant</Text>
             <Text style={[styles.planIdentityMeta, { color: colors.secondary }]}>{goals.filter((goal) => !goal.completed).length} goals · {habits.length} routines</Text>
           </View>
         </View>
-        <Pressable accessibilityLabel="Open goals and routines" onPress={onOpenPlans} style={[styles.plansLink, { backgroundColor: colors.blueSoft }]}>
-          <Text style={[styles.plansAction, { color: colors.blue }]}>Goals</Text>
-          <Text style={[styles.plansChevron, { color: colors.blue }]}>›</Text>
-        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.chatContent} keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" ref={undefined} showsVerticalScrollIndicator={false}>
@@ -297,7 +292,7 @@ export function YourPlansHome({ colors, goals, habits, onBack, onOpenGoal, onOpe
   const activeGoalCount = primaryGoals.length + somedayGoals.length;
   return (
     <ScrollView contentContainerStyle={styles.libraryContent} showsVerticalScrollIndicator={false} style={styles.flex}>
-      <Pressable onPress={onBack} style={[styles.backButton, { backgroundColor: colors.card }]}><Text style={[styles.backText, { color: colors.blue }]}>‹ Plan</Text></Pressable>
+      <Pressable onPress={onBack} style={[styles.backButton, { backgroundColor: colors.card }]}><Text style={[styles.backText, { color: colors.blue }]}>‹ Assistant</Text></Pressable>
       <View style={styles.libraryHeader}>
         <Text style={[styles.libraryTitle, { color: colors.text }]}>Goals & Routines</Text>
         <Text style={[styles.librarySubtitle, { color: colors.secondary }]}>Everything you’ve asked Calendream to keep in motion.</Text>
@@ -372,14 +367,11 @@ function LibraryEmpty({ colors, text }: { colors: AppColors; text: string }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  planHeader: { paddingHorizontal: 18, paddingTop: 7, paddingBottom: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  planHeader: { paddingHorizontal: 18, paddingTop: 7, paddingBottom: 7, flexDirection: 'row', alignItems: 'center' },
   planOverview: { minHeight: 40, borderRadius: 20, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' },
   planOverviewIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   planIdentityTitle: { fontSize: 15, lineHeight: 18, fontWeight: '800' },
   planIdentityMeta: { fontSize: 10, lineHeight: 13, fontWeight: '700' },
-  plansLink: { minHeight: 40, borderRadius: 20, paddingLeft: 14, paddingRight: 12, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  plansAction: { fontSize: 14, fontWeight: '700' },
-  plansChevron: { fontSize: 19, lineHeight: 20, marginTop: -1 },
   chatContent: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 6, paddingBottom: 16 },
   welcome: { flex: 1, minHeight: 355, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 18, paddingBottom: 24 },
   assistantMark: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
