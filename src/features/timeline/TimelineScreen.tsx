@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Dimensions, Keyboard, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Dimensions, Keyboard, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GlassView, isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { SymbolView } from 'expo-symbols';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Reanimated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import type { Goal, ItemDraft, PlanningItem, TimelineSnapshot, TimelineZoom } from '@/models/planning';
 import { addLocalDays, dateFromISO, formatShortDate, localISO } from '@/shared/date';
@@ -50,6 +51,16 @@ interface PeriodPosition {
   height: number;
 }
 
+interface ZoomTransitionLayer {
+  direction: 'in' | 'out';
+  offset: number;
+  periods: TimelinePeriod[];
+  snapshot: TimelineSnapshot;
+  zoom: TimelineZoom;
+}
+
+const ZOOM_TRANSITION_DURATION = 280;
+
 function dateAtPosition(position: PeriodPosition, viewportY: number) {
   const progress = position.height > 0 ? Math.max(0, Math.min(1, (viewportY - position.y) / position.height)) : 0;
   return dateAtPeriodProgress(position.start, position.end, progress);
@@ -65,7 +76,13 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
   const [snapshot, setSnapshot] = useState<TimelineSnapshot>({ items: [], goals: [], reflections: {} });
   const [loading, setLoading] = useState(true);
   const [, setClockRevision] = useState(0);
-  const [pinchScale] = useState(() => new Animated.Value(1));
+  const [outgoingLayer, setOutgoingLayer] = useState<ZoomTransitionLayer | null>(null);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
+  const gestureScale = useSharedValue(1);
+  const incomingOpacity = useSharedValue(1);
+  const incomingScale = useSharedValue(1);
+  const outgoingOpacity = useSharedValue(0);
+  const outgoingScale = useSharedValue(1);
   const [editingItem, setEditingItem] = useState<PlanningItem | null>(null);
   const [editingSlot, setEditingSlot] = useState<string | null>(null);
   const [inlineDraft, setInlineDraft] = useState<ItemDraft | null>(null);
@@ -78,16 +95,24 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
   const periodPositions = useRef(new Map<string, PeriodPosition>());
   const keyboardTop = useRef(Dimensions.get('window').height);
   const alignedZoom = useRef<TimelineZoom | null>(null);
+  const loadedSnapshotIdentity = useRef('');
+  const transitionSequence = useRef(0);
+  const transitionTarget = useRef<TimelineZoom | null>(null);
+  const transitionDirection = useRef<'in' | 'out'>('out');
+  const transitionInFlight = useRef(false);
   const periods = useMemo(() => buildTimelinePeriods(zoom, today), [today, zoom]);
   const firstDate = periods[0].start;
   const lastDate = periods[periods.length - 1].end;
+  const snapshotIdentity = `${dataRevision}:${firstDate}:${lastDate}`;
 
   useEffect(() => {
+    if (loadedSnapshotIdentity.current === snapshotIdentity) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       setLoading(true);
       void loadRange(firstDate, lastDate).then((nextSnapshot) => {
         if (cancelled) return;
+        loadedSnapshotIdentity.current = snapshotIdentity;
         setSnapshot(nextSnapshot);
         setLoading(false);
       });
@@ -96,7 +121,7 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [dataRevision, firstDate, lastDate, loadRange]);
+  }, [firstDate, lastDate, loadRange, snapshotIdentity]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -160,7 +185,7 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
   const inlineEditor = editingItem ? <View ref={editorView}>{renderInlineEditor({ item: editingItem, date: editingItem.anchorStart ?? today, onCancel: closeInlineEditor, onDraftChange: setInlineDraft, onReveal: revealInline, onSave: saveInline })}</View> : null;
 
   const changeZoom = useCallback((nextZoom: TimelineZoom, requestedDate?: string, alignment: 'date' | 'period' = 'date') => {
-    if (nextZoom === zoom) return;
+    if (nextZoom === zoom || transitionInFlight.current) return;
     const viewportY = scrollOffset.current + Math.min(250, Dimensions.get('window').height * 0.32);
     const positions = [...periodPositions.current.values()].sort((a, b) => a.y - b.y);
     const visiblePeriod = positions.find((position) => viewportY >= position.y && viewportY <= position.y + position.height)
@@ -173,11 +198,47 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
     const visibleAnchor = visiblePeriod ? dateAtPosition(visiblePeriod, viewportY) : undefined;
     focusDate.current = requestedDate ?? visibleAnchor ?? focusDate.current;
     alignPeriodFromStart.current = alignment === 'period';
-    periodPositions.current.clear();
-    alignedZoom.current = null;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setZoom(nextZoom);
-  }, [zoom]);
+    const currentIndex = ZOOM_LEVELS.findIndex((level) => level.id === zoom);
+    const nextIndex = ZOOM_LEVELS.findIndex((level) => level.id === nextZoom);
+    const direction = nextIndex > currentIndex ? 'out' : 'in';
+    const nextPeriods = buildTimelinePeriods(nextZoom, today);
+    const nextFirstDate = nextPeriods[0].start;
+    const nextLastDate = nextPeriods[nextPeriods.length - 1].end;
+    const nextIdentity = `${dataRevision}:${nextFirstDate}:${nextLastDate}`;
+    const sequence = transitionSequence.current + 1;
+
+    transitionSequence.current = sequence;
+    transitionDirection.current = direction;
+    transitionInFlight.current = true;
+    setScrollEnabled(false);
+    gestureScale.set(withTiming(direction === 'out' ? 0.994 : 1.006, { duration: 90, easing: Easing.out(Easing.cubic) }));
+
+    void Promise.all([
+      loadRange(nextFirstDate, nextLastDate),
+      new Promise<void>((resolve) => setTimeout(resolve, 70)),
+    ]).then(([nextSnapshot]) => {
+      if (transitionSequence.current !== sequence) return;
+
+      setOutgoingLayer({ direction, offset: scrollOffset.current, periods, snapshot, zoom });
+      outgoingOpacity.set(1);
+      outgoingScale.set(1);
+      incomingOpacity.set(0);
+      incomingScale.set(direction === 'out' ? 1.018 : 0.982);
+      gestureScale.set(1);
+      loadedSnapshotIdentity.current = nextIdentity;
+      transitionTarget.current = nextZoom;
+      periodPositions.current.clear();
+      alignedZoom.current = null;
+      setSnapshot(nextSnapshot);
+      setLoading(false);
+      setZoom(nextZoom);
+    }).catch(() => {
+      if (transitionSequence.current !== sequence) return;
+      transitionInFlight.current = false;
+      setScrollEnabled(true);
+      gestureScale.set(withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) }));
+    });
+  }, [dataRevision, gestureScale, incomingOpacity, incomingScale, loadRange, outgoingOpacity, outgoingScale, periods, snapshot, today, zoom]);
 
   const alignPeriod = useCallback((period: TimelinePeriod, y: number, height: number) => {
     const position = { start: period.start, end: period.end, y, height };
@@ -185,16 +246,42 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
     if (period.current) currentPeriod.current = position;
   }, []);
 
+  const finishZoomTransition = useCallback(() => {
+    if (transitionTarget.current !== zoom) return;
+    const sequence = transitionSequence.current;
+    const direction = transitionDirection.current;
+    transitionTarget.current = null;
+
+    requestAnimationFrame(() => {
+      if (transitionSequence.current !== sequence) return;
+      const easing = Easing.bezier(0.22, 1, 0.36, 1);
+      incomingOpacity.set(withTiming(1, { duration: ZOOM_TRANSITION_DURATION, easing }));
+      incomingScale.set(withTiming(1, { duration: ZOOM_TRANSITION_DURATION, easing }));
+      outgoingOpacity.set(withTiming(0, { duration: ZOOM_TRANSITION_DURATION - 20, easing }));
+      outgoingScale.set(withTiming(direction === 'out' ? 0.982 : 1.018, { duration: ZOOM_TRANSITION_DURATION, easing }));
+    });
+
+    setTimeout(() => {
+      if (transitionSequence.current !== sequence) return;
+      setOutgoingLayer(null);
+      transitionInFlight.current = false;
+      setScrollEnabled(true);
+      outgoingOpacity.set(0);
+      outgoingScale.set(1);
+    }, ZOOM_TRANSITION_DURATION + 34);
+  }, [incomingOpacity, incomingScale, outgoingOpacity, outgoingScale, zoom]);
+
   const alignToFocus = useCallback(() => {
-    if (loading || alignedZoom.current === zoom) return true;
+    if (alignedZoom.current === zoom) return true;
     const position = [...periodPositions.current.values()].find((candidate) => focusDate.current >= candidate.start && focusDate.current <= candidate.end);
     if (!position) return false;
     alignedZoom.current = zoom;
     const targetY = alignPeriodFromStart.current ? position.y : yForDate(position, focusDate.current);
     alignPeriodFromStart.current = false;
     scroll.current?.scrollTo({ y: Math.max(0, targetY - TIMELINE_TOP_INSET), animated: false });
+    finishZoomTransition();
     return true;
-  }, [loading, zoom]);
+  }, [finishZoomTransition, zoom]);
 
   useEffect(() => {
     if (loading) return;
@@ -215,18 +302,38 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
     if (currentPeriod.current) scroll.current?.scrollTo({ y: Math.max(0, currentPeriod.current.y - TIMELINE_TOP_INSET), animated: true });
   }, [today]);
 
-  const pinch = Gesture.Pinch()
-    .runOnJS(true)
-    .onUpdate((event) => pinchScale.setValue(Math.max(0.82, Math.min(1.18, event.scale))))
-    // Animated.Value is only mutated after gesture events, not while rendering.
+  const timelineAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: incomingOpacity.value,
+    transform: [{ scale: incomingScale.value * gestureScale.value }],
+  }));
+  const outgoingAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: outgoingOpacity.value,
+    transform: [{ scale: outgoingScale.value }],
+  }));
+
+  // Gesture callbacks run after render on the UI thread; changeZoom only reads
+  // layout refs after the gesture has crossed its threshold.
+  const pinch = useMemo(() => Gesture.Pinch()
+    .onUpdate((event) => {
+      const dampedScale = 1 + Math.max(-0.008, Math.min(0.008, (event.scale - 1) * 0.06));
+      gestureScale.set(dampedScale);
+    })
     // eslint-disable-next-line react-hooks/refs
     .onEnd((event) => {
       const index = ZOOM_LEVELS.findIndex((level) => level.id === zoom);
-      if (event.scale < 0.88 && index < ZOOM_LEVELS.length - 1) changeZoom(ZOOM_LEVELS[index + 1].id);
-      if (event.scale > 1.12 && index > 0) changeZoom(ZOOM_LEVELS[index - 1].id);
-      Animated.timing(pinchScale, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+      if (event.scale < 0.9 && index < ZOOM_LEVELS.length - 1) {
+        runOnJS(changeZoom)(ZOOM_LEVELS[index + 1].id);
+        return;
+      }
+      if (event.scale > 1.1 && index > 0) {
+        runOnJS(changeZoom)(ZOOM_LEVELS[index - 1].id);
+        return;
+      }
+      gestureScale.set(withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) }));
     })
-    .onFinalize(() => Animated.timing(pinchScale, { toValue: 1, duration: 220, useNativeDriver: true }).start());
+    .onFinalize((_event, success) => {
+      if (!success) gestureScale.set(withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) }));
+    }), [changeZoom, gestureScale, zoom]);
   // The native gesture represents the vertical ScrollView. Composing it with
   // pinch keeps one-finger scrolling and two-finger zoom active at the same time.
   const timelineGesture = Gesture.Simultaneous(Gesture.Native(), pinch);
@@ -236,10 +343,10 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
   const fallbackLens = colors.background === '#000000' ? 'rgba(10,132,255,0.82)' : 'rgba(0,122,255,0.78)';
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <GestureDetector gesture={timelineGesture}>
-        <Animated.View style={[styles.timeline, { transform: [{ scale: pinchScale }] }]}>
-          <ScrollView directionalLockEnabled onContentSizeChange={() => setTimeout(alignToFocus, 0)} onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} ref={scroll} contentContainerStyle={styles.content} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
+        <Reanimated.View style={[styles.timeline, { backgroundColor: colors.background }, timelineAnimatedStyle]}>
+          <ScrollView directionalLockEnabled onContentSizeChange={() => setTimeout(alignToFocus, 0)} onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} ref={scroll} contentContainerStyle={styles.content} scrollEnabled={scrollEnabled} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
             {periods.map((period) => (
               <Period
                 colors={colors}
@@ -265,8 +372,39 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
               />
             ))}
           </ScrollView>
-        </Animated.View>
+        </Reanimated.View>
       </GestureDetector>
+
+      {outgoingLayer && (
+        <Reanimated.View pointerEvents="none" style={[styles.transitionLayer, { backgroundColor: colors.background }, outgoingAnimatedStyle]}>
+          <ScrollView contentContainerStyle={styles.content} contentOffset={{ x: 0, y: outgoingLayer.offset }} scrollEnabled={false} showsVerticalScrollIndicator={false}>
+            {outgoingLayer.periods.map((period) => (
+              <Period
+                colors={colors}
+                goals={outgoingLayer.snapshot.goals}
+                items={outgoingLayer.snapshot.items}
+                key={`outgoing-${outgoingLayer.zoom}-${period.id}`}
+                loading={false}
+                onPeriodLayout={() => undefined}
+                editingItem={null}
+                editingSlot={null}
+                inlineEditor={null}
+                onEditItem={() => undefined}
+                onOpenDay={() => undefined}
+                onOpenGoal={() => undefined}
+                onRevealReflection={() => undefined}
+                onSaveReflection={async () => undefined}
+                onToggleTask={() => undefined}
+                onZoomToDate={() => undefined}
+                period={period}
+                reflection={outgoingLayer.snapshot.reflections[period.start]}
+                today={today}
+                zoom={outgoingLayer.zoom}
+              />
+            ))}
+          </ScrollView>
+        </Reanimated.View>
+      )}
 
       <View style={styles.dockGroup}>
         <View style={styles.homeShell}>
@@ -863,7 +1001,10 @@ function overlaps(item: PlanningItem, period: TimelinePeriod) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1 }, timeline: { flex: 1 }, content: { paddingHorizontal: 18, paddingBottom: 170 },
+  screen: { flex: 1, overflow: 'hidden' },
+  timeline: { flex: 1 },
+  transitionLayer: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  content: { paddingHorizontal: 18, paddingBottom: 170 },
   period: { paddingTop: 18, paddingBottom: 24, borderTopWidth: 1 },
   periodTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   periodTitle: { fontSize: 29, lineHeight: 34, fontWeight: '700', letterSpacing: -0.8 },
