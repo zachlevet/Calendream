@@ -783,7 +783,7 @@ export function TodayScreen() {
         <TimelineScreen
           colors={colors}
           dataRevision={timelineRevision}
-          key={`timeline-home-${timelineEntryRevision}`}
+          key={`timeline-${timelineEntryRevision}-${timelineFocusDate}`}
           initialDate={timelineFocusDate}
           loadRange={data.loadRange}
           onSaveItem={async (draft) => {

@@ -60,6 +60,7 @@ interface ZoomTransitionLayer {
 }
 
 const ZOOM_TRANSITION_DURATION = 280;
+const FOCUS_ALIGNMENT_WINDOW = 2_000;
 
 function dateAtPosition(position: PeriodPosition, viewportY: number) {
   const progress = position.height > 0 ? Math.max(0, Math.min(1, (viewportY - position.y) / position.height)) : 0;
@@ -95,6 +96,7 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
   const periodPositions = useRef(new Map<string, PeriodPosition>());
   const keyboardTop = useRef(Dimensions.get('window').height);
   const alignedZoom = useRef<TimelineZoom | null>(null);
+  const focusAlignmentUntil = useRef(0);
   const loadedSnapshotIdentity = useRef('');
   const transitionSequence = useRef(0);
   const transitionTarget = useRef<TimelineZoom | null>(null);
@@ -104,6 +106,10 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
   const firstDate = periods[0].start;
   const lastDate = periods[periods.length - 1].end;
   const snapshotIdentity = `${dataRevision}:${firstDate}:${lastDate}`;
+
+  useEffect(() => {
+    focusAlignmentUntil.current = Date.now() + FOCUS_ALIGNMENT_WINDOW;
+  }, []);
 
   useEffect(() => {
     if (loadedSnapshotIdentity.current === snapshotIdentity) return;
@@ -229,6 +235,7 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
       transitionTarget.current = nextZoom;
       periodPositions.current.clear();
       alignedZoom.current = null;
+      focusAlignmentUntil.current = Date.now() + FOCUS_ALIGNMENT_WINDOW;
       setSnapshot(nextSnapshot);
       setLoading(false);
       setZoom(nextZoom);
@@ -289,7 +296,7 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tryAlignment = () => {
       attempts += 1;
-      if (alignToFocus() || attempts >= 12) return;
+      if (alignToFocus() || attempts >= 60) return;
       timer = setTimeout(tryAlignment, 40);
     };
     timer = setTimeout(tryAlignment, 0);
@@ -346,7 +353,23 @@ export function TimelineScreen({ colors, dataRevision, initialDate, today, loadR
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <GestureDetector gesture={timelineGesture}>
         <Reanimated.View style={[styles.timeline, { backgroundColor: colors.background }, timelineAnimatedStyle]}>
-          <ScrollView directionalLockEnabled onContentSizeChange={() => setTimeout(alignToFocus, 0)} onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }} ref={scroll} contentContainerStyle={styles.content} scrollEnabled={scrollEnabled} scrollEventThrottle={16} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            directionalLockEnabled
+            onContentSizeChange={() => {
+              // Day-level periods continue growing briefly as their contents lay out.
+              // Re-anchor during that short entry window so a tapped upcoming event
+              // remains at the top instead of drifting below earlier days.
+              if (Date.now() > focusAlignmentUntil.current) return;
+              alignedZoom.current = null;
+              setTimeout(alignToFocus, 0);
+            }}
+            onScroll={(event) => { scrollOffset.current = event.nativeEvent.contentOffset.y; }}
+            ref={scroll}
+            contentContainerStyle={styles.content}
+            scrollEnabled={scrollEnabled}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={false}
+          >
             {periods.map((period) => (
               <Period
                 colors={colors}

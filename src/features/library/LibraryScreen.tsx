@@ -168,13 +168,9 @@ export function LibraryScreen({ colors, deleteJournalEntry, goals, habits, loadJ
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.hero}><Text style={[styles.title, { color: colors.text }]}>Library</Text><Text style={[styles.subtitle, { color: colors.secondary }]}>The parts of your life worth returning to.</Text></View>
-      <View style={[styles.index, { backgroundColor: colors.card }]}>
-        <LibraryIndexRow accent={colors.purple} background={colors.purpleSoft} colors={colors} count={entries.length} icon="book.closed" label="Journal" onPress={() => onSectionChange('journal')} />
-        <View style={[styles.indexDivider, { backgroundColor: colors.separator }]} />
-        <LibraryIndexRow accent={colors.yellow} background={colors.yellowSoft} colors={colors} count={activeGoals.length} icon="star" label="Goals" onPress={() => onSectionChange('goals')} />
-        <View style={[styles.indexDivider, { backgroundColor: colors.separator }]} />
-        <LibraryIndexRow accent={colors.blue} background={colors.blueSoft} colors={colors} count={activeHabits.length} icon="repeat" label="Routines" onPress={() => onSectionChange('routines')} />
-      </View>
+      <LibraryPortal accent={colors.purple} background={colors.purpleSoft} colors={colors} count={entries.length} description={entries.length ? `Your latest entry is from ${formatLongDate(entries[0].date)}.` : 'Daily reflections and journal entries collect here.'} icon="book.closed" label="Journal" onPress={() => onSectionChange('journal')} />
+      <LibraryPortal accent={colors.yellow} background={colors.yellowSoft} colors={colors} count={activeGoals.length} description="Keep active direction close and revisit the goals you’ve achieved." icon="star" label="Goals" onPress={() => onSectionChange('goals')} />
+      <LibraryPortal accent={colors.blue} background={colors.blueSoft} colors={colors} count={activeHabits.length} description="See and adjust the rhythms that populate your calendar." icon="repeat" label="Routines" onPress={() => onSectionChange('routines')} />
       {memory && <View style={styles.memorySection}>
         <Text style={[styles.sectionLabel, styles.memoryLabel, { color: colors.secondary }]}>A MEMORY</Text>
         <Pressable accessibilityRole="button" onPress={() => openEntry(memory)} style={({ pressed }) => [styles.memory, { backgroundColor: colors.purpleSoft }, pressed && styles.pressed]}>
@@ -225,8 +221,15 @@ function AddEntryButton({ colors, onPress }: { colors: AppColors; onPress(): voi
   return <Pressable accessibilityLabel="Add journal entry" onPress={onPress} style={({ pressed }) => [styles.addEntry, { backgroundColor: colors.blueSoft }, pressed && styles.pressed]}><SymbolView name="plus" size={13} tintColor={colors.blue} weight="semibold" /><Text style={[styles.addEntryText, { color: colors.blue }]}>Add</Text></Pressable>;
 }
 
-function LibraryIndexRow({ accent, background, colors, count, icon, label, onPress }: { accent: string; background: string; colors: AppColors; count: number; icon: SFSymbol; label: string; onPress(): void }) {
-  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.indexRow, pressed && styles.pressed]}><View style={[styles.indexIcon, { backgroundColor: background }]}><SymbolView name={icon} size={18} tintColor={accent} weight="semibold" /></View><Text style={[styles.indexTitle, { color: colors.text }]}>{label}</Text><Text style={[styles.indexCount, { color: colors.secondary }]}>{count}</Text><Text style={[styles.chevron, { color: colors.tertiary }]}>›</Text></Pressable>;
+function LibraryPortal({ accent, background, colors, count, description, icon, label, onPress }: { accent: string; background: string; colors: AppColors; count: number; description: string; icon: SFSymbol; label: string; onPress(): void }) {
+  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.portal, { backgroundColor: background }, pressed && styles.portalPressed]}>
+    <View style={styles.portalTop}>
+      <View style={[styles.portalIcon, { backgroundColor: colors.background }]}><SymbolView name={icon} size={20} tintColor={accent} weight="semibold" /></View>
+      <View style={styles.portalIdentity}><Text style={[styles.portalTitle, { color: colors.text }]}>{label}</Text><Text style={[styles.portalCount, { color: accent }]}>{count}</Text></View>
+      <Text style={[styles.portalChevron, { color: accent }]}>›</Text>
+    </View>
+    <Text style={[styles.portalDescription, { color: colors.secondary }]}>{description}</Text>
+  </Pressable>;
 }
 
 function GoalRow({ colors, completed = false, goal, index, onPress }: { colors: AppColors; completed?: boolean; goal: Goal; index: number; onPress(): void }) {
@@ -258,7 +261,7 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 18, paddingTop: 18, paddingBottom: 120 }, hero: { marginBottom: 24 }, pageHeaderRow: { marginBottom: 22, flexDirection: 'row', alignItems: 'flex-start', gap: 12 }, pageHeaderCopy: { flex: 1 },
   title: { fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -1 }, subtitle: { marginTop: 3, fontSize: 15, lineHeight: 21 }, back: { alignSelf: 'flex-start', height: 36, borderRadius: 18, paddingLeft: 10, paddingRight: 13, flexDirection: 'row', alignItems: 'center', gap: 3, marginBottom: 14 }, backText: { fontSize: 15, fontWeight: '700' },
   addEntry: { height: 38, borderRadius: 19, paddingHorizontal: 13, marginTop: 1, flexDirection: 'row', alignItems: 'center', gap: 5 }, addEntryText: { fontSize: 15, fontWeight: '700' },
-  index: { borderRadius: 22, overflow: 'hidden' }, indexRow: { minHeight: 70, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }, indexIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center' }, indexTitle: { flex: 1, fontSize: 17, fontWeight: '700' }, indexCount: { fontSize: 14, fontWeight: '600', fontVariant: ['tabular-nums'] }, indexDivider: { height: StyleSheet.hairlineWidth, marginLeft: 64 },
+  portal: { minHeight: 128, borderRadius: 26, padding: 18, marginBottom: 12 }, portalPressed: { opacity: 0.7, transform: [{ scale: 0.99 }] }, portalTop: { flexDirection: 'row', alignItems: 'center' }, portalIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' }, portalIdentity: { marginLeft: 12, flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 8 }, portalTitle: { fontSize: 23, fontWeight: '800', letterSpacing: -0.5 }, portalCount: { fontSize: 14, fontWeight: '800', fontVariant: ['tabular-nums'] }, portalChevron: { fontSize: 31, lineHeight: 32, fontWeight: '300' }, portalDescription: { marginTop: 12, fontSize: 14, lineHeight: 19 },
   memorySection: { marginTop: 29 }, memoryLabel: { marginTop: 0 }, memory: { borderRadius: 22, padding: 16 }, memoryTop: { flexDirection: 'row', alignItems: 'center', gap: 9 }, memoryIcon: { width: 31, height: 31, borderRadius: 15.5, alignItems: 'center', justifyContent: 'center' }, memoryDate: { flex: 1, fontSize: 11, fontWeight: '800', letterSpacing: 0.7, textTransform: 'uppercase' }, memoryText: { marginTop: 12, fontSize: 17, lineHeight: 24, letterSpacing: -0.1 },
   search: { height: 46, borderRadius: 18, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, gap: 9, marginBottom: 14 }, searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 }, loading: { marginTop: 30 },
   entry: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 16, marginBottom: 10 }, entryHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9 }, entryIdentity: { flexDirection: 'row', alignItems: 'center', gap: 7 }, entryDate: { fontSize: 11, lineHeight: 14, fontWeight: '800', letterSpacing: 0.7, textTransform: 'uppercase' }, entryKind: { borderRadius: 7, paddingHorizontal: 6, paddingVertical: 2, fontSize: 8, fontWeight: '800', letterSpacing: 0.7 }, entryText: { fontSize: 16, lineHeight: 23 },
