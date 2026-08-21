@@ -19,7 +19,7 @@
 - Finish Settings and journal library presentation
 - Test on a physical iPhone through a development build
 - Complete a destructive-action, relaunch, and backup/restore test pass
-- Replace the placeholder app icon and confirm the final product name
+- Calendream identity locked: product name, bundle identifier, URL scheme, app icon, launch mark, and favicon
 
 ## Guided onboarding
 

@@ -67,7 +67,8 @@ Remaining before Phase 3:
 
 ## Phase 3 — private TestFlight
 
-- Finalize name, icon, splash art, version, and bundle identifier.
+- Identity locked on August 20, 2026: Calendream, `com.zachlevet.calendream`, the Calendream C-and-orb icon, and the `calendream` URL scheme.
+- Confirm the icon and launch screen on a physical iPhone using a fresh native build.
 - Create/confirm the App Store Connect record and Apple agreements.
 - Complete privacy labels, support URL, beta description, and tester instructions.
 - Run `npm run check`, Expo Doctor, an iOS production export, and an archive build.
