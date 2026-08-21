@@ -320,7 +320,7 @@ export function SettingsScreen({ colors, onDataChanged }: SettingsScreenProps) {
 
       <SectionLabel colors={colors}>GETTING STARTED</SectionLabel>
       <View style={[styles.card, { backgroundColor: colors.card }]}>
-        <SettingsRow colors={colors} detail="Revisit the Today, Timeline, and Assistant walkthrough. Your current data stays untouched." disabled={busy !== null} icon="sparkles" onPress={() => setTourOpen(true)} title="View welcome tour" />
+        <SettingsRow colors={colors} detail="Revisit the Today, Timeline, and Assistant walkthrough. Your current data stays untouched." disabled={busy !== null} icon="sparkles" onPress={() => setTourOpen(true)} title="How to Use" />
       </View>
 
       <SectionLabel colors={colors}>ABOUT</SectionLabel>

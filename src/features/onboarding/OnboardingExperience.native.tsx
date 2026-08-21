@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 
@@ -19,6 +19,8 @@ interface OnboardingExperienceProps {
 export function OnboardingExperience({ colors, replay = false, onClose, onFinish }: OnboardingExperienceProps) {
   const [page, setPage] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
+  const { height } = useWindowDimensions();
+  const compact = height < 760;
   const pages = [
     { eyebrow: 'WELCOME TO CALENDREAM', title: 'Plan today. See your life ahead.', body: 'A daily home and a timeline are two views of the same life—not separate calendars.' },
     { eyebrow: 'LIVE YOUR DAY', title: 'Today is where plans become real.', body: 'Events, tasks, and a quiet reflection live together. Unfinished work gets a thoughtful next home tomorrow.' },
@@ -36,32 +38,47 @@ export function OnboardingExperience({ colors, replay = false, onClose, onFinish
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
         <Text style={[styles.brand, { color: colors.text }]}>Calendream</Text>
-        {replay && onClose ? <Pressable hitSlop={12} onPress={onClose} style={[styles.close, { backgroundColor: colors.card }]}><SymbolView name="xmark" size={14} tintColor={colors.secondary} weight="semibold" /></Pressable> : <View style={styles.close} />}
+        {replay && onClose ? <Pressable accessibilityLabel="Close how to use" accessibilityRole="button" hitSlop={12} onPress={onClose} style={[styles.close, { backgroundColor: colors.card }]}><SymbolView name="xmark" size={14} tintColor={colors.secondary} weight="semibold" /></Pressable> : <View style={styles.close} />}
       </View>
 
-      <View style={styles.progress}>{pages.map((_, index) => <View key={index} style={[styles.progressDot, { backgroundColor: index === page ? colors.blue : colors.separator }, index === page && styles.progressActive]} />)}</View>
-
-      <View style={styles.copy}>
-        <Text style={[styles.eyebrow, { color: page === 0 ? colors.red : colors.blue }]}>{current.eyebrow}</Text>
-        <Text style={[styles.title, { color: colors.text }]}>{current.title}</Text>
-        <Text style={[styles.body, { color: colors.secondary }]}>{current.body}</Text>
+      <View accessibilityLabel={`Step ${page + 1} of ${pages.length}`} style={styles.progress}>
+        {pages.map((_, index) => <View key={index} style={[styles.progressDot, { backgroundColor: index === page ? colors.blue : colors.separator }, index === page && styles.progressActive]} />)}
       </View>
 
-      <View style={styles.preview}>
-        {page === 0 && <WelcomePreview colors={colors} />}
-        {page === 1 && <TodayPreview colors={colors} />}
-        {page === 2 && <TimelinePreview colors={colors} />}
-        {page === 3 && <PlanPreview colors={colors} />}
-        {page === 4 && <SetupPreview colors={colors} />}
-      </View>
+      <ScrollView
+        bounces={false}
+        contentContainerStyle={[styles.walkthrough, compact && styles.walkthroughCompact]}
+        showsVerticalScrollIndicator={false}
+        style={styles.walkthroughScroll}
+      >
+        <View style={[styles.copy, compact && styles.copyCompact]}>
+          <Text style={[styles.eyebrow, { color: page === 0 ? colors.red : colors.blue }]}>{current.eyebrow}</Text>
+          <Text style={[styles.title, compact && styles.titleCompact, { color: colors.text }]}>{current.title}</Text>
+          <Text style={[styles.body, compact && styles.bodyCompact, { color: colors.secondary }]}>{current.body}</Text>
+        </View>
+
+        <View style={[styles.preview, compact && styles.previewCompact]}>
+          {page === 0 && <WelcomePreview colors={colors} />}
+          {page === 1 && <TodayPreview colors={colors} />}
+          {page === 2 && <TimelinePreview colors={colors} />}
+          {page === 3 && <PlanPreview colors={colors} />}
+          {page === 4 && <SetupPreview colors={colors} />}
+        </View>
+      </ScrollView>
 
       <View style={styles.footer}>
         {page < pages.length - 1 ? (
-          <Pressable onPress={() => setPage((value) => value + 1)} style={({ pressed }) => [styles.primary, { backgroundColor: colors.blue }, pressed && styles.pressed]}><Text style={styles.primaryText}>{page === 0 ? 'Show Me Around' : 'Continue'}</Text></Pressable>
+          <View style={styles.footerRow}>
+            {page > 0 && <Pressable accessibilityLabel="Previous step" accessibilityRole="button" onPress={() => setPage((value) => value - 1)} style={({ pressed }) => [styles.back, { backgroundColor: colors.card }, pressed && styles.pressed]}><SymbolView name="chevron.left" size={16} tintColor={colors.blue} weight="semibold" /></Pressable>}
+            <Pressable accessibilityRole="button" onPress={() => setPage((value) => value + 1)} style={({ pressed }) => [styles.primary, styles.primaryFlexible, { backgroundColor: colors.blue }, pressed && styles.pressed]}><Text style={styles.primaryText}>{page === 0 ? 'Show Me Around' : 'Continue'}</Text></Pressable>
+          </View>
         ) : (
           <>
-            <Pressable onPress={() => setImportOpen(true)} style={({ pressed }) => [styles.primary, { backgroundColor: colors.blue }, pressed && styles.pressed]}><SymbolView name="calendar.badge.plus" size={17} tintColor="#FFFFFF" weight="semibold" /><Text style={styles.primaryText}>Import My Calendars</Text></Pressable>
-            <Pressable onPress={() => void onFinish('fresh')} style={styles.secondary}><Text style={[styles.secondaryText, { color: colors.blue }]}>{replay ? 'Return to Calendream' : 'Start Fresh'}</Text></Pressable>
+            <Pressable accessibilityRole="button" onPress={() => setImportOpen(true)} style={({ pressed }) => [styles.primary, { backgroundColor: colors.blue }, pressed && styles.pressed]}><SymbolView name="calendar.badge.plus" size={17} tintColor="#FFFFFF" weight="semibold" /><Text style={styles.primaryText}>Import My Calendars</Text></Pressable>
+            <View style={styles.finalActions}>
+              <Pressable accessibilityRole="button" onPress={() => setPage((value) => value - 1)} style={styles.secondary}><Text style={[styles.secondaryText, { color: colors.secondary }]}>Back</Text></Pressable>
+              <Pressable accessibilityRole="button" onPress={() => void onFinish('fresh')} style={styles.secondary}><Text style={[styles.secondaryText, { color: colors.blue }]}>{replay ? 'Done' : 'Start Fresh'}</Text></Pressable>
+            </View>
           </>
         )}
       </View>
@@ -95,21 +112,32 @@ function PreviewRow({ colors, icon, iconColor, meta, title }: { colors: AppColor
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  header: { height: 54, paddingHorizontal: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { minHeight: 50, paddingHorizontal: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   brand: { fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
   close: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  progress: { height: 20, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  progress: { minHeight: 18, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
   progressDot: { width: 6, height: 6, borderRadius: 3 },
   progressActive: { width: 20 },
-  copy: { paddingHorizontal: 27, paddingTop: 22 },
+  walkthroughScroll: { flex: 1 },
+  walkthrough: { flexGrow: 1, paddingTop: 12, paddingBottom: 18 },
+  walkthroughCompact: { paddingTop: 6, paddingBottom: 10 },
+  copy: { width: '100%', paddingHorizontal: 24 },
+  copyCompact: { paddingHorizontal: 20 },
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
   title: { marginTop: 8, maxWidth: 360, fontSize: 34, lineHeight: 39, fontWeight: '800', letterSpacing: -1 },
+  titleCompact: { fontSize: 29, lineHeight: 34 },
   body: { marginTop: 11, maxWidth: 360, fontSize: 16, lineHeight: 23 },
-  preview: { flex: 1, minHeight: 290, paddingHorizontal: 27, alignItems: 'center', justifyContent: 'center' },
-  footer: { paddingHorizontal: 27, paddingBottom: 10 },
+  bodyCompact: { marginTop: 8, fontSize: 15, lineHeight: 21 },
+  preview: { width: '100%', flexGrow: 1, minHeight: 300, paddingHorizontal: 24, paddingTop: 22, alignItems: 'center', justifyContent: 'center' },
+  previewCompact: { minHeight: 238, paddingHorizontal: 20, paddingTop: 14 },
+  footer: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8 },
+  footerRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  back: { width: 54, height: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   primary: { height: 54, borderRadius: 18, flexDirection: 'row', gap: 9, alignItems: 'center', justifyContent: 'center' },
+  primaryFlexible: { flex: 1 },
   primaryText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700' },
-  secondary: { height: 46, alignItems: 'center', justifyContent: 'center' },
+  finalActions: { height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  secondary: { minWidth: 74, height: 44, alignItems: 'center', justifyContent: 'center' },
   secondaryText: { fontSize: 15, fontWeight: '700' },
   pressed: { opacity: 0.68 },
   orbit: { width: 230, height: 230, alignItems: 'center', justifyContent: 'center' },
