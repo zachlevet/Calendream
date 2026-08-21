@@ -68,6 +68,7 @@ Remaining before Phase 3:
 ## Phase 3 — private TestFlight
 
 - Identity locked on August 20, 2026: Calendream, `com.zachlevet.calendream`, the Calendream C-and-orb icon, and the `calendream` URL scheme.
+- Export compliance is declared for standard/exempt encryption so TestFlight builds do not require a repeated encryption questionnaire.
 - Confirm the icon and launch screen on a physical iPhone using a fresh native build.
 - Create/confirm the App Store Connect record and Apple agreements.
 - Complete privacy labels, support URL, beta description, and tester instructions.

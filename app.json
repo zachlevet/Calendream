@@ -11,7 +11,10 @@
       "icon": "./assets/images/icon.png",
       "buildNumber": "1",
       "bundleIdentifier": "com.zachlevet.calendream",
-      "supportsTablet": false
+      "supportsTablet": false,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
